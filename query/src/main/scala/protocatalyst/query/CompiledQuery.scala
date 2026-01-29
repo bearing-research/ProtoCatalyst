@@ -6,7 +6,7 @@ import protocatalyst.schema.*
 import scala.compiletime.error
 
 /** Type-safe compiled query wrapper. */
-final class CompiledQuery[A] private[query] (
+final class CompiledQuery[A] private[protocatalyst] (
     val artifact: CompiledArtifact,
     val encoder: ProtoEncoder[A]
 ):
@@ -25,3 +25,7 @@ object CompiledQuery:
   /** Load a pre-compiled artifact. */
   def fromBytes[A](bytes: Array[Byte])(using enc: ProtoEncoder[A]): Either[String, CompiledQuery[A]] =
     ArtifactCodec.deserialize(bytes).map(art => new CompiledQuery(art, enc))
+
+  /** Create from artifact - used by DSL */
+  private[protocatalyst] def fromArtifact[A](artifact: CompiledArtifact, enc: ProtoEncoder[A]): CompiledQuery[A] =
+    new CompiledQuery(artifact, enc)

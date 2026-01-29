@@ -29,7 +29,10 @@ lazy val core = project
   .in(file("core"))
   .settings(
     name := "protocatalyst-core",
-    commonSettings
+    commonSettings,
+    libraryDependencies ++= Seq(
+      "com.lihaoyi" %% "upickle" % "4.1.0"
+    )
   )
 
 // Encoder module: compile-time encoder derivation
