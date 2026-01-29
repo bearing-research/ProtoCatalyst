@@ -18,10 +18,19 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(core, encoder, query)
+  .aggregate(core, encoder, query, mockRuntime)
   .settings(
     name := "protocatalyst",
     publish / skip := true
+  )
+
+// Mock runtime module for testing without Spark dependency
+lazy val mockRuntime = project
+  .in(file("mock-runtime"))
+  .dependsOn(core, encoder, query)
+  .settings(
+    name := "protocatalyst-mock-runtime",
+    commonSettings
   )
 
 // Core module: types, schema, IR

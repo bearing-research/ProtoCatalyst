@@ -1,0 +1,232 @@
+package protocatalyst.mock
+
+import protocatalyst.expr.*
+import protocatalyst.types.*
+
+/**
+ * Evaluates ProtoExpr against MockRow data.
+ * Used for testing canonicalization and constant folding.
+ */
+object ExpressionEvaluator:
+
+  sealed trait EvalResult
+  case class Success(value: Any) extends EvalResult
+  case class EvalError(message: String) extends EvalResult
+
+  def eval(expr: ProtoExpr, row: MockRow = MockRow.empty): EvalResult =
+    try Success(evalInternal(expr, row))
+    catch case e: Exception => EvalError(e.getMessage)
+
+  private def evalInternal(expr: ProtoExpr, row: MockRow): Any =
+    import ProtoExpr.*
+    expr match
+      // Literals
+      case Literal(LiteralValue.BooleanValue(v))   => v
+      case Literal(LiteralValue.ByteValue(v))      => v
+      case Literal(LiteralValue.ShortValue(v))     => v
+      case Literal(LiteralValue.IntValue(v))       => v
+      case Literal(LiteralValue.LongValue(v))      => v
+      case Literal(LiteralValue.FloatValue(v))     => v
+      case Literal(LiteralValue.DoubleValue(v))    => v
+      case Literal(LiteralValue.StringValue(v))    => v
+      case Literal(LiteralValue.BinaryValue(v))    => v
+      case Literal(LiteralValue.DecimalValue(v))   => v
+      case Literal(LiteralValue.DateValue(v))      => v
+      case Literal(LiteralValue.TimestampValue(v)) => v
+      case Literal(LiteralValue.NullValue(_))      => null
+
+      // Bound references
+      case BoundRef(ordinal, _, _) => row.get(ordinal)
+
+      // Comparisons
+      case Eq(l, r) =>
+        val lv = evalInternal(l, row)
+        val rv = evalInternal(r, row)
+        if lv == null || rv == null then null else lv == rv
+
+      case NotEq(l, r) =>
+        val lv = evalInternal(l, row)
+        val rv = evalInternal(r, row)
+        if lv == null || rv == null then null else lv != rv
+
+      case Lt(l, r)   => compareNumeric(l, r, row, _ < _)
+      case LtEq(l, r) => compareNumeric(l, r, row, _ <= _)
+      case Gt(l, r)   => compareNumeric(l, r, row, _ > _)
+      case GtEq(l, r) => compareNumeric(l, r, row, _ >= _)
+
+      // Logical - three-valued logic
+      case And(children) =>
+        val results = children.map(evalInternal(_, row))
+        if results.contains(false) then false
+        else if results.contains(null) then null
+        else true
+
+      case Or(children) =>
+        val results = children.map(evalInternal(_, row))
+        if results.contains(true) then true
+        else if results.contains(null) then null
+        else false
+
+      case Not(child) =>
+        evalInternal(child, row) match
+          case null      => null
+          case b: Boolean => !b
+          case other     => throw IllegalArgumentException(s"NOT requires boolean, got $other")
+
+      // Null handling
+      case IsNull(child)    => evalInternal(child, row) == null
+      case IsNotNull(child) => evalInternal(child, row) != null
+
+      case Coalesce(children) =>
+        children.iterator.map(evalInternal(_, row)).find(_ != null).orNull
+
+      // Arithmetic
+      case Add(l, r)      => numericOp(l, r, row, _ + _, _ + _, _ + _)
+      case Subtract(l, r) => numericOp(l, r, row, _ - _, _ - _, _ - _)
+      case Multiply(l, r) => numericOp(l, r, row, _ * _, _ * _, _ * _)
+      case Divide(l, r) =>
+        val rv = evalInternal(r, row)
+        if rv == 0 || rv == 0.0 || rv == 0L then null
+        else numericOp(l, r, row, _ / _, _ / _, _ / _)
+
+      // String operations
+      case Concat(children) =>
+        val parts = children.map(evalInternal(_, row))
+        if parts.contains(null) then null
+        else parts.mkString
+
+      case Upper(child) =>
+        evalInternal(child, row) match
+          case null      => null
+          case s: String => s.toUpperCase
+          case other     => other.toString.toUpperCase
+
+      case Lower(child) =>
+        evalInternal(child, row) match
+          case null      => null
+          case s: String => s.toLowerCase
+          case other     => other.toString.toLowerCase
+
+      case Substring(str, pos, len) =>
+        val s = evalInternal(str, row)
+        val p = evalInternal(pos, row)
+        val l = evalInternal(len, row)
+        if s == null || p == null || l == null then null
+        else
+          val sStr = s.toString
+          val pInt = toInt(p)
+          val lInt = toInt(l)
+          // Spark uses 1-based indexing
+          val start = math.max(0, pInt - 1)
+          val end = math.min(sStr.length, start + lInt)
+          if start >= sStr.length then ""
+          else sStr.substring(start, end)
+
+      // Control flow
+      case If(pred, trueVal, falseVal) =>
+        evalInternal(pred, row) match
+          case true  => evalInternal(trueVal, row)
+          case false => evalInternal(falseVal, row)
+          case null  => null
+          case other => throw IllegalArgumentException(s"IF predicate must be boolean, got $other")
+
+      case CaseWhen(branches, elseValue) =>
+        branches.find { case (cond, _) =>
+          evalInternal(cond, row) == true
+        } match
+          case Some((_, result)) => evalInternal(result, row)
+          case None              => elseValue.map(evalInternal(_, row)).orNull
+
+      case In(value, list) =>
+        val v = evalInternal(value, row)
+        if v == null then null
+        else
+          val listVals = list.map(evalInternal(_, row))
+          if listVals.contains(v) then true
+          else if listVals.contains(null) then null
+          else false
+
+      // Cast
+      case Cast(child, targetType) =>
+        val v = evalInternal(child, row)
+        if v == null then null else castValue(v, targetType)
+
+      // Alias is transparent
+      case Alias(child, _) => evalInternal(child, row)
+
+      // ColumnRef should be bound before evaluation
+      case ColumnRef(name, _, _, _) =>
+        throw IllegalStateException(s"Unbound column reference: $name")
+
+      // Aggregates require special handling
+      case Count(_, _) | Sum(_) | Avg(_) | Min(_) | Max(_) =>
+        throw IllegalStateException("Aggregate functions cannot be evaluated row-by-row")
+
+      case OpaqueCall(name, _, _, _) =>
+        throw IllegalStateException(s"Cannot evaluate opaque function: $name")
+
+  private def compareNumeric(
+      l: ProtoExpr,
+      r: ProtoExpr,
+      row: MockRow,
+      op: (Double, Double) => Boolean
+  ): Any =
+    val lv = evalInternal(l, row)
+    val rv = evalInternal(r, row)
+    if lv == null || rv == null then null
+    else op(toDouble(lv), toDouble(rv))
+
+  private def numericOp(
+      l: ProtoExpr,
+      r: ProtoExpr,
+      row: MockRow,
+      intOp: (Int, Int) => Int,
+      longOp: (Long, Long) => Long,
+      doubleOp: (Double, Double) => Double
+  ): Any =
+    val lv = evalInternal(l, row)
+    val rv = evalInternal(r, row)
+    if lv == null || rv == null then null
+    else (lv, rv) match
+      case (a: Int, b: Int)   => intOp(a, b)
+      case (a: Long, b: Long) => longOp(a, b)
+      case (a: Long, b: Int)  => longOp(a, b.toLong)
+      case (a: Int, b: Long)  => longOp(a.toLong, b)
+      case _                  => doubleOp(toDouble(lv), toDouble(rv))
+
+  private def toDouble(v: Any): Double = v match
+    case i: Int        => i.toDouble
+    case l: Long       => l.toDouble
+    case f: Float      => f.toDouble
+    case d: Double     => d
+    case bd: BigDecimal => bd.toDouble
+    case s: Short      => s.toDouble
+    case b: Byte       => b.toDouble
+    case other         => other.toString.toDouble
+
+  private def toInt(v: Any): Int = v match
+    case i: Int   => i
+    case l: Long  => l.toInt
+    case s: Short => s.toInt
+    case b: Byte  => b.toInt
+    case d: Double => d.toInt
+    case f: Float => f.toInt
+    case n: Number => n.intValue
+    case other    => other.toString.toInt
+
+  private def castValue(v: Any, targetType: ProtoType): Any =
+    targetType match
+      case ProtoType.StringType  => v.toString
+      case ProtoType.IntType     => toInt(v)
+      case ProtoType.LongType    => v.asInstanceOf[Number].longValue
+      case ProtoType.DoubleType  => toDouble(v)
+      case ProtoType.FloatType   => toDouble(v).toFloat
+      case ProtoType.BooleanType =>
+        v match
+          case b: Boolean => b
+          case s: String  => s.toBoolean
+          case n: Number  => n.intValue != 0
+          case _          => throw IllegalArgumentException(s"Cannot cast $v to Boolean")
+      case ProtoType.ShortType => v.asInstanceOf[Number].shortValue
+      case ProtoType.ByteType  => v.asInstanceOf[Number].byteValue
+      case _ => v // Passthrough for unsupported casts
