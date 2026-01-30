@@ -190,6 +190,12 @@ object Canonicalizer:
       case Values(rows, schema) =>
         Values(rows.map(_.map(exprTransform)), schema)
 
+      case With(cteRelations, child) =>
+        With(
+          cteRelations.map((name, plan) => (name, transformPlan(plan, exprTransform))),
+          transformPlan(child, exprTransform)
+        )
+
       case r: RelationRef => r
 
   private def transformExpr(

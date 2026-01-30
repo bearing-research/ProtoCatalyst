@@ -18,7 +18,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(core, encoder, query, mockRuntime)
+  .aggregate(core, encoder, query, sqlParser, mockRuntime)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -53,10 +53,19 @@ lazy val encoder = project
     commonSettings
   )
 
+// SQL Parser module: compile-time SQL parsing
+lazy val sqlParser = project
+  .in(file("sql-parser"))
+  .dependsOn(core, encoder)
+  .settings(
+    name := "protocatalyst-sql-parser",
+    commonSettings
+  )
+
 // Query module: compiled query artifacts
 lazy val query = project
   .in(file("query"))
-  .dependsOn(core, encoder)
+  .dependsOn(core, encoder, sqlParser)
   .settings(
     name := "protocatalyst-query",
     commonSettings

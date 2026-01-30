@@ -108,6 +108,21 @@ object MockQueryBinder:
       case Values(_, schema) =>
         Right(Map("values" -> MockSchemaConverter.toMockSchema(schema)))
 
+      case With(cteRelations, child) =>
+        // Collect schemas from all CTE relations and the main child
+        val cteSchemas = cteRelations.foldLeft(Right(Map.empty): Either[String, Map[String, MockDataType.StructType]]) {
+          case (Left(err), _) => Left(err)
+          case (Right(acc), (cteName, ctePlan)) =>
+            collectSchemas(ctePlan, catalog).map { schemas =>
+              // Merge CTE's schemas under its name
+              val merged = MockDataType.StructType(schemas.values.flatMap(_.fields).toVector)
+              acc + (cteName -> merged)
+            }
+        }
+        cteSchemas.flatMap { cteMap =>
+          collectSchemas(child, catalog).map(cteMap ++ _)
+        }
+
   private def bindPlan(plan: ProtoLogicalPlan, ctx: BindingContext): BindingResult =
     import ProtoLogicalPlan.*
     plan match
@@ -193,6 +208,22 @@ object MockQueryBinder:
 
       case v: Values => BoundPlan(v)
 
+      case With(cteRelations, child) =>
+        // Bind all CTE plans
+        val boundCtes = cteRelations.foldLeft[Either[BindingError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
+          case (Left(err), _) => Left(err)
+          case (Right(acc), (cteName, ctePlan)) =>
+            bindPlan(ctePlan, ctx) match
+              case BoundPlan(bound) => Right(acc :+ (cteName, bound))
+              case err: BindingError => Left(err)
+        }
+        boundCtes match
+          case Left(err) => err
+          case Right(ctes) =>
+            bindPlan(child, ctx) match
+              case BoundPlan(boundChild) => BoundPlan(With(ctes, boundChild))
+              case err => err
+
   private def bindExpr(expr: ProtoExpr, ctx: BindingContext): ProtoExpr =
     import ProtoExpr.*
     expr match
@@ -248,6 +279,10 @@ object MockQueryBinder:
       case In(value, list) =>
         In(bindExpr(value, ctx), list.map(bindExpr(_, ctx)))
 
+      // Pattern matching
+      case Like(value, pattern, escape) =>
+        Like(bindExpr(value, ctx), bindExpr(pattern, ctx), escape.map(bindExpr(_, ctx)))
+
       // Cast and alias
       case Cast(child, targetType) => Cast(bindExpr(child, ctx), targetType)
       case Alias(child, name)      => Alias(bindExpr(child, ctx), name)
@@ -255,6 +290,31 @@ object MockQueryBinder:
       // Opaque call
       case OpaqueCall(name, args, returnType, det) =>
         OpaqueCall(name, args.map(bindExpr(_, ctx)), returnType, det)
+
+      // Subquery expressions - keep as-is, subplan binding would be handled separately
+      case s: ScalarSubquery => s
+      case e: Exists         => e
+      case InSubquery(value, plan) => InSubquery(bindExpr(value, ctx), plan)
+
+      // Window functions - bind child expressions
+      case RowNumber() => RowNumber()
+      case Rank() => Rank()
+      case DenseRank() => DenseRank()
+      case Ntile(n) => Ntile(bindExpr(n, ctx))
+      case Lead(input, offset, default) =>
+        Lead(bindExpr(input, ctx), bindExpr(offset, ctx), default.map(bindExpr(_, ctx)))
+      case Lag(input, offset, default) =>
+        Lag(bindExpr(input, ctx), bindExpr(offset, ctx), default.map(bindExpr(_, ctx)))
+      case FirstValue(input, ignoreNulls) => FirstValue(bindExpr(input, ctx), ignoreNulls)
+      case LastValue(input, ignoreNulls) => LastValue(bindExpr(input, ctx), ignoreNulls)
+      case NthValue(input, n) => NthValue(bindExpr(input, ctx), bindExpr(n, ctx))
+      case WindowExpr(function, partitionSpec, orderSpec, frameSpec) =>
+        WindowExpr(
+          bindExpr(function, ctx),
+          partitionSpec.map(bindExpr(_, ctx)),
+          orderSpec.map(o => SortOrder(bindExpr(o.child, ctx), o.direction, o.nullOrdering)),
+          frameSpec
+        )
 
       // Leaf nodes that don't need binding
       case lit: Literal  => lit

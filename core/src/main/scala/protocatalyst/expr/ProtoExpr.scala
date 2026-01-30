@@ -57,9 +57,36 @@ enum ProtoExpr extends Serializable:
   case If(predicate: ProtoExpr, trueValue: ProtoExpr, falseValue: ProtoExpr)
   case In(value: ProtoExpr, list: Vector[ProtoExpr])
 
+  // Pattern matching
+  case Like(value: ProtoExpr, pattern: ProtoExpr, escape: Option[ProtoExpr])
+
   // Cast and alias
   case Cast(child: ProtoExpr, targetType: ProtoType)
   case Alias(child: ProtoExpr, name: String)
+
+  // Subquery expressions
+  case ScalarSubquery(plan: protocatalyst.plan.ProtoLogicalPlan)
+  case Exists(plan: protocatalyst.plan.ProtoLogicalPlan)
+  case InSubquery(value: ProtoExpr, plan: protocatalyst.plan.ProtoLogicalPlan)
+
+  // Window functions
+  case RowNumber()
+  case Rank()
+  case DenseRank()
+  case Ntile(n: ProtoExpr)
+  case Lead(input: ProtoExpr, offset: ProtoExpr, default: Option[ProtoExpr])
+  case Lag(input: ProtoExpr, offset: ProtoExpr, default: Option[ProtoExpr])
+  case FirstValue(input: ProtoExpr, ignoreNulls: Boolean)
+  case LastValue(input: ProtoExpr, ignoreNulls: Boolean)
+  case NthValue(input: ProtoExpr, n: ProtoExpr)
+
+  // Window specification wrapper - wraps an expression with its window spec
+  case WindowExpr(
+      function: ProtoExpr,
+      partitionSpec: Vector[ProtoExpr],
+      orderSpec: Vector[protocatalyst.plan.SortOrder],
+      frameSpec: Option[WindowFrame]
+  )
 
   // Opaque function call (UDFs and unknown functions)
   case OpaqueCall(
@@ -68,6 +95,23 @@ enum ProtoExpr extends Serializable:
       returnType: Option[ProtoType],
       deterministic: Boolean
   )
+
+/** Window frame specification. */
+case class WindowFrame(
+    frameType: FrameType,
+    lower: FrameBound,
+    upper: FrameBound
+) extends Serializable
+
+enum FrameType extends Serializable:
+  case Rows, Range
+
+enum FrameBound extends Serializable:
+  case UnboundedPreceding
+  case UnboundedFollowing
+  case CurrentRow
+  case Preceding(n: Long)
+  case Following(n: Long)
 
 object ProtoExpr:
   // Convenience constructors for literals

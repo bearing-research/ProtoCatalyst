@@ -162,8 +162,34 @@ object ExpressionEvaluator:
       case Count(_, _) | Sum(_) | Avg(_) | Min(_) | Max(_) =>
         throw IllegalStateException("Aggregate functions cannot be evaluated row-by-row")
 
+      case Like(value, pattern, escape) =>
+        val v = evalInternal(value, row)
+        val p = evalInternal(pattern, row)
+        if v == null || p == null then null
+        else
+          val patternStr = p.toString
+          // Convert SQL LIKE pattern to regex
+          val escapeChar = escape.map(e => evalInternal(e, row).toString.headOption.getOrElse('\\')).getOrElse('\\')
+          val regex = likePatternToRegex(patternStr, escapeChar)
+          v.toString.matches(regex)
+
       case OpaqueCall(name, _, _, _) =>
         throw IllegalStateException(s"Cannot evaluate opaque function: $name")
+
+      // Subquery expressions require actual query execution
+      case ScalarSubquery(_) =>
+        throw IllegalStateException("Scalar subquery cannot be evaluated row-by-row")
+
+      case Exists(_) =>
+        throw IllegalStateException("EXISTS subquery cannot be evaluated row-by-row")
+
+      case InSubquery(_, _) =>
+        throw IllegalStateException("IN subquery cannot be evaluated row-by-row")
+
+      // Window functions require aggregate computation over partitions
+      case RowNumber() | Rank() | DenseRank() | Ntile(_) | Lead(_, _, _) | Lag(_, _, _) |
+           FirstValue(_, _) | LastValue(_, _) | NthValue(_, _) | WindowExpr(_, _, _, _) =>
+        throw IllegalStateException("Window functions cannot be evaluated row-by-row")
 
   private def compareNumeric(
       l: ProtoExpr,
@@ -230,3 +256,26 @@ object ExpressionEvaluator:
       case ProtoType.ShortType => v.asInstanceOf[Number].shortValue
       case ProtoType.ByteType  => v.asInstanceOf[Number].byteValue
       case _ => v // Passthrough for unsupported casts
+
+  /** Convert SQL LIKE pattern to regex. */
+  private def likePatternToRegex(pattern: String, escapeChar: Char): String =
+    val sb = new StringBuilder("^")
+    var i = 0
+    while i < pattern.length do
+      val c = pattern.charAt(i)
+      if c == escapeChar && i + 1 < pattern.length then
+        // Escaped character - add literally
+        val next = pattern.charAt(i + 1)
+        sb.append(java.util.regex.Pattern.quote(next.toString))
+        i += 2
+      else if c == '%' then
+        sb.append(".*")
+        i += 1
+      else if c == '_' then
+        sb.append(".")
+        i += 1
+      else
+        sb.append(java.util.regex.Pattern.quote(c.toString))
+        i += 1
+    sb.append("$")
+    sb.toString

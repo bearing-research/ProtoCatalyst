@@ -86,6 +86,11 @@ enum ProtoLogicalPlan extends Serializable:
       child: ProtoLogicalPlan
   )
 
+  case With(
+      cteRelations: Vector[(String, ProtoLogicalPlan)],
+      child: ProtoLogicalPlan
+  )
+
 enum JoinType extends Serializable:
   case Inner, LeftOuter, RightOuter, FullOuter, LeftSemi, LeftAnti, Cross
 
