@@ -322,11 +322,25 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (154 total tests in sql-parser module):
-- Lexer tests: 27 tests
-- Parser tests: 81 tests (including CTEs, window functions, set operations)
+Current test statistics (218 total tests in sql-parser module):
+- Lexer tests: 18 tests
+- Parser tests: 90 tests (including CTEs, window functions, set operations)
 - Transform tests: 46 tests
+- **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
+
+### JSQLParser Comparison Testing
+
+The `ParserComparisonSuite` validates our parser against [JSQLParser](https://github.com/JSQLParser/JSqlParser), a well-established Java SQL parser library. This ensures:
+
+- Our parser accepts valid SQL that JSQLParser accepts
+- Structural elements (tables, columns) are parsed correctly
+- Edge cases and error handling are reasonable
+
+Run comparison tests:
+```bash
+sbt "sqlParser/testOnly protocatalyst.sql.ParserComparisonSuite"
+```
 
 ## IR Representation
 

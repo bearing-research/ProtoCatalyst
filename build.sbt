@@ -59,7 +59,11 @@ lazy val sqlParser = project
   .dependsOn(core, encoder)
   .settings(
     name := "protocatalyst-sql-parser",
-    commonSettings
+    commonSettings,
+    libraryDependencies ++= Seq(
+      // JSQLParser for validation testing against a reference SQL parser
+      "com.github.jsqlparser" % "jsqlparser" % "5.0" % Test
+    )
   )
 
 // Query module: compiled query artifacts
