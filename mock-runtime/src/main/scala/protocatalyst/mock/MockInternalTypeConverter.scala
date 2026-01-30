@@ -122,8 +122,18 @@ case class MockUTF8String(value: String):
   def getBytes: Array[Byte] = value.getBytes("UTF-8")
   def numBytes: Int = getBytes.length
 
+  def compareTo(other: MockUTF8String): Int =
+    this.value.compareTo(other.value)
+
 object MockUTF8String:
-  def fromString(s: String): MockUTF8String = MockUTF8String(s)
+  def fromString(s: String): MockUTF8String =
+    if s == null then null else MockUTF8String(s)
+
+  def fromBytes(bytes: Array[Byte]): MockUTF8String =
+    if bytes == null then null
+    else MockUTF8String(new String(bytes, "UTF-8"))
+
+  val EMPTY: MockUTF8String = MockUTF8String("")
 
 /**
  * Mock ArrayData - simulates Spark's org.apache.spark.sql.catalyst.util.ArrayData.

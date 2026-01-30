@@ -101,7 +101,7 @@ case class User(name: String, age: Int) derives ProtoEncoder
 | `Expression` | Catalyst expressions | `ProtoExpr` → `Expression` | ✅ Done (mock) |
 | `LogicalPlan` | Catalyst plans | `ProtoLogicalPlan` → `LogicalPlan` | ✅ Done (mock) |
 | `InternalRow` | Row serialization | `RowSerializer[T]` derivation | ✅ Done |
-| `UnsafeRow` | Optimized row format | Need unsafe serialization | ❌ Missing |
+| `UnsafeRow` | Optimized row format | `UnsafeRowSerializer[T]` derivation | ✅ Done |
 
 ## Current ProtoCatalyst State
 
@@ -115,6 +115,7 @@ case class User(name: String, age: Int) derives ProtoEncoder
 | ProtoLogicalPlan | 95% | `LogicalPlan` (14 nodes) |
 | ProtoEncoder derivation | 100% | `Encoder[T]` derivation |
 | RowSerializer derivation | 100% | `InternalRow` serialization |
+| UnsafeRowSerializer | 100% | `UnsafeRow` binary format |
 | Expression Mapping | 100% | `Expression` (bidirectional via mock) |
 | Plan Mapping | 100% | `LogicalPlan` (bidirectional via mock) |
 | Schema fingerprinting | 100% | (New capability) |
@@ -124,7 +125,6 @@ case class User(name: String, age: Int) derives ProtoEncoder
 
 | Component | Priority | Description |
 |-----------|----------|-------------|
-| **UnsafeRow Support** | P1 | Support Spark's optimized binary row format |
 | **ExpressionEncoder Bridge** | P0 | Implement `Encoder[T]` using `ProtoEncoder[T]` |
 | **Real Spark Integration** | P0 | Replace mock types with real Spark types when available |
 | **Resolver Integration** | P1 | Integrate with Spark's `Resolver` |
@@ -237,9 +237,65 @@ Mock types mirror Spark's type hierarchy for testing without Spark dependency:
 - `MockLogicalPlan` → `org.apache.spark.sql.catalyst.plans.logical.LogicalPlan`
 - `MockDataType` → `org.apache.spark.sql.types.DataType`
 
-## Remaining: UnsafeRow Support
+## UnsafeRow Support ✅
 
-`UnsafeRow` is Spark's optimized binary row format. This is still needed for production performance but is a P1 priority since `GenericInternalRow` works for correctness.
+`UnsafeRow` is Spark's optimized binary row format for CPU cache efficiency and zero-copy serialization.
+
+### Implementation
+
+```scala
+// mock-runtime/src/main/scala/protocatalyst/mock/UnsafeRowSerializer.scala
+trait UnsafeRowSerializer[T]:
+  def schema: MockDataType.StructType
+  def serialize(value: T): MockUnsafeRow
+  def deserialize(row: MockUnsafeRow): T
+
+object UnsafeRowSerializer:
+  inline def derived[T](using m: Mirror.ProductOf[T]): UnsafeRowSerializer[T] = ...
+```
+
+### Key Components
+
+1. **MockUnsafeRow** - Binary row format with:
+   - 8-byte aligned memory layout
+   - Null bitmap (1 bit per field, rounded to 8-byte boundary)
+   - Fixed-width region (8 bytes per field)
+   - Variable-width region for strings/arrays/nested structs
+
+2. **UnsafeRowWriter** - Constructs UnsafeRow from values:
+   - Handles all primitive types (boolean, int, long, double, etc.)
+   - Variable-length data (strings, binary, arrays, maps)
+   - Nested struct support
+
+3. **UnsafeRowSerializer** - Compile-time derivation:
+   - Uses Scala 3 mirrors (no runtime reflection)
+   - Full roundtrip serialization/deserialization
+   - Support for Option fields, arrays, maps
+
+### Usage
+
+```scala
+case class User(name: String, age: Int) derives ProtoEncoder
+
+val ser = UnsafeRowSerializer.derived[User]
+val user = User("Alice", 30)
+
+// Serialize to binary format
+val row: MockUnsafeRow = ser.serialize(user)
+// row.sizeInBytes = 40 (null bitmap + fixed + variable)
+
+// Deserialize back
+val back: User = ser.deserialize(row)
+// User("Alice", 30)
+```
+
+### Memory Layout Example
+
+For `User(name: String, age: Int)`:
+```
+[Null Bitmap: 8 bytes][name offset+len: 8 bytes][age: 8 bytes][name bytes: 8 bytes]
+Total: 32 bytes (8-byte aligned)
+```
 
 ## Architecture Overview
 
