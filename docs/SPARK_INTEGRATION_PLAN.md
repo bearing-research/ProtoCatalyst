@@ -98,8 +98,8 @@ case class User(name: String, age: Int) derives ProtoEncoder
 |-----------------|-------------------|----------------------------|--------|
 | `Encoder[T]` | TypeTag + reflection | `ProtoEncoder[T]` with mirrors | ✅ Done |
 | `StructType` | Runtime schema inference | `ProtoSchema` → `StructType` | ✅ Done |
-| `Expression` | Catalyst expressions | `ProtoExpr` → `Expression` | 🔄 Mapping needed |
-| `LogicalPlan` | Catalyst plans | `ProtoLogicalPlan` → `LogicalPlan` | 🔄 Mapping needed |
+| `Expression` | Catalyst expressions | `ProtoExpr` → `Expression` | ✅ Done (mock) |
+| `LogicalPlan` | Catalyst plans | `ProtoLogicalPlan` → `LogicalPlan` | ✅ Done (mock) |
 | `InternalRow` | Row serialization | `RowSerializer[T]` derivation | ✅ Done |
 | `UnsafeRow` | Optimized row format | Need unsafe serialization | ❌ Missing |
 
@@ -115,6 +115,8 @@ case class User(name: String, age: Int) derives ProtoEncoder
 | ProtoLogicalPlan | 95% | `LogicalPlan` (14 nodes) |
 | ProtoEncoder derivation | 100% | `Encoder[T]` derivation |
 | RowSerializer derivation | 100% | `InternalRow` serialization |
+| Expression Mapping | 100% | `Expression` (bidirectional via mock) |
+| Plan Mapping | 100% | `LogicalPlan` (bidirectional via mock) |
 | Schema fingerprinting | 100% | (New capability) |
 | SQL Parser | 100% | `SparkSqlParser` |
 
@@ -122,10 +124,9 @@ case class User(name: String, age: Int) derives ProtoEncoder
 
 | Component | Priority | Description |
 |-----------|----------|-------------|
-| **UnsafeRow Support** | P0 | Support Spark's optimized binary row format |
-| **Expression Mapping** | P0 | `ProtoExpr` ↔ Catalyst `Expression` bidirectional |
-| **Plan Mapping** | P0 | `ProtoLogicalPlan` ↔ Catalyst `LogicalPlan` |
+| **UnsafeRow Support** | P1 | Support Spark's optimized binary row format |
 | **ExpressionEncoder Bridge** | P0 | Implement `Encoder[T]` using `ProtoEncoder[T]` |
+| **Real Spark Integration** | P0 | Replace mock types with real Spark types when available |
 | **Resolver Integration** | P1 | Integrate with Spark's `Resolver` |
 | **Codegen Support** | P2 | Generate efficient Java bytecode |
 
@@ -183,6 +184,58 @@ val row: Array[Any] = serializer.serialize(user)
 val deserialized: User = serializer.deserialize(row)
 // User("Alice", 30)
 ```
+
+## Expression and Plan Mapping ✅
+
+Bidirectional converters between ProtoCatalyst IR and mock Spark types are implemented. These can be easily adapted to real Spark types when Spark Scala 3 becomes available.
+
+### Expression Converter
+
+```scala
+// mock-runtime/src/main/scala/protocatalyst/mock/ExpressionConverter.scala
+object ExpressionConverter:
+  def toMock(expr: ProtoExpr): MockExpression = ...   // ProtoExpr → MockExpression
+  def fromMock(expr: MockExpression): ProtoExpr = ... // MockExpression → ProtoExpr
+```
+
+**Supported expressions (35+ types):**
+- Literals (all types)
+- Column references and bound references
+- Comparisons (Eq, NotEq, Lt, LtEq, Gt, GtEq)
+- Logical (And, Or, Not)
+- Null handling (IsNull, IsNotNull, Coalesce)
+- Arithmetic (Add, Subtract, Multiply, Divide)
+- String (Concat, Upper, Lower, Substring, Like)
+- Aggregates (Count, Sum, Avg, Min, Max)
+- Control flow (CaseWhen, If, In)
+- Cast and Alias
+- Subqueries (ScalarSubquery, Exists, InSubquery)
+- Window functions (RowNumber, Rank, DenseRank, Lead, Lag, etc.)
+
+### Plan Converter
+
+```scala
+// mock-runtime/src/main/scala/protocatalyst/mock/PlanConverter.scala
+object PlanConverter:
+  def toMock(plan: ProtoLogicalPlan): MockLogicalPlan = ...
+  def fromMock(plan: MockLogicalPlan): ProtoLogicalPlan = ...
+```
+
+**Supported plan nodes (14 types):**
+- RelationRef → LogicalRelation
+- Project, Filter, Aggregate
+- Sort, Limit, Distinct
+- Join (all types)
+- Union, Intersect, Except
+- SubqueryAlias, Window
+- With (CTE)
+
+### Mock Types
+
+Mock types mirror Spark's type hierarchy for testing without Spark dependency:
+- `MockExpression` → `org.apache.spark.sql.catalyst.expressions.Expression`
+- `MockLogicalPlan` → `org.apache.spark.sql.catalyst.plans.logical.LogicalPlan`
+- `MockDataType` → `org.apache.spark.sql.types.DataType`
 
 ## Remaining: UnsafeRow Support
 
