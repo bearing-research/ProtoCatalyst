@@ -196,7 +196,7 @@ trait UnsafeRowSerializer[T]:
 | **Java Bean support** | `JavaBeanEncoder(Class[T])` runtime introspection | P2 | ✅ Done |
 | **UDT support** | `ProtoUDT[T]` with sqlType, serialize, deserialize | P3 | ✅ Done |
 | **Kryo/Java/Fory serialization** | TransformingEncoder with Codec abstraction | P3 | ✅ Done |
-| **Lenient serialization** | Multiple input types for dates/timestamps | P3 | Pending |
+| **Lenient serialization** | Multiple input types for dates/timestamps | P3 | ✅ Done |
 
 ---
 

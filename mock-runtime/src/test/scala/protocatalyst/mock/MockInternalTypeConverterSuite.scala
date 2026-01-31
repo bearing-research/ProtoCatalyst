@@ -8,6 +8,11 @@ case class User(name: String, age: Int)
 case class Address(street: String, city: String, zip: Option[Int])
 case class Person(user: User, address: Address, tags: List[String])
 
+// Temporal test case classes
+case class Event(name: String, date: java.time.LocalDate)
+case class LogEntry(msg: String, timestamp: java.time.Instant)
+case class Appointment(title: String, dateTime: java.time.LocalDateTime)
+
 class MockInternalTypeConverterSuite extends munit.FunSuite:
 
   // Use MockInternalTypeConverter for Spark-like conversions
@@ -231,3 +236,52 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     assertEquals(mockRow.size, 2)
     assertEquals(mockRow.get(0).asInstanceOf[MockUTF8String].toString, "Eve")
     assertEquals(mockRow.getInt(1), 35)
+
+  // === Temporal type integration tests ===
+
+  test("RowSerializer roundtrip with LocalDate field"):
+    val serializer = RowSerializer.derived[Event]
+    val date = java.time.LocalDate.of(2024, 1, 15)
+    val event = Event("Conference", date)
+
+    val serialized = serializer.serialize(event)
+    assertEquals(serialized.length, 2)
+
+    // String field converted to MockUTF8String
+    assertEquals(serialized(0).asInstanceOf[MockUTF8String].toString, "Conference")
+    // Date field converted to epoch days (Int)
+    assertEquals(serialized(1), date.toEpochDay.toInt)
+
+    // Roundtrip
+    val deserialized = serializer.deserialize(serialized)
+    assertEquals(deserialized, event)
+
+  test("RowSerializer roundtrip with Instant field"):
+    val serializer = RowSerializer.derived[LogEntry]
+    val instant = java.time.Instant.parse("2024-01-15T10:30:00Z")
+    val log = LogEntry("Test message", instant)
+
+    val serialized = serializer.serialize(log)
+    assertEquals(serialized.length, 2)
+
+    // String field converted to MockUTF8String
+    assertEquals(serialized(0).asInstanceOf[MockUTF8String].toString, "Test message")
+    // Timestamp field converted to microseconds (Long)
+    assertEquals(serialized(1), instant.toEpochMilli * 1000L)
+
+    // Roundtrip - compare at millisecond precision due to internal representation
+    val deserialized = serializer.deserialize(serialized)
+    assertEquals(deserialized.msg, log.msg)
+    assertEquals(deserialized.timestamp.toEpochMilli, log.timestamp.toEpochMilli)
+
+  test("RowSerializer roundtrip with LocalDateTime field"):
+    val serializer = RowSerializer.derived[Appointment]
+    val ldt = java.time.LocalDateTime.of(2024, 1, 15, 10, 30, 0)
+    val appt = Appointment("Meeting", ldt)
+
+    val serialized = serializer.serialize(appt)
+    assertEquals(serialized.length, 2)
+
+    // Roundtrip
+    val deserialized = serializer.deserialize(serialized)
+    assertEquals(deserialized, appt)

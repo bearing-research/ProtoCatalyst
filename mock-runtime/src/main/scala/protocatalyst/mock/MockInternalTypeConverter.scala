@@ -60,11 +60,43 @@ object MockInternalTypeConverter extends InternalTypeConverter:
         }
         MockRow(values)
 
-      // Primitive types - no conversion needed
+      // Temporal types with lenient serialization - accept multiple input types
+      case ProtoType.DateType =>
+        value match
+          case d: java.sql.Date => d.toLocalDate.toEpochDay.toInt
+          case ld: java.time.LocalDate => ld.toEpochDay.toInt
+          case s: String => java.time.LocalDate.parse(s).toEpochDay.toInt
+          case epochDays: Int => epochDays  // Already internal representation
+          case other => throw IllegalArgumentException(
+            s"DateType expects java.sql.Date, LocalDate, String, or Int, got: ${other.getClass}"
+          )
+
+      case ProtoType.TimestampType =>
+        value match
+          case ts: java.sql.Timestamp => ts.toInstant.toEpochMilli * 1000L
+          case i: java.time.Instant => i.toEpochMilli * 1000L
+          case s: String => java.time.Instant.parse(s).toEpochMilli * 1000L
+          case micros: Long => micros  // Already internal representation
+          case other => throw IllegalArgumentException(
+            s"TimestampType expects java.sql.Timestamp, Instant, String, or Long, got: ${other.getClass}"
+          )
+
+      case ProtoType.TimestampNTZType =>
+        value match
+          case ldt: java.time.LocalDateTime =>
+            ldt.toEpochSecond(java.time.ZoneOffset.UTC) * 1000000L + ldt.getNano / 1000
+          case s: String =>
+            val ldt = java.time.LocalDateTime.parse(s)
+            ldt.toEpochSecond(java.time.ZoneOffset.UTC) * 1000000L + ldt.getNano / 1000
+          case micros: Long => micros
+          case other => throw IllegalArgumentException(
+            s"TimestampNTZType expects LocalDateTime, String, or Long, got: ${other.getClass}"
+          )
+
+      // Other primitive types - no conversion needed
       case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
            ProtoType.IntType | ProtoType.LongType | ProtoType.FloatType |
-           ProtoType.DoubleType | ProtoType.DateType | ProtoType.TimestampType |
-           ProtoType.TimestampNTZType | ProtoType.DayTimeIntervalType |
+           ProtoType.DoubleType | ProtoType.DayTimeIntervalType |
            ProtoType.YearMonthIntervalType | _: ProtoType.DecimalType =>
         value
 
@@ -108,11 +140,25 @@ object MockInternalTypeConverter extends InternalTypeConverter:
         // The caller is responsible for further deserialization
         value
 
-      // Primitive types - no conversion needed
+      // Temporal types - strict deserialization to standard java.time types
+      case ProtoType.DateType =>
+        java.time.LocalDate.ofEpochDay(value.asInstanceOf[Int].toLong)
+
+      case ProtoType.TimestampType =>
+        java.time.Instant.ofEpochMilli(value.asInstanceOf[Long] / 1000)
+
+      case ProtoType.TimestampNTZType =>
+        val micros = value.asInstanceOf[Long]
+        java.time.LocalDateTime.ofEpochSecond(
+          micros / 1000000,
+          ((micros % 1000000) * 1000).toInt,
+          java.time.ZoneOffset.UTC
+        )
+
+      // Other primitive types - no conversion needed
       case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
            ProtoType.IntType | ProtoType.LongType | ProtoType.FloatType |
-           ProtoType.DoubleType | ProtoType.DateType | ProtoType.TimestampType |
-           ProtoType.TimestampNTZType | ProtoType.DayTimeIntervalType |
+           ProtoType.DoubleType | ProtoType.DayTimeIntervalType |
            ProtoType.YearMonthIntervalType | _: ProtoType.DecimalType =>
         value
 
