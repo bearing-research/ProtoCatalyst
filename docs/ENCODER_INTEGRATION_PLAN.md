@@ -82,7 +82,7 @@ ExpressionEncoder[T]
 AgnosticEncoder[T]
 ├── LeafEncoder[T]
 │   ├── PrimitiveLeafEncoder (Boolean, Byte, Short, Int, Long, Float, Double)  ✅
-│   ├── BoxedLeafEncoder (java.lang.Integer, etc.)  ⏳
+│   ├── BoxedLeafEncoder (java.lang.Integer, etc.)  ✅
 │   ├── StringEncoder, BinaryEncoder  ✅
 │   ├── DateEncoder, TimestampEncoder, InstantEncoder  ✅
 │   └── ScalaDecimalEncoder, JavaDecimalEncoder  ✅
@@ -178,6 +178,8 @@ trait UnsafeRowSerializer[T]:
 | **ClassTag support** | `clsTag: ClassTag[T]` via `summonInline[ClassTag[T]]` | ✅ |
 | **Scala 3 enum support** | `Mirror.SumOf[T]` → `StringType` encoding | ✅ |
 | **Java enum support** | `E <: Enum[E]` → `StringType` encoding | ✅ |
+| **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. (nullable) | ✅ |
+| **Java BigDecimal/BigInteger** | `java.math.BigDecimal`, `java.math.BigInteger` | ✅ |
 
 ### 3.2 What's Needed Before Porting
 
@@ -186,8 +188,8 @@ trait UnsafeRowSerializer[T]:
 | **ClassTag in ProtoEncoder** | Spark's `Encoder` requires `clsTag: ClassTag[T]` | P0 | ✅ Done |
 | **Scala 3 enum support** | `Mirror.SumOf[T]` derivation → `StringType` | P2 | ✅ Done |
 | **Java enum support** | `E <: Enum[E]` type bound → `StringType` | P2 | ✅ Done |
+| **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | ✅ Done |
 | **Java Bean support** | `Encoders.bean(Class[T])` equivalent | P2 | Pending |
-| **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | Pending |
 | **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration | P2 | Pending |
 | **UDT support** | UserDefinedType integration | P3 | Pending |
 | **Kryo/Java serialization** | TransformingEncoder fallback | P3 | Pending |
@@ -330,6 +332,10 @@ trait SQLImplicits {
 | `ProductEncoder[K]` | `ProtoEncoder.derived[T]` (Mirror.ProductOf) |
 | `ScalaEnumEncoder` | `ProtoEncoder.derived[T]` (Mirror.SumOf → StringType) |
 | `JavaEnumEncoder` | `javaEnumEncoder[E <: Enum[E]]` → StringType |
+| `BoxedBooleanEncoder` | `boxedBooleanEncoder` → BooleanType (nullable) |
+| `BoxedIntEncoder` | `boxedIntEncoder` → IntType (nullable) |
+| `BoxedLongEncoder` | `boxedLongEncoder` → LongType (nullable) |
+| etc. | All boxed primitives → same type as unboxed (nullable) |
 
 ---
 
@@ -356,7 +362,7 @@ trait SQLImplicits {
 
 3. **Type coverage verification** ✅
    - Primitives, temporal types, collections, tuples, nested structs
-   - 61 encoder tests passing
+   - 74 encoder tests passing
 
 4. **Java enum support** ✅
    ```scala
@@ -364,11 +370,15 @@ trait SQLImplicits {
      JavaEnumEncoder(ct)  // Stores as StringType
    ```
 
-### Phase 2: Extended Type Support (Current)
+5. **Boxed primitives** ✅
+   ```scala
+   given boxedIntEncoder: ProtoEncoder[java.lang.Integer] =
+     BoxedPrimitiveEncoder(ProtoType.IntType, classTag[java.lang.Integer])
+   // nullable = true for all boxed types
+   // Also: java.math.BigDecimal, java.math.BigInteger
+   ```
 
-5. **Boxed primitives** (P2)
-   - java.lang.Integer, java.lang.Boolean, java.lang.Long, etc.
-   - Maps to same ProtoType as primitives
+### Phase 2: Extended Type Support (Current)
 
 6. **Additional temporal types** (P2)
    - java.sql.Date, java.sql.Timestamp (legacy compatibility)
@@ -380,7 +390,7 @@ trait SQLImplicits {
 
 ### Phase 3: Port to Spark
 
-9. **When Spark Scala 3 is ready**
+8. **When Spark Scala 3 is ready**
    - Copy ProtoEncoder derivation logic to ScalaReflection.scala
    - Adapt to use Spark's AgnosticEncoder types directly
    - Update Encoders.scala and SQLImplicits

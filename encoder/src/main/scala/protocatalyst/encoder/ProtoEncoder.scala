@@ -67,8 +67,8 @@ object ProtoEncoder:
       case (_: (t *: ts), _: (l *: ls)) =>
         val name = constValue[l].toString
         val enc = summonEncoder[t]
-        val isNullable = isOption[t]
-        FieldEncoder[t](name, enc, isNullable) +: deriveFields[ts, ls]
+        // Field is nullable if the encoder itself is nullable (Option, boxed primitives, etc.)
+        FieldEncoder[t](name, enc, enc.nullable) +: deriveFields[ts, ls]
 
   private inline def summonEncoder[T]: ProtoEncoder[T] =
     summonFrom {
@@ -80,6 +80,7 @@ object ProtoEncoder:
           "Cannot find or derive ProtoEncoder for type.\n\n" +
             "Supported types:\n" +
             "  - Primitives: Boolean, Byte, Short, Int, Long, Float, Double, String, Array[Byte], BigDecimal\n" +
+            "  - Boxed: java.lang.Integer, java.lang.Long, java.lang.Double, etc.\n" +
             "  - Temporal: java.time.LocalDate, Instant, LocalDateTime\n" +
             "  - Wrappers: Option[T]\n" +
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
@@ -129,6 +130,30 @@ object ProtoEncoder:
   given ProtoEncoder[java.time.LocalDate] = PrimitiveEncoder(ProtoType.DateType, classTag[java.time.LocalDate])
   given ProtoEncoder[java.time.Instant] = PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.Instant])
   given ProtoEncoder[java.time.LocalDateTime] = PrimitiveEncoder(ProtoType.TimestampNTZType, classTag[java.time.LocalDateTime])
+
+  // === Boxed primitive encoders ===
+  // Java wrapper classes - nullable since they can be null (unlike primitives)
+  // Note: Scala 3 unifies scala.Int with java.lang.Integer, etc.
+  // We use explicit names to avoid conflicts with primitive encoders.
+
+  private class BoxedPrimitiveEncoder[T](val catalystType: ProtoType, val clsTag: ClassTag[T]) extends ProtoEncoder[T]:
+    val schema: ProtoSchema = ProtoSchema(Vector.empty)
+    val nullable: Boolean = true // Boxed types can be null
+
+  // Note: In Scala 3, java.lang.Integer IS scala.Int at the type level, but they differ at runtime
+  // We provide boxed encoders with explicit names and lower priority to avoid ambiguity
+  given boxedBooleanEncoder: ProtoEncoder[java.lang.Boolean] = BoxedPrimitiveEncoder(ProtoType.BooleanType, classTag[java.lang.Boolean])
+  given boxedByteEncoder: ProtoEncoder[java.lang.Byte] = BoxedPrimitiveEncoder(ProtoType.ByteType, classTag[java.lang.Byte])
+  given boxedShortEncoder: ProtoEncoder[java.lang.Short] = BoxedPrimitiveEncoder(ProtoType.ShortType, classTag[java.lang.Short])
+  given boxedIntEncoder: ProtoEncoder[java.lang.Integer] = BoxedPrimitiveEncoder(ProtoType.IntType, classTag[java.lang.Integer])
+  given boxedLongEncoder: ProtoEncoder[java.lang.Long] = BoxedPrimitiveEncoder(ProtoType.LongType, classTag[java.lang.Long])
+  given boxedFloatEncoder: ProtoEncoder[java.lang.Float] = BoxedPrimitiveEncoder(ProtoType.FloatType, classTag[java.lang.Float])
+  given boxedDoubleEncoder: ProtoEncoder[java.lang.Double] = BoxedPrimitiveEncoder(ProtoType.DoubleType, classTag[java.lang.Double])
+  given boxedCharEncoder: ProtoEncoder[java.lang.Character] = BoxedPrimitiveEncoder(ProtoType.StringType, classTag[java.lang.Character])
+
+  // Java BigDecimal and BigInteger
+  given javaBigDecimalEncoder: ProtoEncoder[java.math.BigDecimal] = BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[java.math.BigDecimal])
+  given javaBigIntegerEncoder: ProtoEncoder[java.math.BigInteger] = BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 0), classTag[java.math.BigInteger])
 
   // === Option encoder ===
 

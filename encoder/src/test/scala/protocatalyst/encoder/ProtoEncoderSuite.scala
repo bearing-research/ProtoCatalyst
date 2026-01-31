@@ -381,3 +381,104 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
     assertEquals(enc.fields(1).name, "priority")
     assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)  // Java enum as string
+
+  // === Boxed primitive encoder tests ===
+
+  test("java.lang.Boolean encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Boolean]]
+    assertEquals(enc.catalystType, ProtoType.BooleanType)
+    assertEquals(enc.nullable, true) // Boxed types are nullable
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Boolean])
+
+  test("java.lang.Integer encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Integer]]
+    assertEquals(enc.catalystType, ProtoType.IntType)
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Integer])
+
+  test("java.lang.Long encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Long]]
+    assertEquals(enc.catalystType, ProtoType.LongType)
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Long])
+
+  test("java.lang.Double encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Double]]
+    assertEquals(enc.catalystType, ProtoType.DoubleType)
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Double])
+
+  test("java.lang.Float encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Float]]
+    assertEquals(enc.catalystType, ProtoType.FloatType)
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Float])
+
+  test("java.lang.Byte encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Byte]]
+    assertEquals(enc.catalystType, ProtoType.ByteType)
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Byte])
+
+  test("java.lang.Short encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Short]]
+    assertEquals(enc.catalystType, ProtoType.ShortType)
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Short])
+
+  test("java.lang.Character encoder"):
+    val enc = summon[ProtoEncoder[java.lang.Character]]
+    assertEquals(enc.catalystType, ProtoType.StringType) // Char stored as String
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Character])
+
+  test("java.math.BigDecimal encoder"):
+    val enc = summon[ProtoEncoder[java.math.BigDecimal]]
+    enc.catalystType match
+      case ProtoType.DecimalType(precision, scale) =>
+        assertEquals(precision, 38)
+        assertEquals(scale, 18)
+      case other =>
+        fail(s"Expected DecimalType, got $other")
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.math.BigDecimal])
+
+  test("java.math.BigInteger encoder"):
+    val enc = summon[ProtoEncoder[java.math.BigInteger]]
+    enc.catalystType match
+      case ProtoType.DecimalType(precision, scale) =>
+        assertEquals(precision, 38)
+        assertEquals(scale, 0) // BigInteger has no fractional part
+      case other =>
+        fail(s"Expected DecimalType, got $other")
+    assertEquals(enc.nullable, true)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.math.BigInteger])
+
+  test("Option of boxed primitive"):
+    val enc = summon[ProtoEncoder[Option[java.lang.Integer]]]
+    assertEquals(enc.catalystType, ProtoType.IntType)
+    assertEquals(enc.nullable, true)
+
+  test("List of boxed primitives"):
+    val enc = summon[ProtoEncoder[List[java.lang.Double]]]
+    enc.catalystType match
+      case ProtoType.ArrayType(elemType, containsNull) =>
+        assertEquals(elemType, ProtoType.DoubleType)
+        assertEquals(containsNull, true) // Boxed types are nullable
+      case other =>
+        fail(s"Expected ArrayType, got $other")
+
+  test("case class containing boxed primitives"):
+    case class BoxedContainer(count: java.lang.Integer, value: java.lang.Double, flag: java.lang.Boolean)
+    val enc = ProtoEncoder.derived[BoxedContainer]
+
+    assertEquals(enc.fields.size, 3)
+    assertEquals(enc.fields(0).name, "count")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntType)
+    assertEquals(enc.fields(0).nullable, true)  // Boxed Integer is nullable
+    assertEquals(enc.fields(1).name, "value")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.DoubleType)
+    assertEquals(enc.fields(1).nullable, true)  // Boxed Double is nullable
+    assertEquals(enc.fields(2).name, "flag")
+    assertEquals(enc.fields(2).encoder.catalystType, ProtoType.BooleanType)
+    assertEquals(enc.fields(2).nullable, true)  // Boxed Boolean is nullable
