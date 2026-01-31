@@ -385,12 +385,15 @@ object TypeConverter:
       case DateType => MDT.DateType
       case TimestampType => MDT.TimestampType
       case TimestampNTZType => MDT.TimestampNTZType
+      case DayTimeIntervalType => MDT.DayTimeIntervalType
+      case YearMonthIntervalType => MDT.YearMonthIntervalType
       case DecimalType(p, s) => MDT.DecimalType(p, s)
       case ArrayType(elem, containsNull) => MDT.ArrayType(toMock(elem), containsNull)
       case MapType(key, value, valueContainsNull) => MDT.MapType(toMock(key), toMock(value), valueContainsNull)
       case StructType(fields) => MDT.StructType(fields.map(f =>
         MockStructField(f.name, toMock(f.dataType), f.nullable)
       ))
+      case UDTType(_, sqlType) => toMock(sqlType) // UDT uses underlying SQL type
       case UnresolvedType(hint) => MDT.StringType // Fallback
 
   def fromMock(mdt: MockDataType): ProtoType =
@@ -410,6 +413,8 @@ object TypeConverter:
       case MDT.DateType => PT.DateType
       case MDT.TimestampType => PT.TimestampType
       case MDT.TimestampNTZType => PT.TimestampNTZType
+      case MDT.DayTimeIntervalType => PT.DayTimeIntervalType
+      case MDT.YearMonthIntervalType => PT.YearMonthIntervalType
       case MDT.DecimalType(p, s) => PT.DecimalType(p, s)
       case MDT.ArrayType(elem, containsNull) => PT.ArrayType(fromMock(elem), containsNull)
       case MDT.MapType(key, value, valueContainsNull) => PT.MapType(fromMock(key), fromMock(value), valueContainsNull)

@@ -97,7 +97,7 @@ AgnosticEncoder[T]
 ├── EnumEncoder
 │   ├── ScalaEnumEncoder  ✅ (Scala 3 via Mirror.SumOf)
 │   └── JavaEnumEncoder  ✅ (via type bound E <: Enum[E])
-├── UDTEncoder  ⏳
+├── UDTEncoder  ✅ (via ProtoUDT trait)
 └── TransformingEncoder (Kryo, Java serialization)  ⏳
 ```
 
@@ -182,6 +182,7 @@ trait UnsafeRowSerializer[T]:
 | **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. (nullable) | ✅ |
 | **Java BigDecimal/BigInteger** | `java.math.BigDecimal`, `java.math.BigInteger` | ✅ |
 | **Java Bean support** | `JavaBeanEncoder(Class[T])` via runtime introspection | ✅ |
+| **UDT support** | `ProtoUDT[T]` trait with serialize/deserialize | ✅ |
 
 ### 3.2 What's Needed Before Porting
 
@@ -193,7 +194,7 @@ trait UnsafeRowSerializer[T]:
 | **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | ✅ Done |
 | **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration, Period | P2 | ✅ Done |
 | **Java Bean support** | `JavaBeanEncoder(Class[T])` runtime introspection | P2 | ✅ Done |
-| **UDT support** | UserDefinedType integration | P3 | Pending |
+| **UDT support** | `ProtoUDT[T]` with sqlType, serialize, deserialize | P3 | ✅ Done |
 | **Kryo/Java serialization** | TransformingEncoder fallback | P3 | Pending |
 | **Lenient serialization** | Multiple input types for dates/timestamps | P3 | Pending |
 
@@ -317,6 +318,9 @@ trait SQLImplicits {
 | `ProtoType.ArrayType(e, n)` | `ArrayType(e, n)` | Direct |
 | `ProtoType.MapType(k, v, n)` | `MapType(k, v, n)` | Direct |
 | `ProtoType.StructType(fields)` | `StructType(fields)` | Direct |
+| `ProtoType.UDTType(cls, sql)` | `UserDefinedType[T]` | Wraps sqlType |
+| `ProtoType.DayTimeIntervalType` | `DayTimeIntervalType` | Direct |
+| `ProtoType.YearMonthIntervalType` | `YearMonthIntervalType` | Direct |
 
 ### 5.2 Encoder Mapping
 
@@ -343,6 +347,7 @@ trait SQLImplicits {
 | `BoxedLongEncoder` | `boxedLongEncoder` → LongType (nullable) |
 | etc. | All boxed primitives → same type as unboxed (nullable) |
 | `JavaBeanEncoder[K]` | `JavaBeanEncoder(Class[T])` → runtime introspection |
+| `UDTEncoder[T]` | `ProtoEncoder.fromUDT(ProtoUDT[T])` → wraps sqlType |
 
 ---
 
@@ -402,7 +407,20 @@ trait SQLImplicits {
        // Uses java.beans.Introspector for property discovery
        // Supports nested beans, primitives, boxed types, temporal, enums
    ```
-   - 91 encoder tests passing
+
+8. **UDT (User-Defined Type) support** ✅
+   ```scala
+   trait ProtoUDT[UserType >: Null]:
+     def sqlType: ProtoType              // Underlying storage type
+     def serialize(obj: UserType): Any   // Convert to SQL datum
+     def deserialize(datum: Any): UserType  // Convert from SQL datum
+     def userClass: Class[UserType]      // User-facing class
+
+   object ProtoEncoder:
+     def fromUDT[T >: Null](udt: ProtoUDT[T]): ProtoEncoder[T]
+     given udtEncoder[T >: Null](using udt: ProtoUDT[T]): ProtoEncoder[T]
+   ```
+   - 92 encoder tests passing
 
 ### Phase 2: Extended Type Support ✅ COMPLETE
 
@@ -413,6 +431,7 @@ All P2 features implemented:
 - Boxed primitives ✅
 - Additional temporal types ✅
 - Java Bean support ✅
+- UDT support ✅
 
 ### Phase 3: Port to Spark
 

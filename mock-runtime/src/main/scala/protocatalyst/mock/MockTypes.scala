@@ -45,6 +45,12 @@ object MockDataType:
   case object TimestampNTZType extends MockDataType:
     def typeName = "timestamp_ntz"
 
+  case object DayTimeIntervalType extends MockDataType:
+    def typeName = "interval day to second"
+
+  case object YearMonthIntervalType extends MockDataType:
+    def typeName = "interval year to month"
+
   case class DecimalType(precision: Int, scale: Int) extends MockDataType:
     def typeName = s"decimal($precision,$scale)"
 

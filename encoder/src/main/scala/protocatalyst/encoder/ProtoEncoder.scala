@@ -86,10 +86,12 @@ object ProtoEncoder:
             "  - Wrappers: Option[T]\n" +
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
             "  - Products: case classes, tuples\n" +
-            "  - Enums: Scala 3 enums, Java enums\n\n" +
+            "  - Enums: Scala 3 enums, Java enums\n" +
+            "  - UDTs: Types with a ProtoUDT[T] in scope\n\n" +
             "For custom types, either:\n" +
             "  1. Define a case class and use ProtoEncoder.derived[YourType]\n" +
-            "  2. Provide a given ProtoEncoder[YourType] instance manually"
+            "  2. Provide a given ProtoEncoder[YourType] instance manually\n" +
+            "  3. Define a ProtoUDT[YourType] for complex serialization needs"
         )
     }
 
@@ -283,3 +285,49 @@ object ProtoEncoder:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.StringType // Java enums stored as strings
     val nullable: Boolean = false
+
+  // === UDT (User-Defined Type) encoder ===
+
+  /**
+   * Create an encoder for a type with a ProtoUDT.
+   * The encoder wraps the UDT's sqlType with UDT metadata for proper serialization.
+   *
+   * Usage:
+   * {{{
+   * case class Point(x: Double, y: Double)
+   * object PointUDT extends ProtoUDT[Point] { ... }
+   *
+   * // Option 1: Explicit encoder creation
+   * given ProtoEncoder[Point] = ProtoEncoder.fromUDT(PointUDT)
+   *
+   * // Option 2: Use the udtEncoder given with implicit UDT
+   * given ProtoUDT[Point] = PointUDT
+   * val enc = summon[ProtoEncoder[Point]]  // Uses udtEncoder
+   * }}}
+   */
+  def fromUDT[T >: Null](udt: ProtoUDT[T]): ProtoEncoder[T] =
+    ProtoUDT.register(udt)
+    UDTEncoder(udt)
+
+  /**
+   * Implicit encoder derivation for types with a ProtoUDT in scope.
+   * This allows automatic encoder creation when a UDT is available.
+   */
+  given udtEncoder[T >: Null](using udt: ProtoUDT[T]): ProtoEncoder[T] =
+    fromUDT(udt)
+
+  private class UDTEncoder[T >: Null](udt: ProtoUDT[T]) extends ProtoEncoder[T]:
+    val schema: ProtoSchema = udt.sqlType match
+      case ProtoType.StructType(fields) => ProtoSchema(fields)
+      case _ => ProtoSchema(Vector.empty)
+    val catalystType: ProtoType = udt.protoType
+    val nullable: Boolean = udt.nullable
+    val clsTag: ClassTag[T] = udt.classTag
+
+    /** Access the underlying UDT for serialization/deserialization. */
+    def protoUDT: ProtoUDT[T] = udt
+
+  /** Extract the UDT from an encoder if it's a UDT encoder. */
+  def extractUDT[T >: Null](enc: ProtoEncoder[T]): Option[ProtoUDT[T]] = enc match
+    case udtEnc: UDTEncoder[T @unchecked] => Some(udtEnc.protoUDT)
+    case _ => None

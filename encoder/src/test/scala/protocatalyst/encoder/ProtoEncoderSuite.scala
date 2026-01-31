@@ -658,3 +658,167 @@ class ProtoEncoderSuite extends munit.FunSuite:
         assertEquals(enc.schema.fields, fields)
       case other =>
         fail(s"Expected StructType, got $other")
+
+  // === UDT encoder tests ===
+
+  test("UDT encoder from explicit fromUDT"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+
+    // Check UDT type wrapping
+    enc.catalystType match
+      case ProtoType.UDTType(className, sqlType) =>
+        assert(className.contains("PointUDT"))
+        sqlType match
+          case ProtoType.StructType(fields) =>
+            assertEquals(fields.size, 2)
+            assertEquals(fields(0).name, "x")
+            assertEquals(fields(0).dataType, ProtoType.DoubleType)
+            assertEquals(fields(1).name, "y")
+            assertEquals(fields(1).dataType, ProtoType.DoubleType)
+          case other =>
+            fail(s"Expected StructType as sqlType, got $other")
+      case other =>
+        fail(s"Expected UDTType, got $other")
+
+  test("UDT encoder has correct ClassTag"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+    assertEquals(enc.clsTag.runtimeClass, classOf[TestUDTs.Point])
+
+  test("UDT encoder has correct schema"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+    assertEquals(enc.schema.fields.size, 2)
+    assertEquals(enc.schema.fields(0).name, "x")
+    assertEquals(enc.schema.fields(1).name, "y")
+
+  test("UDT encoder nullable defaults to true"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+    assertEquals(enc.nullable, true)
+
+  test("UDT encoder with binary sqlType"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.RGBColorUDT)
+
+    enc.catalystType match
+      case ProtoType.UDTType(className, ProtoType.BinaryType) =>
+        assert(className.contains("RGBColorUDT"))
+      case other =>
+        fail(s"Expected UDTType with BinaryType, got $other")
+
+    // Binary types have empty schema
+    assertEquals(enc.schema.fields.size, 0)
+
+  test("UDT encoder with array sqlType"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.ComplexNumberUDT)
+
+    enc.catalystType match
+      case ProtoType.UDTType(className, ProtoType.ArrayType(ProtoType.DoubleType, false)) =>
+        assert(className.contains("ComplexNumberUDT"))
+      case other =>
+        fail(s"Expected UDTType with ArrayType[Double], got $other")
+
+  test("UDT encoder with primitive sqlType"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.IPAddressUDT)
+
+    enc.catalystType match
+      case ProtoType.UDTType(className, ProtoType.IntType) =>
+        assert(className.contains("IPAddressUDT"))
+      case other =>
+        fail(s"Expected UDTType with IntType, got $other")
+
+  test("UDT encoder non-nullable"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.NonEmptyStringUDT)
+    assertEquals(enc.nullable, false)
+
+  test("UDT serialization roundtrip - Point"):
+    val udt = TestUDTs.PointUDT
+    val point = TestUDTs.Point(3.0, 4.0)
+
+    val serialized = udt.serialize(point)
+    val deserialized = udt.deserialize(serialized)
+
+    assertEquals(deserialized, point)
+
+  test("UDT serialization roundtrip - RGBColor"):
+    val udt = TestUDTs.RGBColorUDT
+    val color = TestUDTs.RGBColor(255, 128, 0)
+
+    val serialized = udt.serialize(color)
+    val deserialized = udt.deserialize(serialized)
+
+    assertEquals(deserialized, color)
+
+  test("UDT serialization roundtrip - ComplexNumber"):
+    val udt = TestUDTs.ComplexNumberUDT
+    val complex = TestUDTs.ComplexNumber(3.0, 4.0)
+
+    val serialized = udt.serialize(complex)
+    val deserialized = udt.deserialize(serialized)
+
+    assertEquals(deserialized, complex)
+
+  test("UDT serialization roundtrip - IPAddress"):
+    val udt = TestUDTs.IPAddressUDT
+    val ip = TestUDTs.IPAddress(192, 168, 1, 1)
+
+    val serialized = udt.serialize(ip)
+    val deserialized = udt.deserialize(serialized)
+
+    assertEquals(deserialized, ip)
+
+  test("UDT serialization null handling"):
+    val udt = TestUDTs.PointUDT
+    val serialized = udt.serialize(null)
+    assertEquals(serialized, null)
+    val deserialized = udt.deserialize(null)
+    assertEquals(deserialized, null)
+
+  test("UDT registry stores and retrieves UDTs"):
+    ProtoUDT.clearRegistry()
+
+    // Creating encoder should register the UDT
+    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+
+    // Lookup by UDT class name
+    val byClassName = ProtoUDT.lookup(TestUDTs.PointUDT.getClass.getName)
+    assert(byClassName.isDefined)
+
+    // Lookup by user class
+    val byUserClass = ProtoUDT.lookupByUserClass(classOf[TestUDTs.Point])
+    assert(byUserClass.isDefined)
+
+  test("UDT encoder via given instance"):
+    // Provide UDT as given
+    given ProtoUDT[TestUDTs.Point] = TestUDTs.PointUDT
+
+    // summon should find the udtEncoder
+    val enc = summon[ProtoEncoder[TestUDTs.Point]]
+
+    enc.catalystType match
+      case ProtoType.UDTType(className, _) =>
+        assert(className.contains("PointUDT"))
+      case other =>
+        fail(s"Expected UDTType, got $other")
+
+  test("UDT typeName"):
+    assertEquals(TestUDTs.PointUDT.typeName, "Point")
+    assertEquals(TestUDTs.RGBColorUDT.typeName, "RGB")
+    assertEquals(TestUDTs.IPAddressUDT.typeName, "IPv4")
+
+  test("UDT protoType"):
+    val protoType = TestUDTs.PointUDT.protoType
+    protoType match
+      case ProtoType.UDTType(className, sqlType) =>
+        assert(className.contains("PointUDT"))
+        assertEquals(sqlType, TestUDTs.PointUDT.sqlType)
+      case other =>
+        fail(s"Expected UDTType, got $other")
+
+  test("extractUDT from UDT encoder"):
+    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+    val extracted = ProtoEncoder.extractUDT(enc)
+    assert(extracted.isDefined)
+    assertEquals(extracted.get.userClass, classOf[TestUDTs.Point])
+
+  test("extractUDT from non-UDT encoder"):
+    val enc = summon[ProtoEncoder[String]]
+    val extracted = ProtoEncoder.extractUDT(enc)
+    assert(extracted.isEmpty)

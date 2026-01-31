@@ -22,6 +22,8 @@ object MockSchemaConverter:
     case ProtoType.DateType         => MockDataType.DateType
     case ProtoType.TimestampType    => MockDataType.TimestampType
     case ProtoType.TimestampNTZType => MockDataType.TimestampNTZType
+    case ProtoType.DayTimeIntervalType => MockDataType.DayTimeIntervalType
+    case ProtoType.YearMonthIntervalType => MockDataType.YearMonthIntervalType
     case ProtoType.DecimalType(p, s) =>
       MockDataType.DecimalType(p, s)
     case ProtoType.ArrayType(elem, containsNull) =>
@@ -30,6 +32,10 @@ object MockSchemaConverter:
       MockDataType.MapType(toMockType(key), toMockType(value), valueContainsNull)
     case ProtoType.StructType(fields) =>
       MockDataType.StructType(fields.map(toMockField))
+    case ProtoType.UDTType(_, sqlType) =>
+      // For UDTs, convert the underlying SQL type
+      // The mock runtime doesn't need UDT metadata - just the storage type
+      toMockType(sqlType)
     case ProtoType.UnresolvedType(hint) =>
       throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")
 
@@ -52,6 +58,8 @@ object MockSchemaConverter:
     case MockDataType.DateType         => ProtoType.DateType
     case MockDataType.TimestampType    => ProtoType.TimestampType
     case MockDataType.TimestampNTZType => ProtoType.TimestampNTZType
+    case MockDataType.DayTimeIntervalType => ProtoType.DayTimeIntervalType
+    case MockDataType.YearMonthIntervalType => ProtoType.YearMonthIntervalType
     case MockDataType.DecimalType(p, s) =>
       ProtoType.DecimalType(p, s)
     case MockDataType.ArrayType(elem, containsNull) =>

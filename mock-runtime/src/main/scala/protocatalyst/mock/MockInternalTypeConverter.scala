@@ -64,8 +64,13 @@ object MockInternalTypeConverter extends InternalTypeConverter:
       case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
            ProtoType.IntType | ProtoType.LongType | ProtoType.FloatType |
            ProtoType.DoubleType | ProtoType.DateType | ProtoType.TimestampType |
-           ProtoType.TimestampNTZType | _: ProtoType.DecimalType =>
+           ProtoType.TimestampNTZType | ProtoType.DayTimeIntervalType |
+           ProtoType.YearMonthIntervalType | _: ProtoType.DecimalType =>
         value
+
+      // UDT types - convert using the underlying SQL type
+      case ProtoType.UDTType(_, sqlType) =>
+        toInternal(value, sqlType)
 
       case ProtoType.UnresolvedType(hint) =>
         throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")
@@ -107,8 +112,13 @@ object MockInternalTypeConverter extends InternalTypeConverter:
       case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
            ProtoType.IntType | ProtoType.LongType | ProtoType.FloatType |
            ProtoType.DoubleType | ProtoType.DateType | ProtoType.TimestampType |
-           ProtoType.TimestampNTZType | _: ProtoType.DecimalType =>
+           ProtoType.TimestampNTZType | ProtoType.DayTimeIntervalType |
+           ProtoType.YearMonthIntervalType | _: ProtoType.DecimalType =>
         value
+
+      // UDT types - convert using the underlying SQL type
+      case ProtoType.UDTType(_, sqlType) =>
+        fromInternal(value, sqlType)
 
       case ProtoType.UnresolvedType(hint) =>
         throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")

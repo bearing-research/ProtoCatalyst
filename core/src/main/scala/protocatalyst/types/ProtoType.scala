@@ -22,6 +22,7 @@ enum ProtoType extends Serializable:
   case ArrayType(elementType: ProtoType, containsNull: Boolean)
   case MapType(keyType: ProtoType, valueType: ProtoType, valueContainsNull: Boolean)
   case StructType(fields: Vector[ProtoStructField])
+  case UDTType(udtClassName: String, sqlType: ProtoType)
   case UnresolvedType(hint: String)
 
 case class ProtoStructField(

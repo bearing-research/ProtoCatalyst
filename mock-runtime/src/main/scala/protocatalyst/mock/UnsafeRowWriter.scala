@@ -201,6 +201,8 @@ class UnsafeRowWriter(numFields: Int):
       case MockDataType.DateType => write(ordinal, value.asInstanceOf[Int]) // Days since epoch
       case MockDataType.TimestampType => write(ordinal, value.asInstanceOf[Long]) // Micros since epoch
       case MockDataType.TimestampNTZType => write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.DayTimeIntervalType => write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.YearMonthIntervalType => write(ordinal, value.asInstanceOf[Int])
       case _: MockDataType.DecimalType =>
         value match
           case bd: BigDecimal => write(ordinal, bd.underlying.unscaledValue().longValue())

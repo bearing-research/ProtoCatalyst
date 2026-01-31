@@ -183,6 +183,8 @@ class MockUnsafeRow private (
       case MockDataType.DateType => getInt(ordinal) // Days since epoch
       case MockDataType.TimestampType => getLong(ordinal) // Micros since epoch
       case MockDataType.TimestampNTZType => getLong(ordinal)
+      case MockDataType.DayTimeIntervalType => getLong(ordinal) // Duration as micros
+      case MockDataType.YearMonthIntervalType => getInt(ordinal) // Period as months
       case _: MockDataType.DecimalType => getDecimal(ordinal)
       case st: MockDataType.StructType => getStruct(ordinal, st.fields.size)
       case _: MockDataType.ArrayType => getArray(ordinal)

@@ -131,6 +131,8 @@ object UnsafeRowSerializer:
       case MockDataType.DateType => writer.write(ordinal, value.asInstanceOf[Int])
       case MockDataType.TimestampType => writer.write(ordinal, value.asInstanceOf[Long])
       case MockDataType.TimestampNTZType => writer.write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.DayTimeIntervalType => writer.write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.YearMonthIntervalType => writer.write(ordinal, value.asInstanceOf[Int])
       case _: MockDataType.DecimalType =>
         value match
           case bd: BigDecimal => writer.write(ordinal, bd.underlying.unscaledValue().longValue())
@@ -183,6 +185,8 @@ object UnsafeRowSerializer:
       case MockDataType.DateType => row.getInt(ordinal)
       case MockDataType.TimestampType => row.getLong(ordinal)
       case MockDataType.TimestampNTZType => row.getLong(ordinal)
+      case MockDataType.DayTimeIntervalType => row.getLong(ordinal)
+      case MockDataType.YearMonthIntervalType => row.getInt(ordinal)
       case _: MockDataType.DecimalType => row.getDecimal(ordinal)
       case st: MockDataType.StructType =>
         val nestedRow = row.getStruct(ordinal, st.fields.size)
