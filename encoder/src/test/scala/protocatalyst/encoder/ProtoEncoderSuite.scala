@@ -10,6 +10,16 @@ case class Employee(person: Person, address: Address, salary: Double) derives Pr
 case class OptionalFields(required: String, optional: Option[Int]) derives ProtoEncoder
 case class WithCollections(tags: List[String], scores: Map[String, Int]) derives ProtoEncoder
 
+// Test enums
+enum Color derives ProtoEncoder:
+  case Red, Green, Blue
+
+enum Status derives ProtoEncoder:
+  case Pending, Active, Completed, Cancelled
+
+// Case class containing enum
+case class Task(name: String, status: Status) derives ProtoEncoder
+
 class ProtoEncoderSuite extends munit.FunSuite:
 
   // === Primitive encoder tests ===
@@ -275,3 +285,45 @@ class ProtoEncoderSuite extends munit.FunSuite:
     val arr = enc.clsTag.newArray(5)
     assertEquals(arr.length, 5)
     assert(arr.isInstanceOf[Array[Person]])
+
+  // === Enum encoder tests ===
+
+  test("enum encoder uses StringType"):
+    val enc = ProtoEncoder.derived[Color]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.nullable, false)
+
+  test("enum encoder has correct ClassTag"):
+    val enc = ProtoEncoder.derived[Color]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Color])
+
+  test("enum with multiple cases"):
+    val enc = ProtoEncoder.derived[Status]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.clsTag.runtimeClass, classOf[Status])
+
+  test("case class containing enum"):
+    val enc = ProtoEncoder.derived[Task]
+
+    assertEquals(enc.fields.size, 2)
+    assertEquals(enc.fields(0).name, "name")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
+    assertEquals(enc.fields(1).name, "status")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)  // enum as string
+
+  test("enum can be summoned via given"):
+    val enc = summon[ProtoEncoder[Color]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+
+  test("option of enum"):
+    val enc = summon[ProtoEncoder[Option[Status]]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.nullable, true)
+
+  test("list of enums"):
+    val enc = summon[ProtoEncoder[List[Color]]]
+    enc.catalystType match
+      case ProtoType.ArrayType(elemType, _) =>
+        assertEquals(elemType, ProtoType.StringType)
+      case other =>
+        fail(s"Expected ArrayType, got $other")

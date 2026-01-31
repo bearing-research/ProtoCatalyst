@@ -33,11 +33,9 @@ object ProtoEncoder:
       case p: Mirror.ProductOf[T] =>
         val ct = summonInline[ClassTag[T]]
         deriveProduct[T](p, ct)
-      case _: Mirror.SumOf[T] =>
-        error(
-          "Sum types (enums/sealed traits) are not yet supported by ProtoEncoder.\n" +
-            "Consider using a case class wrapper or wait for future enum support."
-        )
+      case s: Mirror.SumOf[T] =>
+        val ct = summonInline[ClassTag[T]]
+        deriveEnum[T](s, ct)
 
   // === Product (case class) derivation ===
 
@@ -47,6 +45,20 @@ object ProtoEncoder:
       ProtoStructField(fe.name, fe.encoder.catalystType, fe.nullable)
     }
     makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields), ct)
+
+  // === Enum (sum type) derivation ===
+
+  private inline def deriveEnum[T](m: Mirror.SumOf[T], ct: ClassTag[T]): ProtoEncoder[T] =
+    // Enums are stored as StringType (by name)
+    // This matches Spark's EnumEncoder behavior
+    makeEnumEncoder[T](ct)
+
+  /** Factory method for enum encoders. */
+  def makeEnumEncoder[T](ct: ClassTag[T]): ProtoEncoder[T] = new ProtoEncoder[T]:
+    def schema: ProtoSchema = ProtoSchema(Vector.empty)
+    val catalystType: ProtoType = ProtoType.StringType  // Enums stored as strings
+    val nullable: Boolean = false
+    val clsTag: ClassTag[T] = ct
 
   private inline def deriveFields[Types <: Tuple, Labels <: Tuple]: Vector[FieldEncoder[?]] =
     inline (erasedValue[Types], erasedValue[Labels]) match
@@ -62,6 +74,7 @@ object ProtoEncoder:
     summonFrom {
       case enc: ProtoEncoder[T] => enc
       case _: Mirror.ProductOf[T] => derived[T]
+      case _: Mirror.SumOf[T] => derived[T]  // Support enums as fields
       case _ =>
         error(
           "Cannot find or derive ProtoEncoder for type.\n\n" +
@@ -70,7 +83,8 @@ object ProtoEncoder:
             "  - Temporal: java.time.LocalDate, Instant, LocalDateTime\n" +
             "  - Wrappers: Option[T]\n" +
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
-            "  - Products: case classes, tuples\n\n" +
+            "  - Products: case classes, tuples\n" +
+            "  - Enums: Scala 3 enums\n\n" +
             "For custom types, either:\n" +
             "  1. Define a case class and use ProtoEncoder.derived[YourType]\n" +
             "  2. Provide a given ProtoEncoder[YourType] instance manually"
