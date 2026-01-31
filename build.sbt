@@ -50,7 +50,20 @@ lazy val encoder = project
   .dependsOn(core)
   .settings(
     name := "protocatalyst-encoder",
-    commonSettings
+    commonSettings,
+    libraryDependencies ++= Seq(
+      // Optional serialization backends for TransformingEncoder
+      "com.esotericsoftware" % "kryo" % "5.6.0",
+      "org.apache.fury" % "fury-core" % "0.10.1",
+      "org.apache.fury" %% "fury-scala" % "0.10.1"
+    ),
+    // Fury needs access to internal JVM modules for code generation
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED"
+    ),
+    Test / fork := true
   )
 
 // SQL Parser module: compile-time SQL parsing

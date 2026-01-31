@@ -195,7 +195,7 @@ trait UnsafeRowSerializer[T]:
 | **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration, Period | P2 | ✅ Done |
 | **Java Bean support** | `JavaBeanEncoder(Class[T])` runtime introspection | P2 | ✅ Done |
 | **UDT support** | `ProtoUDT[T]` with sqlType, serialize, deserialize | P3 | ✅ Done |
-| **Kryo/Java serialization** | TransformingEncoder fallback | P3 | Pending |
+| **Kryo/Java/Fory serialization** | TransformingEncoder with Codec abstraction | P3 | ✅ Done |
 | **Lenient serialization** | Multiple input types for dates/timestamps | P3 | Pending |
 
 ---
