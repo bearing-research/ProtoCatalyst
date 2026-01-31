@@ -546,3 +546,115 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(4).encoder.catalystType, ProtoType.DateType)
     assertEquals(enc.fields(5).name, "sqlTimestamp")
     assertEquals(enc.fields(5).encoder.catalystType, ProtoType.TimestampType)
+
+  // === Java Bean encoder tests ===
+
+  test("JavaBeanEncoder simple bean"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.SimplePerson])
+
+    assertEquals(enc.fields.size, 2)
+    // Fields are sorted alphabetically
+    assertEquals(enc.fields(0).name, "age")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntType)
+    assertEquals(enc.fields(0).nullable, false) // primitive int
+    assertEquals(enc.fields(1).name, "name")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)
+
+  test("JavaBeanEncoder with primitives"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.PrimitiveBean])
+
+    assertEquals(enc.fields.size, 8)
+    // All primitives should be non-nullable
+    enc.fields.foreach { f =>
+      assertEquals(f.nullable, false, s"Field ${f.name} should be non-nullable")
+    }
+
+  test("JavaBeanEncoder with boxed types"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.BoxedBean])
+
+    assertEquals(enc.fields.size, 4)
+    // All boxed types should be nullable
+    enc.fields.foreach { f =>
+      assertEquals(f.nullable, true, s"Field ${f.name} should be nullable")
+    }
+
+  test("JavaBeanEncoder with temporal types"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.TemporalBean])
+
+    assertEquals(enc.fields.size, 2)
+    assertEquals(enc.fields(0).name, "date")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.DateType)
+    assertEquals(enc.fields(1).name, "timestamp")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.TimestampType)
+
+  test("JavaBeanEncoder with BigDecimal"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.DecimalBean])
+
+    assertEquals(enc.fields.size, 2)
+    assertEquals(enc.fields(0).name, "amount")
+    enc.fields(0).encoder.catalystType match
+      case ProtoType.DecimalType(38, 18) => () // ok
+      case other => fail(s"Expected DecimalType(38, 18), got $other")
+    assertEquals(enc.fields(0).nullable, true) // java.math.BigDecimal is nullable
+
+  test("JavaBeanEncoder with enum"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.EnumBean])
+
+    assertEquals(enc.fields.size, 2)
+    assertEquals(enc.fields(0).name, "name")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
+    assertEquals(enc.fields(1).name, "priority")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType) // enum as string
+
+  test("JavaBeanEncoder with nested bean"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.NestedBean])
+
+    assertEquals(enc.fields.size, 2)
+    assertEquals(enc.fields(0).name, "id")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
+    assertEquals(enc.fields(1).name, "person")
+
+    // Check nested struct
+    enc.fields(1).encoder.catalystType match
+      case ProtoType.StructType(nestedFields) =>
+        assertEquals(nestedFields.size, 2)
+        assertEquals(nestedFields(0).name, "age")
+        assertEquals(nestedFields(1).name, "name")
+      case other =>
+        fail(s"Expected StructType for nested bean, got $other")
+
+  test("JavaBeanEncoder deeply nested"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.Employee])
+
+    assertEquals(enc.fields.size, 4)
+    // Fields sorted: address, employeeId, person, salary
+    assertEquals(enc.fields(0).name, "address")
+    assertEquals(enc.fields(1).name, "employeeId")
+    assertEquals(enc.fields(2).name, "person")
+    assertEquals(enc.fields(3).name, "salary")
+
+    // Check address struct
+    enc.fields(0).encoder.catalystType match
+      case ProtoType.StructType(addressFields) =>
+        assertEquals(addressFields.size, 3)
+        // city, street, zipCode (sorted)
+        assertEquals(addressFields(0).name, "city")
+        assertEquals(addressFields(1).name, "street")
+        assertEquals(addressFields(2).name, "zipCode")
+      case other =>
+        fail(s"Expected StructType for address, got $other")
+
+  test("JavaBeanEncoder has correct ClassTag"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.SimplePerson])
+    assertEquals(enc.clsTag.runtimeClass, classOf[TestJavaBeans.SimplePerson])
+
+  test("JavaBeanEncoder schema matches struct type"):
+    val enc = JavaBeanEncoder(classOf[TestJavaBeans.SimplePerson])
+
+    enc.catalystType match
+      case ProtoType.StructType(fields) =>
+        assertEquals(fields.size, 2)
+        assertEquals(enc.schema.fields.size, 2)
+        assertEquals(enc.schema.fields, fields)
+      case other =>
+        fail(s"Expected StructType, got $other")

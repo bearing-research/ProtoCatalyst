@@ -92,7 +92,7 @@ AgnosticEncoder[T]
 ├── MapEncoder[C, K, V]  ✅
 ├── StructEncoder[K]
 │   ├── ProductEncoder[K]   ← Case classes  ✅
-│   ├── JavaBeanEncoder[K]  ← Java beans  ⏳
+│   ├── JavaBeanEncoder[K]  ← Java beans  ✅ (runtime introspection)
 │   └── RowEncoder          ← Row type  ⏳
 ├── EnumEncoder
 │   ├── ScalaEnumEncoder  ✅ (Scala 3 via Mirror.SumOf)
@@ -181,6 +181,7 @@ trait UnsafeRowSerializer[T]:
 | **Java enum support** | `E <: Enum[E]` → `StringType` encoding | ✅ |
 | **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. (nullable) | ✅ |
 | **Java BigDecimal/BigInteger** | `java.math.BigDecimal`, `java.math.BigInteger` | ✅ |
+| **Java Bean support** | `JavaBeanEncoder(Class[T])` via runtime introspection | ✅ |
 
 ### 3.2 What's Needed Before Porting
 
@@ -191,7 +192,7 @@ trait UnsafeRowSerializer[T]:
 | **Java enum support** | `E <: Enum[E]` type bound → `StringType` | P2 | ✅ Done |
 | **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | ✅ Done |
 | **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration, Period | P2 | ✅ Done |
-| **Java Bean support** | `Encoders.bean(Class[T])` equivalent | P2 | Pending |
+| **Java Bean support** | `JavaBeanEncoder(Class[T])` runtime introspection | P2 | ✅ Done |
 | **UDT support** | UserDefinedType integration | P3 | Pending |
 | **Kryo/Java serialization** | TransformingEncoder fallback | P3 | Pending |
 | **Lenient serialization** | Multiple input types for dates/timestamps | P3 | Pending |
@@ -341,6 +342,7 @@ trait SQLImplicits {
 | `BoxedIntEncoder` | `boxedIntEncoder` → IntType (nullable) |
 | `BoxedLongEncoder` | `boxedLongEncoder` → LongType (nullable) |
 | etc. | All boxed primitives → same type as unboxed (nullable) |
+| `JavaBeanEncoder[K]` | `JavaBeanEncoder(Class[T])` → runtime introspection |
 
 ---
 
@@ -392,17 +394,29 @@ trait SQLImplicits {
    given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] = PrimitiveEncoder(ProtoType.DateType, ...)
    given javaSqlTimestampEncoder: ProtoEncoder[java.sql.Timestamp] = PrimitiveEncoder(ProtoType.TimestampType, ...)
    ```
-   - 81 encoder tests passing
 
-### Phase 2: Extended Type Support (Current)
+7. **Java Bean support** ✅
+   ```scala
+   object JavaBeanEncoder:
+     def apply[T](beanClass: Class[T]): ProtoEncoder[T] =
+       // Uses java.beans.Introspector for property discovery
+       // Supports nested beans, primitives, boxed types, temporal, enums
+   ```
+   - 91 encoder tests passing
 
-7. **Java Bean support** (P2)
-   - Runtime introspection for Java classes
-   - Generate encoder without compile-time derivation
+### Phase 2: Extended Type Support ✅ COMPLETE
+
+All P2 features implemented:
+- ClassTag support ✅
+- Scala 3 enums ✅
+- Java enums ✅
+- Boxed primitives ✅
+- Additional temporal types ✅
+- Java Bean support ✅
 
 ### Phase 3: Port to Spark
 
-9. **When Spark Scala 3 is ready**
+8. **When Spark Scala 3 is ready**
    - Copy ProtoEncoder derivation logic to ScalaReflection.scala
    - Adapt to use Spark's AgnosticEncoder types directly
    - Update Encoders.scala and SQLImplicits
