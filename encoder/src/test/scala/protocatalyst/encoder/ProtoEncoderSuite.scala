@@ -1,6 +1,7 @@
 package protocatalyst.encoder
 
 import protocatalyst.types.*
+import scala.reflect.{ClassTag, classTag}
 
 // Test case classes with derived encoders for use with summon
 case class Person(name: String, age: Int) derives ProtoEncoder
@@ -221,3 +222,56 @@ class ProtoEncoderSuite extends munit.FunSuite:
         assertEquals(fields(1).name, "_2")
       case other =>
         fail(s"Expected StructType for tuple field, got $other")
+
+  // === ClassTag tests ===
+
+  test("primitive encoder has correct ClassTag"):
+    val intEnc = summon[ProtoEncoder[Int]]
+    assertEquals(intEnc.clsTag, classTag[Int])
+
+    val strEnc = summon[ProtoEncoder[String]]
+    assertEquals(strEnc.clsTag, classTag[String])
+
+    val boolEnc = summon[ProtoEncoder[Boolean]]
+    assertEquals(boolEnc.clsTag, classTag[Boolean])
+
+  test("derived case class has correct ClassTag"):
+    val enc = ProtoEncoder.derived[Person]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Person])
+
+  test("nested case class has correct ClassTag"):
+    val enc = ProtoEncoder.derived[Employee]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Employee])
+
+    // Nested encoder should also have correct ClassTag
+    val personEnc = enc.fields(0).encoder
+    assertEquals(personEnc.clsTag.runtimeClass, classOf[Person])
+
+  test("option encoder has correct ClassTag"):
+    val enc = summon[ProtoEncoder[Option[String]]]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Option[?]])
+
+  test("list encoder has correct ClassTag"):
+    val enc = summon[ProtoEncoder[List[Int]]]
+    assertEquals(enc.clsTag.runtimeClass, classOf[List[?]])
+
+  test("map encoder has correct ClassTag"):
+    val enc = summon[ProtoEncoder[Map[String, Int]]]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Map[?, ?]])
+
+  test("tuple encoder has correct ClassTag"):
+    val enc2 = summon[ProtoEncoder[(String, Int)]]
+    assertEquals(enc2.clsTag.runtimeClass, classOf[Tuple2[?, ?]])
+
+    val enc3 = summon[ProtoEncoder[(String, Int, Double)]]
+    assertEquals(enc3.clsTag.runtimeClass, classOf[Tuple3[?, ?, ?]])
+
+  test("array encoder has correct ClassTag"):
+    val enc = summon[ProtoEncoder[Array[Int]]]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Array[Int]])
+
+  test("ClassTag allows creating arrays"):
+    val enc = ProtoEncoder.derived[Person]
+    val arr = enc.clsTag.newArray(5)
+    assertEquals(arr.length, 5)
+    assert(arr.isInstanceOf[Array[Person]])

@@ -4,6 +4,7 @@ import protocatalyst.schema.*
 import protocatalyst.types.*
 import scala.deriving.Mirror
 import scala.compiletime.*
+import scala.reflect.{ClassTag, classTag}
 
 /** Field descriptor for product type encoders. */
 case class FieldEncoder[T](
@@ -17,6 +18,7 @@ trait ProtoEncoder[T]:
   def schema: ProtoSchema
   def catalystType: ProtoType
   def nullable: Boolean
+  def clsTag: ClassTag[T]
 
   /** For product types, the field encoders. Empty for primitives. */
   def fields: Vector[FieldEncoder[?]] = Vector.empty
@@ -28,7 +30,9 @@ object ProtoEncoder:
   /** Derive an encoder for type T at compile time. */
   inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] =
     inline m match
-      case p: Mirror.ProductOf[T] => deriveProduct[T](p)
+      case p: Mirror.ProductOf[T] =>
+        val ct = summonInline[ClassTag[T]]
+        deriveProduct[T](p, ct)
       case _: Mirror.SumOf[T] =>
         error(
           "Sum types (enums/sealed traits) are not yet supported by ProtoEncoder.\n" +
@@ -37,12 +41,12 @@ object ProtoEncoder:
 
   // === Product (case class) derivation ===
 
-  private inline def deriveProduct[T](m: Mirror.ProductOf[T]): ProtoEncoder[T] =
+  private inline def deriveProduct[T](m: Mirror.ProductOf[T], ct: ClassTag[T]): ProtoEncoder[T] =
     val fieldEncoders = deriveFields[m.MirroredElemTypes, m.MirroredElemLabels]
     val structFields = fieldEncoders.map { fe =>
       ProtoStructField(fe.name, fe.encoder.catalystType, fe.nullable)
     }
-    makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields))
+    makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields), ct)
 
   private inline def deriveFields[Types <: Tuple, Labels <: Tuple]: Vector[FieldEncoder[?]] =
     inline (erasedValue[Types], erasedValue[Labels]) match
@@ -81,34 +85,36 @@ object ProtoEncoder:
   // Factory method for product encoders (must be accessible from inline expansion)
   def makeProductEncoder[T](
       fieldEncoders: Vector[FieldEncoder[?]],
-      theSchema: ProtoSchema
+      theSchema: ProtoSchema,
+      ct: ClassTag[T]
   ): ProtoEncoder[T] = new ProtoEncoder[T]:
     def schema: ProtoSchema = theSchema
     val catalystType: ProtoType = ProtoType.StructType(theSchema.fields)
     val nullable: Boolean = false
+    val clsTag: ClassTag[T] = ct
     override def fields: Vector[FieldEncoder[?]] = fieldEncoders
 
   // === Primitive encoders ===
 
-  given ProtoEncoder[Boolean] = PrimitiveEncoder(ProtoType.BooleanType)
-  given ProtoEncoder[Byte] = PrimitiveEncoder(ProtoType.ByteType)
-  given ProtoEncoder[Short] = PrimitiveEncoder(ProtoType.ShortType)
-  given ProtoEncoder[Int] = PrimitiveEncoder(ProtoType.IntType)
-  given ProtoEncoder[Long] = PrimitiveEncoder(ProtoType.LongType)
-  given ProtoEncoder[Float] = PrimitiveEncoder(ProtoType.FloatType)
-  given ProtoEncoder[Double] = PrimitiveEncoder(ProtoType.DoubleType)
-  given ProtoEncoder[String] = PrimitiveEncoder(ProtoType.StringType)
-  given ProtoEncoder[Array[Byte]] = PrimitiveEncoder(ProtoType.BinaryType)
-  given ProtoEncoder[BigDecimal] = PrimitiveEncoder(ProtoType.DecimalType(38, 18))
-
-  // java.time types
-  given ProtoEncoder[java.time.LocalDate] = PrimitiveEncoder(ProtoType.DateType)
-  given ProtoEncoder[java.time.Instant] = PrimitiveEncoder(ProtoType.TimestampType)
-  given ProtoEncoder[java.time.LocalDateTime] = PrimitiveEncoder(ProtoType.TimestampNTZType)
-
-  private class PrimitiveEncoder[T](val catalystType: ProtoType) extends ProtoEncoder[T]:
+  private class PrimitiveEncoder[T](val catalystType: ProtoType, val clsTag: ClassTag[T]) extends ProtoEncoder[T]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val nullable: Boolean = false
+
+  given ProtoEncoder[Boolean] = PrimitiveEncoder(ProtoType.BooleanType, classTag[Boolean])
+  given ProtoEncoder[Byte] = PrimitiveEncoder(ProtoType.ByteType, classTag[Byte])
+  given ProtoEncoder[Short] = PrimitiveEncoder(ProtoType.ShortType, classTag[Short])
+  given ProtoEncoder[Int] = PrimitiveEncoder(ProtoType.IntType, classTag[Int])
+  given ProtoEncoder[Long] = PrimitiveEncoder(ProtoType.LongType, classTag[Long])
+  given ProtoEncoder[Float] = PrimitiveEncoder(ProtoType.FloatType, classTag[Float])
+  given ProtoEncoder[Double] = PrimitiveEncoder(ProtoType.DoubleType, classTag[Double])
+  given ProtoEncoder[String] = PrimitiveEncoder(ProtoType.StringType, classTag[String])
+  given ProtoEncoder[Array[Byte]] = PrimitiveEncoder(ProtoType.BinaryType, classTag[Array[Byte]])
+  given ProtoEncoder[BigDecimal] = PrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[BigDecimal])
+
+  // java.time types
+  given ProtoEncoder[java.time.LocalDate] = PrimitiveEncoder(ProtoType.DateType, classTag[java.time.LocalDate])
+  given ProtoEncoder[java.time.Instant] = PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.Instant])
+  given ProtoEncoder[java.time.LocalDateTime] = PrimitiveEncoder(ProtoType.TimestampNTZType, classTag[java.time.LocalDateTime])
 
   // === Option encoder ===
 
@@ -119,6 +125,7 @@ object ProtoEncoder:
     val schema: ProtoSchema = enc.schema
     val catalystType: ProtoType = enc.catalystType
     val nullable: Boolean = true
+    val clsTag: ClassTag[Option[T]] = ClassTag(classOf[Option[?]])
 
   // === Tuple encoders ===
   // Tuples are Products in Scala 3, but we provide explicit given instances
@@ -128,21 +135,27 @@ object ProtoEncoder:
       encA: ProtoEncoder[A],
       encB: ProtoEncoder[B]
   ): ProtoEncoder[(A, B)] =
-    makeTupleEncoder(Vector(
-      FieldEncoder("_1", encA, encA.nullable),
-      FieldEncoder("_2", encB, encB.nullable)
-    ))
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable)
+      ),
+      ClassTag(classOf[Tuple2[?, ?]])
+    )
 
   given tuple3Encoder[A, B, C](using
       encA: ProtoEncoder[A],
       encB: ProtoEncoder[B],
       encC: ProtoEncoder[C]
   ): ProtoEncoder[(A, B, C)] =
-    makeTupleEncoder(Vector(
-      FieldEncoder("_1", encA, encA.nullable),
-      FieldEncoder("_2", encB, encB.nullable),
-      FieldEncoder("_3", encC, encC.nullable)
-    ))
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable)
+      ),
+      ClassTag(classOf[Tuple3[?, ?, ?]])
+    )
 
   given tuple4Encoder[A, B, C, D](using
       encA: ProtoEncoder[A],
@@ -150,12 +163,15 @@ object ProtoEncoder:
       encC: ProtoEncoder[C],
       encD: ProtoEncoder[D]
   ): ProtoEncoder[(A, B, C, D)] =
-    makeTupleEncoder(Vector(
-      FieldEncoder("_1", encA, encA.nullable),
-      FieldEncoder("_2", encB, encB.nullable),
-      FieldEncoder("_3", encC, encC.nullable),
-      FieldEncoder("_4", encD, encD.nullable)
-    ))
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable)
+      ),
+      ClassTag(classOf[Tuple4[?, ?, ?, ?]])
+    )
 
   given tuple5Encoder[A, B, C, D, E](using
       encA: ProtoEncoder[A],
@@ -164,38 +180,41 @@ object ProtoEncoder:
       encD: ProtoEncoder[D],
       encE: ProtoEncoder[E]
   ): ProtoEncoder[(A, B, C, D, E)] =
-    makeTupleEncoder(Vector(
-      FieldEncoder("_1", encA, encA.nullable),
-      FieldEncoder("_2", encB, encB.nullable),
-      FieldEncoder("_3", encC, encC.nullable),
-      FieldEncoder("_4", encD, encD.nullable),
-      FieldEncoder("_5", encE, encE.nullable)
-    ))
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable)
+      ),
+      ClassTag(classOf[Tuple5[?, ?, ?, ?, ?]])
+    )
 
-  private def makeTupleEncoder[T](fieldEncoders: Vector[FieldEncoder[?]]): ProtoEncoder[T] =
+  private def makeTupleEncoder[T](fieldEncoders: Vector[FieldEncoder[?]], ct: ClassTag[T]): ProtoEncoder[T] =
     val structFields = fieldEncoders.map { fe =>
       ProtoStructField(fe.name, fe.encoder.catalystType, fe.nullable)
     }
-    makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields))
+    makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields), ct)
 
   // === Collection encoders ===
 
   given seqEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Seq[T]] =
-    ArrayEncoder(enc)
+    CollectionEncoder(enc, ClassTag(classOf[Seq[?]]))
 
   given listEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[List[T]] =
-    ArrayEncoder(enc)
+    CollectionEncoder(enc, ClassTag(classOf[List[?]]))
 
   given vectorEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Vector[T]] =
-    ArrayEncoder(enc)
+    CollectionEncoder(enc, ClassTag(classOf[Vector[?]]))
 
   given setEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Set[T]] =
-    ArrayEncoder(enc)
+    CollectionEncoder(enc, ClassTag(classOf[Set[?]]))
 
-  given arrayEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Array[T]] =
-    ArrayEncoder(enc)
+  given arrayEncoder[T](using enc: ProtoEncoder[T], ct: ClassTag[Array[T]]): ProtoEncoder[Array[T]] =
+    CollectionEncoder(enc, ct)
 
-  private class ArrayEncoder[C, T](enc: ProtoEncoder[T]) extends ProtoEncoder[C]:
+  private class CollectionEncoder[C, T](enc: ProtoEncoder[T], val clsTag: ClassTag[C]) extends ProtoEncoder[C]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.ArrayType(enc.catalystType, enc.nullable)
     val nullable: Boolean = false
@@ -207,3 +226,4 @@ object ProtoEncoder:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.MapType(keyEnc.catalystType, valEnc.catalystType, valEnc.nullable)
     val nullable: Boolean = false
+    val clsTag: ClassTag[Map[K, V]] = ClassTag(classOf[Map[?, ?]])

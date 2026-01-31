@@ -74,6 +74,7 @@ class UntypedColumn(val name: String, private val protoExprOverride: Option[Prot
       def catalystType: ProtoType = ProtoType.UnresolvedType("untyped")
       def schema: protocatalyst.schema.ProtoSchema = protocatalyst.schema.ProtoSchema(Vector.empty)
       def nullable: Boolean = true
+      def clsTag: scala.reflect.ClassTag[Any] = scala.reflect.ClassTag.Any
       override def fields: Vector[protocatalyst.encoder.FieldEncoder[?]] = Vector.empty
 
   // Comparison operators that accept raw literals
