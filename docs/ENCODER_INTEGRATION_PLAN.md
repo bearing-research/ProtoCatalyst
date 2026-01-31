@@ -168,7 +168,8 @@ trait UnsafeRowSerializer[T]:
 | Struct schema | `ProtoSchema` with `ProtoStructField` | ✅ |
 | Primitive encoders | Boolean, Byte, Short, Int, Long, Float, Double | ✅ |
 | String/Binary | `ProtoEncoder[String]`, `ProtoEncoder[Array[Byte]]` | ✅ |
-| Temporal types | LocalDate, Instant, LocalDateTime | ✅ |
+| Temporal types | LocalDate, Instant, LocalDateTime, Duration, Period | ✅ |
+| Legacy temporal | java.sql.Date, java.sql.Timestamp | ✅ |
 | Option handling | `OptionEncoder[T]` with nullable=true | ✅ |
 | Collections | Seq, List, Vector, Set, Array, Map | ✅ |
 | Tuples | Tuple2 through Tuple5 | ✅ |
@@ -189,8 +190,8 @@ trait UnsafeRowSerializer[T]:
 | **Scala 3 enum support** | `Mirror.SumOf[T]` derivation → `StringType` | P2 | ✅ Done |
 | **Java enum support** | `E <: Enum[E]` type bound → `StringType` | P2 | ✅ Done |
 | **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | ✅ Done |
+| **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration, Period | P2 | ✅ Done |
 | **Java Bean support** | `Encoders.bean(Class[T])` equivalent | P2 | Pending |
-| **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration | P2 | Pending |
 | **UDT support** | UserDefinedType integration | P3 | Pending |
 | **Kryo/Java serialization** | TransformingEncoder fallback | P3 | Pending |
 | **Lenient serialization** | Multiple input types for dates/timestamps | P3 | Pending |
@@ -326,6 +327,10 @@ trait SQLImplicits {
 | `BinaryEncoder` | `ProtoEncoder[Array[Byte]]` |
 | `STRICT_LOCAL_DATE_ENCODER` | `ProtoEncoder[LocalDate]` |
 | `STRICT_INSTANT_ENCODER` | `ProtoEncoder[Instant]` |
+| `STRICT_DURATION_ENCODER` | `ProtoEncoder[Duration]` → DayTimeIntervalType |
+| `STRICT_PERIOD_ENCODER` | `ProtoEncoder[Period]` → YearMonthIntervalType |
+| `STRICT_DATE_ENCODER` | `javaSqlDateEncoder` → DateType |
+| `STRICT_TIMESTAMP_ENCODER` | `javaSqlTimestampEncoder` → TimestampType |
 | `OptionEncoder[E]` | `optionEncoder[T]` |
 | `IterableEncoder[Seq, E]` | `seqEncoder[T]` |
 | `MapEncoder[Map, K, V]` | `mapEncoder[K, V]` |
@@ -378,11 +383,18 @@ trait SQLImplicits {
    // Also: java.math.BigDecimal, java.math.BigInteger
    ```
 
-### Phase 2: Extended Type Support (Current)
+6. **Additional temporal types** ✅
+   ```scala
+   // Interval types
+   given ProtoEncoder[java.time.Duration] = PrimitiveEncoder(ProtoType.DayTimeIntervalType, ...)
+   given ProtoEncoder[java.time.Period] = PrimitiveEncoder(ProtoType.YearMonthIntervalType, ...)
+   // Legacy SQL types
+   given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] = PrimitiveEncoder(ProtoType.DateType, ...)
+   given javaSqlTimestampEncoder: ProtoEncoder[java.sql.Timestamp] = PrimitiveEncoder(ProtoType.TimestampType, ...)
+   ```
+   - 81 encoder tests passing
 
-6. **Additional temporal types** (P2)
-   - java.sql.Date, java.sql.Timestamp (legacy compatibility)
-   - java.time.Duration, java.time.Period
+### Phase 2: Extended Type Support (Current)
 
 7. **Java Bean support** (P2)
    - Runtime introspection for Java classes
@@ -390,7 +402,7 @@ trait SQLImplicits {
 
 ### Phase 3: Port to Spark
 
-8. **When Spark Scala 3 is ready**
+9. **When Spark Scala 3 is ready**
    - Copy ProtoEncoder derivation logic to ScalaReflection.scala
    - Adapt to use Spark's AgnosticEncoder types directly
    - Update Encoders.scala and SQLImplicits

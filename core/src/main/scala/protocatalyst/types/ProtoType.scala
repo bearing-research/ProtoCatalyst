@@ -16,6 +16,8 @@ enum ProtoType extends Serializable:
   case DateType
   case TimestampType
   case TimestampNTZType
+  case DayTimeIntervalType   // For java.time.Duration
+  case YearMonthIntervalType // For java.time.Period
   case DecimalType(precision: Int, scale: Int)
   case ArrayType(elementType: ProtoType, containsNull: Boolean)
   case MapType(keyType: ProtoType, valueType: ProtoType, valueContainsNull: Boolean)

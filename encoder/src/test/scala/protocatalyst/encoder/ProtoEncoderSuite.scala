@@ -482,3 +482,67 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(2).name, "flag")
     assertEquals(enc.fields(2).encoder.catalystType, ProtoType.BooleanType)
     assertEquals(enc.fields(2).nullable, true)  // Boxed Boolean is nullable
+
+  // === Additional temporal type encoder tests ===
+
+  test("java.time.Duration encoder"):
+    val enc = summon[ProtoEncoder[java.time.Duration]]
+    assertEquals(enc.catalystType, ProtoType.DayTimeIntervalType)
+    assertEquals(enc.nullable, false)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.time.Duration])
+
+  test("java.time.Period encoder"):
+    val enc = summon[ProtoEncoder[java.time.Period]]
+    assertEquals(enc.catalystType, ProtoType.YearMonthIntervalType)
+    assertEquals(enc.nullable, false)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.time.Period])
+
+  test("java.sql.Date encoder"):
+    val enc = summon[ProtoEncoder[java.sql.Date]]
+    assertEquals(enc.catalystType, ProtoType.DateType)
+    assertEquals(enc.nullable, false)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.sql.Date])
+
+  test("java.sql.Timestamp encoder"):
+    val enc = summon[ProtoEncoder[java.sql.Timestamp]]
+    assertEquals(enc.catalystType, ProtoType.TimestampType)
+    assertEquals(enc.nullable, false)
+    assertEquals(enc.clsTag.runtimeClass, classOf[java.sql.Timestamp])
+
+  test("Option of Duration"):
+    val enc = summon[ProtoEncoder[Option[java.time.Duration]]]
+    assertEquals(enc.catalystType, ProtoType.DayTimeIntervalType)
+    assertEquals(enc.nullable, true)
+
+  test("List of Periods"):
+    val enc = summon[ProtoEncoder[List[java.time.Period]]]
+    enc.catalystType match
+      case ProtoType.ArrayType(elemType, _) =>
+        assertEquals(elemType, ProtoType.YearMonthIntervalType)
+      case other =>
+        fail(s"Expected ArrayType, got $other")
+
+  test("case class containing temporal types"):
+    case class TemporalContainer(
+        date: java.time.LocalDate,
+        timestamp: java.time.Instant,
+        duration: java.time.Duration,
+        period: java.time.Period,
+        sqlDate: java.sql.Date,
+        sqlTimestamp: java.sql.Timestamp
+    )
+    val enc = ProtoEncoder.derived[TemporalContainer]
+
+    assertEquals(enc.fields.size, 6)
+    assertEquals(enc.fields(0).name, "date")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.DateType)
+    assertEquals(enc.fields(1).name, "timestamp")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.TimestampType)
+    assertEquals(enc.fields(2).name, "duration")
+    assertEquals(enc.fields(2).encoder.catalystType, ProtoType.DayTimeIntervalType)
+    assertEquals(enc.fields(3).name, "period")
+    assertEquals(enc.fields(3).encoder.catalystType, ProtoType.YearMonthIntervalType)
+    assertEquals(enc.fields(4).name, "sqlDate")
+    assertEquals(enc.fields(4).encoder.catalystType, ProtoType.DateType)
+    assertEquals(enc.fields(5).name, "sqlTimestamp")
+    assertEquals(enc.fields(5).encoder.catalystType, ProtoType.TimestampType)

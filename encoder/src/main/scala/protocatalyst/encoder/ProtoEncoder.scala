@@ -81,7 +81,8 @@ object ProtoEncoder:
             "Supported types:\n" +
             "  - Primitives: Boolean, Byte, Short, Int, Long, Float, Double, String, Array[Byte], BigDecimal\n" +
             "  - Boxed: java.lang.Integer, java.lang.Long, java.lang.Double, etc.\n" +
-            "  - Temporal: java.time.LocalDate, Instant, LocalDateTime\n" +
+            "  - Temporal: java.time.LocalDate, Instant, LocalDateTime, Duration, Period\n" +
+            "  - Legacy temporal: java.sql.Date, java.sql.Timestamp\n" +
             "  - Wrappers: Option[T]\n" +
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
             "  - Products: case classes, tuples\n" +
@@ -130,6 +131,12 @@ object ProtoEncoder:
   given ProtoEncoder[java.time.LocalDate] = PrimitiveEncoder(ProtoType.DateType, classTag[java.time.LocalDate])
   given ProtoEncoder[java.time.Instant] = PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.Instant])
   given ProtoEncoder[java.time.LocalDateTime] = PrimitiveEncoder(ProtoType.TimestampNTZType, classTag[java.time.LocalDateTime])
+  given ProtoEncoder[java.time.Duration] = PrimitiveEncoder(ProtoType.DayTimeIntervalType, classTag[java.time.Duration])
+  given ProtoEncoder[java.time.Period] = PrimitiveEncoder(ProtoType.YearMonthIntervalType, classTag[java.time.Period])
+
+  // java.sql types (legacy compatibility)
+  given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] = PrimitiveEncoder(ProtoType.DateType, classTag[java.sql.Date])
+  given javaSqlTimestampEncoder: ProtoEncoder[java.sql.Timestamp] = PrimitiveEncoder(ProtoType.TimestampType, classTag[java.sql.Timestamp])
 
   // === Boxed primitive encoders ===
   // Java wrapper classes - nullable since they can be null (unlike primitives)
