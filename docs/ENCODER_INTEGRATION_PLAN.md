@@ -81,24 +81,24 @@ ExpressionEncoder[T]
 ```scala
 AgnosticEncoder[T]
 ├── LeafEncoder[T]
-│   ├── PrimitiveLeafEncoder (Boolean, Byte, Short, Int, Long, Float, Double)
-│   ├── BoxedLeafEncoder (java.lang.Integer, etc.)
-│   ├── StringEncoder, BinaryEncoder
-│   ├── DateEncoder, TimestampEncoder, InstantEncoder
-│   └── ScalaDecimalEncoder, JavaDecimalEncoder
-├── OptionEncoder[E]
-├── ArrayEncoder[E]
-├── IterableEncoder[C, E]  (Seq, List, Set, etc.)
-├── MapEncoder[C, K, V]
+│   ├── PrimitiveLeafEncoder (Boolean, Byte, Short, Int, Long, Float, Double)  ✅
+│   ├── BoxedLeafEncoder (java.lang.Integer, etc.)  ⏳
+│   ├── StringEncoder, BinaryEncoder  ✅
+│   ├── DateEncoder, TimestampEncoder, InstantEncoder  ✅
+│   └── ScalaDecimalEncoder, JavaDecimalEncoder  ✅
+├── OptionEncoder[E]  ✅
+├── ArrayEncoder[E]  ✅
+├── IterableEncoder[C, E]  (Seq, List, Set, etc.)  ✅
+├── MapEncoder[C, K, V]  ✅
 ├── StructEncoder[K]
-│   ├── ProductEncoder[K]   ← Case classes
-│   ├── JavaBeanEncoder[K]  ← Java beans
-│   └── RowEncoder          ← Row type
+│   ├── ProductEncoder[K]   ← Case classes  ✅
+│   ├── JavaBeanEncoder[K]  ← Java beans  ⏳
+│   └── RowEncoder          ← Row type  ⏳
 ├── EnumEncoder
-│   ├── ScalaEnumEncoder
-│   └── JavaEnumEncoder
-├── UDTEncoder
-└── TransformingEncoder (Kryo, Java serialization)
+│   ├── ScalaEnumEncoder  ✅ (Scala 3 via Mirror.SumOf)
+│   └── JavaEnumEncoder  ⏳
+├── UDTEncoder  ⏳
+└── TransformingEncoder (Kryo, Java serialization)  ⏳
 ```
 
 ---
@@ -112,24 +112,29 @@ trait ProtoEncoder[T]:
   def schema: ProtoSchema
   def catalystType: ProtoType
   def nullable: Boolean
+  def clsTag: ClassTag[T]                    // Required by Spark's Encoder
   def fields: Vector[FieldEncoder[?]]
 
 // Derivation using Scala 3 mirrors (NO TypeTag)
 object ProtoEncoder:
-  inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T]
+  inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] =
+    inline m match
+      case p: Mirror.ProductOf[T] => deriveProduct[T](p, summonInline[ClassTag[T]])
+      case s: Mirror.SumOf[T]     => deriveEnum[T](s, summonInline[ClassTag[T]])
 ```
 
 **Mapping to Spark**:
 
 | Spark AgnosticEncoder | ProtoCatalyst ProtoEncoder |
 |-----------------------|---------------------------|
-| `ProductEncoder[K](fields, clsTag)` | `makeProductEncoder[T](fields, schema)` |
+| `ProductEncoder[K](fields, clsTag)` | `makeProductEncoder[T](fields, schema, clsTag)` |
 | `EncoderField(name, enc, nullable)` | `FieldEncoder[T](name, encoder, nullable)` |
 | `PrimitiveIntEncoder` | `ProtoEncoder[Int]` (given) |
 | `StringEncoder` | `ProtoEncoder[String]` (given) |
 | `OptionEncoder[E]` | `optionEncoder[T]` (given) |
 | `IterableEncoder[C, E]` | `seqEncoder[T]`, etc. (given) |
 | `MapEncoder[C, K, V]` | `mapEncoder[K, V]` (given) |
+| `ScalaEnumEncoder` | `makeEnumEncoder[T](clsTag)` → StringType |
 
 ### 2.2 RowSerializer (InternalRow Serialization)
 
@@ -169,17 +174,22 @@ trait UnsafeRowSerializer[T]:
 | Nested structs | Recursive derivation | ✅ |
 | Row serialization | `RowSerializer[T]` with InternalTypeConverter | ✅ |
 | UnsafeRow format | `UnsafeRowSerializer[T]` with binary layout | ✅ |
+| **ClassTag support** | `clsTag: ClassTag[T]` via `summonInline[ClassTag[T]]` | ✅ |
+| **Scala 3 enum support** | `Mirror.SumOf[T]` → `StringType` encoding | ✅ |
 
 ### 3.2 What's Needed Before Porting
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| **ClassTag in ProtoEncoder** | Spark's `Encoder` requires `clsTag: ClassTag[T]` | P0 |
-| **Java Bean support** | `Encoders.bean(Class[T])` equivalent | P2 |
-| **Enum support** | Scala 3 enums and Java enums | P2 |
-| **UDT support** | UserDefinedType integration | P3 |
-| **Kryo/Java serialization** | TransformingEncoder fallback | P3 |
-| **Lenient serialization** | Multiple input types for dates/timestamps | P3 |
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| **ClassTag in ProtoEncoder** | Spark's `Encoder` requires `clsTag: ClassTag[T]` | P0 | ✅ Done |
+| **Scala 3 enum support** | `Mirror.SumOf[T]` derivation → `StringType` | P2 | ✅ Done |
+| **Java enum support** | Runtime introspection for Java enums | P2 | Pending |
+| **Java Bean support** | `Encoders.bean(Class[T])` equivalent | P2 | Pending |
+| **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | Pending |
+| **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration | P2 | Pending |
+| **UDT support** | UserDefinedType integration | P3 | Pending |
+| **Kryo/Java serialization** | TransformingEncoder fallback | P3 | Pending |
+| **Lenient serialization** | Multiple input types for dates/timestamps | P3 | Pending |
 
 ---
 
@@ -315,41 +325,57 @@ trait SQLImplicits {
 | `OptionEncoder[E]` | `optionEncoder[T]` |
 | `IterableEncoder[Seq, E]` | `seqEncoder[T]` |
 | `MapEncoder[Map, K, V]` | `mapEncoder[K, V]` |
-| `ProductEncoder[K]` | `ProtoEncoder.derived[T]` |
+| `ProductEncoder[K]` | `ProtoEncoder.derived[T]` (Mirror.ProductOf) |
+| `ScalaEnumEncoder` | `ProtoEncoder.derived[T]` (Mirror.SumOf → StringType) |
 
 ---
 
 ## Part 6: Implementation Roadmap
 
-### Phase 1: Complete ProtoCatalyst (Current)
+### Phase 1: Core Encoder Infrastructure ✅ COMPLETE
 
-1. **Add ClassTag to ProtoEncoder** (P0)
+1. **ClassTag in ProtoEncoder** ✅
    ```scala
    trait ProtoEncoder[T]:
      def schema: ProtoSchema
      def catalystType: ProtoType
      def nullable: Boolean
-     def clsTag: ClassTag[T]  // NEW - required by Spark
+     def clsTag: ClassTag[T]  // Captured via summonInline[ClassTag[T]]
    ```
 
-2. **Verify all type coverage**
-   - Ensure all AgnosticEncoder types have ProtoEncoder equivalents
-   - Add any missing temporal types
-   - Test edge cases (deeply nested, large tuples, etc.)
+2. **Scala 3 enum support** ✅
+   ```scala
+   inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] =
+     inline m match
+       case p: Mirror.ProductOf[T] => deriveProduct[T](p, ct)
+       case s: Mirror.SumOf[T]     => deriveEnum[T](s, ct)  // Enums → StringType
+   ```
 
-### Phase 2: Extended Type Support
+3. **Type coverage verification** ✅
+   - Primitives, temporal types, collections, tuples, nested structs
+   - 53 encoder tests passing
 
-3. **Enum support** (P2)
-   - Scala 3 enum derivation using `Mirror.SumOf`
-   - Java enum handling
+### Phase 2: Extended Type Support (Current)
 
-4. **Java Bean support** (P2)
+4. **Java enum support** (P2)
+   - Runtime introspection for Java enums
+   - Similar to Scala 3 enums: store as StringType
+
+5. **Boxed primitives** (P2)
+   - java.lang.Integer, java.lang.Boolean, java.lang.Long, etc.
+   - Maps to same ProtoType as primitives
+
+6. **Additional temporal types** (P2)
+   - java.sql.Date, java.sql.Timestamp (legacy compatibility)
+   - java.time.Duration, java.time.Period
+
+7. **Java Bean support** (P2)
    - Runtime introspection for Java classes
    - Generate encoder without compile-time derivation
 
 ### Phase 3: Port to Spark
 
-5. **When Spark Scala 3 is ready**
+8. **When Spark Scala 3 is ready**
    - Copy ProtoEncoder derivation logic to ScalaReflection.scala
    - Adapt to use Spark's AgnosticEncoder types directly
    - Update Encoders.scala and SQLImplicits
