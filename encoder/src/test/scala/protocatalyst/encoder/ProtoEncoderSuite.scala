@@ -327,3 +327,57 @@ class ProtoEncoderSuite extends munit.FunSuite:
         assertEquals(elemType, ProtoType.StringType)
       case other =>
         fail(s"Expected ArrayType, got $other")
+
+  // === Java enum encoder tests ===
+
+  test("Java enum encoder uses StringType"):
+    val enc = summon[ProtoEncoder[TestJavaEnums.Priority]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.nullable, false)
+
+  test("Java enum encoder has correct ClassTag"):
+    val enc = summon[ProtoEncoder[TestJavaEnums.Priority]]
+    assertEquals(enc.clsTag.runtimeClass, classOf[TestJavaEnums.Priority])
+
+  test("Java enum with multiple cases"):
+    val enc = summon[ProtoEncoder[TestJavaEnums.DayOfWeek]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.clsTag.runtimeClass, classOf[TestJavaEnums.DayOfWeek])
+
+  test("Java enum with custom fields"):
+    // HttpStatus has custom fields and constructor, but should still work
+    val enc = summon[ProtoEncoder[TestJavaEnums.HttpStatus]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.clsTag.runtimeClass, classOf[TestJavaEnums.HttpStatus])
+
+  test("Option of Java enum"):
+    val enc = summon[ProtoEncoder[Option[TestJavaEnums.Priority]]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.nullable, true)
+
+  test("List of Java enums"):
+    val enc = summon[ProtoEncoder[List[TestJavaEnums.DayOfWeek]]]
+    enc.catalystType match
+      case ProtoType.ArrayType(elemType, _) =>
+        assertEquals(elemType, ProtoType.StringType)
+      case other =>
+        fail(s"Expected ArrayType, got $other")
+
+  test("Map with Java enum values"):
+    val enc = summon[ProtoEncoder[Map[String, TestJavaEnums.Priority]]]
+    enc.catalystType match
+      case ProtoType.MapType(keyType, valType, _) =>
+        assertEquals(keyType, ProtoType.StringType)
+        assertEquals(valType, ProtoType.StringType)  // enum as string
+      case other =>
+        fail(s"Expected MapType, got $other")
+
+  test("case class containing Java enum"):
+    case class JavaEnumContainer(name: String, priority: TestJavaEnums.Priority)
+    val enc = ProtoEncoder.derived[JavaEnumContainer]
+
+    assertEquals(enc.fields.size, 2)
+    assertEquals(enc.fields(0).name, "name")
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
+    assertEquals(enc.fields(1).name, "priority")
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)  // Java enum as string

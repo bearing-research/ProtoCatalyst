@@ -84,7 +84,7 @@ object ProtoEncoder:
             "  - Wrappers: Option[T]\n" +
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
             "  - Products: case classes, tuples\n" +
-            "  - Enums: Scala 3 enums\n\n" +
+            "  - Enums: Scala 3 enums, Java enums\n\n" +
             "For custom types, either:\n" +
             "  1. Define a case class and use ProtoEncoder.derived[YourType]\n" +
             "  2. Provide a given ProtoEncoder[YourType] instance manually"
@@ -241,3 +241,13 @@ object ProtoEncoder:
     val catalystType: ProtoType = ProtoType.MapType(keyEnc.catalystType, valEnc.catalystType, valEnc.nullable)
     val nullable: Boolean = false
     val clsTag: ClassTag[Map[K, V]] = ClassTag(classOf[Map[?, ?]])
+
+  // === Java enum encoder ===
+
+  given javaEnumEncoder[E <: java.lang.Enum[E]](using ct: ClassTag[E]): ProtoEncoder[E] =
+    JavaEnumEncoder(ct)
+
+  private class JavaEnumEncoder[E <: java.lang.Enum[E]](val clsTag: ClassTag[E]) extends ProtoEncoder[E]:
+    val schema: ProtoSchema = ProtoSchema(Vector.empty)
+    val catalystType: ProtoType = ProtoType.StringType // Java enums stored as strings
+    val nullable: Boolean = false

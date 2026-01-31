@@ -96,7 +96,7 @@ AgnosticEncoder[T]
 │   └── RowEncoder          ← Row type  ⏳
 ├── EnumEncoder
 │   ├── ScalaEnumEncoder  ✅ (Scala 3 via Mirror.SumOf)
-│   └── JavaEnumEncoder  ⏳
+│   └── JavaEnumEncoder  ✅ (via type bound E <: Enum[E])
 ├── UDTEncoder  ⏳
 └── TransformingEncoder (Kryo, Java serialization)  ⏳
 ```
@@ -135,6 +135,7 @@ object ProtoEncoder:
 | `IterableEncoder[C, E]` | `seqEncoder[T]`, etc. (given) |
 | `MapEncoder[C, K, V]` | `mapEncoder[K, V]` (given) |
 | `ScalaEnumEncoder` | `makeEnumEncoder[T](clsTag)` → StringType |
+| `JavaEnumEncoder` | `javaEnumEncoder[E <: Enum[E]]` → StringType |
 
 ### 2.2 RowSerializer (InternalRow Serialization)
 
@@ -176,6 +177,7 @@ trait UnsafeRowSerializer[T]:
 | UnsafeRow format | `UnsafeRowSerializer[T]` with binary layout | ✅ |
 | **ClassTag support** | `clsTag: ClassTag[T]` via `summonInline[ClassTag[T]]` | ✅ |
 | **Scala 3 enum support** | `Mirror.SumOf[T]` → `StringType` encoding | ✅ |
+| **Java enum support** | `E <: Enum[E]` → `StringType` encoding | ✅ |
 
 ### 3.2 What's Needed Before Porting
 
@@ -183,7 +185,7 @@ trait UnsafeRowSerializer[T]:
 |---------|-------------|----------|--------|
 | **ClassTag in ProtoEncoder** | Spark's `Encoder` requires `clsTag: ClassTag[T]` | P0 | ✅ Done |
 | **Scala 3 enum support** | `Mirror.SumOf[T]` derivation → `StringType` | P2 | ✅ Done |
-| **Java enum support** | Runtime introspection for Java enums | P2 | Pending |
+| **Java enum support** | `E <: Enum[E]` type bound → `StringType` | P2 | ✅ Done |
 | **Java Bean support** | `Encoders.bean(Class[T])` equivalent | P2 | Pending |
 | **Boxed primitives** | java.lang.Integer, java.lang.Boolean, etc. | P2 | Pending |
 | **Additional temporal types** | java.sql.Date, java.sql.Timestamp, Duration | P2 | Pending |
@@ -327,6 +329,7 @@ trait SQLImplicits {
 | `MapEncoder[Map, K, V]` | `mapEncoder[K, V]` |
 | `ProductEncoder[K]` | `ProtoEncoder.derived[T]` (Mirror.ProductOf) |
 | `ScalaEnumEncoder` | `ProtoEncoder.derived[T]` (Mirror.SumOf → StringType) |
+| `JavaEnumEncoder` | `javaEnumEncoder[E <: Enum[E]]` → StringType |
 
 ---
 
@@ -353,13 +356,15 @@ trait SQLImplicits {
 
 3. **Type coverage verification** ✅
    - Primitives, temporal types, collections, tuples, nested structs
-   - 53 encoder tests passing
+   - 61 encoder tests passing
+
+4. **Java enum support** ✅
+   ```scala
+   given javaEnumEncoder[E <: java.lang.Enum[E]](using ct: ClassTag[E]): ProtoEncoder[E] =
+     JavaEnumEncoder(ct)  // Stores as StringType
+   ```
 
 ### Phase 2: Extended Type Support (Current)
-
-4. **Java enum support** (P2)
-   - Runtime introspection for Java enums
-   - Similar to Scala 3 enums: store as StringType
 
 5. **Boxed primitives** (P2)
    - java.lang.Integer, java.lang.Boolean, java.lang.Long, etc.
@@ -375,7 +380,7 @@ trait SQLImplicits {
 
 ### Phase 3: Port to Spark
 
-8. **When Spark Scala 3 is ready**
+9. **When Spark Scala 3 is ready**
    - Copy ProtoEncoder derivation logic to ScalaReflection.scala
    - Adapt to use Spark's AgnosticEncoder types directly
    - Update Encoders.scala and SQLImplicits
