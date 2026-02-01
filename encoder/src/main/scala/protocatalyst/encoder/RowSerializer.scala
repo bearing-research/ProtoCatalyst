@@ -71,10 +71,16 @@ object RowSerializer:
     val inlineSerializer = InlineRowSerializer.derived[T]
     InlineBackedRowSerializer[T](fieldSchemas, inlineSerializer)
 
-  /** Derive a RowSerializer for a sum type (sealed trait) at compile time */
+  /**
+   * Derive a RowSerializer for a sum type (sealed trait) at compile time.
+   *
+   * This uses InlineSumRowSerializer internally for optimized, type-safe
+   * serialization of each variant.
+   */
   inline def derivedSum[T](using m: Mirror.SumOf[T]): RowSerializer[T] =
     val encoder = ProtoEncoder.derived[T].asInstanceOf[ProtoEncoder.SumEncoder[T]]
-    SumRowSerializer[T](encoder)
+    val inlineSerializer = InlineSumRowSerializer.derived[T]
+    InlineBackedSumRowSerializer[T](encoder, inlineSerializer)
 
   /** Derive field schemas from tuple types */
   private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](idx: Int): Vector[FieldSchema] =
@@ -109,6 +115,28 @@ object RowSerializer:
       val schema: Vector[FieldSchema],
       inlineSerializer: InlineRowSerializer[T]
   ) extends RowSerializer[T]:
+
+    def serialize(value: T)(using conv: InternalTypeConverter): Array[Any] =
+      inlineSerializer.serialize(value)
+
+    def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T =
+      inlineSerializer.deserialize(row)
+
+  /**
+   * RowSerializer for sum types backed by InlineSumRowSerializer for performance.
+   * Provides schema information while delegating to the optimized inline version.
+   * Public for inline access.
+   */
+  class InlineBackedSumRowSerializer[T](
+      encoder: ProtoEncoder.SumEncoder[T],
+      inlineSerializer: InlineSumRowSerializer[T]
+  ) extends RowSerializer[T]:
+
+    val schema: Vector[FieldSchema] = Vector(
+      FieldSchema("_type", ProtoType.StringType, nullable = false, fieldIndex = 0),
+      FieldSchema("_ordinal", ProtoType.IntType, nullable = false, fieldIndex = 1),
+      FieldSchema("value", ProtoType.BinaryType, nullable = true, fieldIndex = 2)
+    )
 
     def serialize(value: T)(using conv: InternalTypeConverter): Array[Any] =
       inlineSerializer.serialize(value)

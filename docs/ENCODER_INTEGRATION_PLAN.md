@@ -606,7 +606,7 @@ These features are **not required** for Spark 4.0 compatibility but could provid
 |---------|-------------|----------|
 | **Custom Serialization Annotations** | `@serialize`, `@deserialize` method annotations | Complex types requiring custom logic (e.g., encryption, normalization) |
 | **Field Transformers** | Define transformation pipelines during serialization | Data masking, normalization, computed fields |
-| **Polymorphic Encoding** | Type-safe encoding of sealed hierarchies beyond simple enums | ADTs with data (e.g., `sealed trait Event { case class Click(...); case class View(...) }`) |
+| **Polymorphic Encoding** ✅ | **IMPLEMENTED** - Type-safe encoding of sealed hierarchies using `InlineSumRowSerializer`. Supports case classes and case objects with compile-time type specialization. See `RowSerializer.derivedSum`. | ADTs with data (e.g., `sealed trait Event { case class Click(...); case class View(...) }`) |
 | **Circular Reference Handling** | Detect and handle circular references in object graphs | Graph-structured data; ORM entities with bidirectional relations |
 | **Binary Versioning** | Write schema version bytes to enable future format changes | Long-term storage where format may evolve |
 
@@ -657,7 +657,7 @@ If implementing future enhancements, recommended priority order:
    - JSON Schema Export (documentation value)
 
 2. **High Value, Medium Effort**
-   - Polymorphic Encoding (enables ADT patterns)
+   - ~~Polymorphic Encoding~~ ✅ **DONE** - Implemented in `InlineSumRowSerializer`
    - Schema Evolution (production necessity)
    - Arrow Integration (ecosystem value)
 
