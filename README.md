@@ -84,6 +84,38 @@ def createSerializer(dataType: DataType): Any => Any = dataType match
 This `inline erasedValue[T] match` pattern generates specialized code paths at compile time,
 eliminating runtime type checks that Spark performs for every field of every row.
 
+## Spark Scala 3 Migration
+
+ProtoCatalyst is designed as the **encoder implementation for Spark's Scala 3 migration**. The serialization format is directly compatible with Spark's internal representation.
+
+### How Array[Any] Maps to InternalRow
+
+Spark's `GenericInternalRow` is a thin wrapper around `Array[Any]`:
+
+```scala
+// Spark's implementation
+class GenericInternalRow(val values: Array[Any]) extends InternalRow
+
+// ProtoCatalyst produces exactly what goes inside:
+val row: Array[Any] = serializer.serialize(person)
+val internalRow = new GenericInternalRow(row)  // Direct compatibility
+```
+
+### Internal Type Representations
+
+| Type | Internal Format | Spark | ProtoCatalyst Mock |
+|------|-----------------|-------|-------------------|
+| String | UTF-8 bytes | `UTF8String` | `MockUTF8String` |
+| Array | Wrapper | `ArrayData` | `MockArrayData` |
+| Map | Key/value arrays | `MapData` | `MockMapData` |
+| Nested struct | Row | `InternalRow` | `MockRow` |
+| Date | Int (epoch days) | Same | Same |
+| Timestamp | Long (microseconds) | Same | Same |
+
+The `InternalTypeConverter` trait provides the pluggable backend - swap `MockInternalTypeConverter` for a Spark-native implementation when integrating.
+
+See [Spark Migration Guide](docs/SPARK_MIGRATION.md) for detailed integration instructions.
+
 ## Building
 
 ```bash
@@ -102,6 +134,7 @@ sbt 'benchmarkSpark/Jmh/run SparkEncoderBenchmarks'
 
 - [Design Document](docs/DESIGN.md) - Architecture and design decisions
 - [Encoder Deep Dive](docs/ENCODER_DEEP_DIVE.md) - How compile-time derivation works
+- [Spark Migration Guide](docs/SPARK_MIGRATION.md) - Integration with Spark Scala 3
 - [Benchmarks](benchmarks/README.md) - Performance comparison with Spark
 - [ADR-001: No Runtime Codegen](docs/decisions/ADR-001-no-runtime-codegen.md) - Why compile-time over runtime
 

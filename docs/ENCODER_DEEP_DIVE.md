@@ -25,6 +25,47 @@ An **Encoder** is Spark's mechanism for converting between JVM objects (like cas
                       deserialize
 ```
 
+### Understanding InternalRow
+
+Spark's `InternalRow` is an abstract interface. The most common implementation, `GenericInternalRow`, is simply a wrapper around `Array[Any]`:
+
+```scala
+// Spark's GenericInternalRow (simplified)
+class GenericInternalRow(val values: Array[Any]) extends InternalRow {
+  def numFields: Int = values.length
+  def get(ordinal: Int, dataType: DataType): Any = values(ordinal)
+  def getInt(ordinal: Int): Int = values(ordinal).asInstanceOf[Int]
+  def getLong(ordinal: Int): Long = values(ordinal).asInstanceOf[Long]
+  // ...typed getters that cast from the underlying array
+}
+```
+
+**Key insight**: The actual data lives in `Array[Any]`. The `InternalRow` class just provides typed accessors.
+
+ProtoCatalyst's `InlineRowSerializer` produces exactly what goes inside that array:
+
+```scala
+// ProtoCatalyst output
+val row: Array[Any] = serializer.serialize(Person("Alice", 30, address))
+// row = Array("Alice", 30, Array("123 Main St", "NYC", "10001"))
+
+// To create Spark's InternalRow - just wrap it:
+val internalRow = new GenericInternalRow(row)  // Direct compatibility!
+```
+
+The internal type representations are also identical:
+
+| External Type | Internal Format | Spark | ProtoCatalyst |
+|--------------|-----------------|-------|---------------|
+| `String` | UTF-8 bytes | `UTF8String` | `MockUTF8String` |
+| `Seq[T]` | Array wrapper | `ArrayData` | `MockArrayData` |
+| `Map[K,V]` | Key/value arrays | `MapData` | `MockMapData` |
+| Nested struct | Nested row | `InternalRow` | `MockRow` |
+| `LocalDate` | `Int` (epoch days) | Same | Same |
+| `Instant` | `Long` (microseconds) | Same | Same |
+
+The `InternalTypeConverter` trait provides the pluggable backend - implement `SparkInternalTypeConverter` when integrating with actual Spark code.
+
 ### 1.1 The Three Responsibilities
 
 1. **Schema Derivation**: Extract the `StructType` schema from a Scala type
