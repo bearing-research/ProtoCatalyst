@@ -203,6 +203,14 @@ object InlineArrowReader:
           else vec.getObject(rowIndex)
         readFieldsImpl[ts](root, rowIndex, fieldIndex + 1, values)
 
+      // === List types ===
+      case _: (List[t] *: ts) =>
+        val listVec = root.getVector(fieldIndex).asInstanceOf[ListVector]
+        values(fieldIndex) =
+          if listVec.isNull(rowIndex) then List.empty[t]
+          else readListValue[t](listVec, rowIndex)
+        readFieldsImpl[ts](root, rowIndex, fieldIndex + 1, values)
+
       // === Option types ===
       case _: (Option[t] *: ts) =>
         val isNull = isNullAt(root, fieldIndex, rowIndex)
@@ -254,6 +262,144 @@ object InlineArrowReader:
             readAnyOptionValue(root, rowIndex, fieldIndex).asInstanceOf[T]
         }
 
+  /** Read a List[T] from a ListVector with type specialization */
+  private inline def readListValue[T](
+      listVec: ListVector,
+      rowIndex: Int
+  ): List[T] =
+    val startOffset = listVec.getOffsetBuffer.getInt(rowIndex.toLong * 4)
+    val endOffset = listVec.getOffsetBuffer.getInt((rowIndex + 1).toLong * 4)
+    val dataVec = listVec.getDataVector
+    val size = endOffset - startOffset
+    val builder = List.newBuilder[T]
+    var i = 0
+    while i < size do
+      val elemIndex = startOffset + i
+      builder += readListElement[T](dataVec, elemIndex)
+      i += 1
+    builder.result()
+
+  /** Read a single list element with type specialization */
+  private inline def readListElement[T](
+      dataVec: ValueVector,
+      index: Int
+  ): T =
+    inline erasedValue[T] match
+      case _: Int =>
+        dataVec.asInstanceOf[IntVector].get(index).asInstanceOf[T]
+      case _: Long =>
+        dataVec.asInstanceOf[BigIntVector].get(index).asInstanceOf[T]
+      case _: Double =>
+        dataVec.asInstanceOf[Float8Vector].get(index).asInstanceOf[T]
+      case _: Float =>
+        dataVec.asInstanceOf[Float4Vector].get(index).asInstanceOf[T]
+      case _: Boolean =>
+        (dataVec.asInstanceOf[BitVector].get(index) == 1).asInstanceOf[T]
+      case _: String =>
+        val vec = dataVec.asInstanceOf[VarCharVector]
+        (if vec.isNull(index) then null
+         else new String(vec.get(index), StandardCharsets.UTF_8)).asInstanceOf[T]
+      case _: List[t] =>
+        // Nested list - the data vector is itself a ListVector
+        val innerListVec = dataVec.asInstanceOf[ListVector]
+        readListValue[t](innerListVec, index).asInstanceOf[T]
+      case _ =>
+        // For nested products in lists, read struct and reconstruct using Mirror
+        // Note: This works for structs with primitive fields only. Deeply nested
+        // products (structs containing other structs) require explicit reader derivation.
+        val structVec = dataVec.asInstanceOf[StructVector]
+        val product = readProductFromStruct(structVec, index)
+        summonFrom {
+          case m: Mirror.ProductOf[T] =>
+            // For simple structs (primitives only), fromProduct works with ArrayProduct
+            m.fromProduct(product)
+          case _ =>
+            // Fall back to returning the product as-is
+            product.asInstanceOf[T]
+        }
+
+  /** Read product fields from struct vector with compile-time type dispatch (non-recursive for nested products) */
+  private inline def readProductFields[Types <: Tuple](
+      structVec: StructVector,
+      rowIndex: Int,
+      fieldIndex: Int,
+      values: Array[Any]
+  ): Unit =
+    inline erasedValue[Types] match
+      case _: EmptyTuple => ()
+      case _: (Boolean *: ts) =>
+        val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[BitVector]
+        values(fieldIndex) = vec.get(rowIndex) == 1
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+      case _: (Int *: ts) =>
+        val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[IntVector]
+        values(fieldIndex) = vec.get(rowIndex)
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+      case _: (Long *: ts) =>
+        val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[BigIntVector]
+        values(fieldIndex) = vec.get(rowIndex)
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+      case _: (Double *: ts) =>
+        val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[Float8Vector]
+        values(fieldIndex) = vec.get(rowIndex)
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+      case _: (Float *: ts) =>
+        val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[Float4Vector]
+        values(fieldIndex) = vec.get(rowIndex)
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+      case _: (String *: ts) =>
+        val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[VarCharVector]
+        values(fieldIndex) =
+          if vec.isNull(rowIndex) then null
+          else new String(vec.get(rowIndex), StandardCharsets.UTF_8)
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+      case _: (t *: ts) =>
+        // For nested products, use runtime struct reader (avoids inline explosion)
+        val childVec = structVec.getChildByOrdinal(fieldIndex)
+        values(fieldIndex) = childVec match
+          case v: StructVector if !v.isNull(rowIndex) =>
+            readProductFromStruct(v, rowIndex)
+          case _ => null
+        readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
+
+  /** Simple runtime struct field reader - no nested product reconstruction */
+  private def simpleReadStructFields(
+      structVec: StructVector,
+      rowIndex: Int,
+      values: Array[Any]
+  ): Unit =
+    var i = 0
+    while i < values.length do
+      val childVec = structVec.getChildByOrdinal(i)
+      values(i) = childVec match
+        case v: IntVector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: BigIntVector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: Float8Vector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: Float4Vector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: VarCharVector if !v.isNull(rowIndex) =>
+          new String(v.get(rowIndex), StandardCharsets.UTF_8)
+        case v: BitVector if !v.isNull(rowIndex) => v.get(rowIndex) == 1
+        case _ => null
+      i += 1
+
+  /** Runtime fallback for list elements */
+  private def readListElementGeneric(
+      dataVec: ValueVector,
+      index: Int
+  ): Any =
+    dataVec match
+      case v: IntVector => v.get(index)
+      case v: BigIntVector => v.get(index)
+      case v: Float8Vector => v.get(index)
+      case v: Float4Vector => v.get(index)
+      case v: BitVector => v.get(index) == 1
+      case v: VarCharVector =>
+        if v.isNull(index) then null
+        else new String(v.get(index), StandardCharsets.UTF_8)
+      case v: StructVector =>
+        readProductFromStruct(v, index)
+      case _ => null
+
   /** Fallback for complex Option types */
   private def readAnyOptionValue(
       root: VectorSchemaRoot,
@@ -283,7 +429,7 @@ object InlineArrowReader:
   private def readProductFromStruct(
       structVec: StructVector,
       rowIndex: Int
-  ): Array[Any] =
+  ): ArrayProduct =
     val numChildren = structVec.size()
     val values = new Array[Any](numChildren)
     var i = 0
@@ -297,9 +443,12 @@ object InlineArrowReader:
         case v: VarCharVector if !v.isNull(rowIndex) =>
           new String(v.get(rowIndex), StandardCharsets.UTF_8)
         case v: BitVector if !v.isNull(rowIndex) => v.get(rowIndex) == 1
+        case v: StructVector if !v.isNull(rowIndex) =>
+          // Recursively read nested struct
+          readProductFromStruct(v, rowIndex)
         case _ => null
       i += 1
-    values
+    ArrayProduct(values)
 
   /** Check if field is null at position */
   private def isNullAt(root: VectorSchemaRoot, fieldIndex: Int, rowIndex: Int): Boolean =
@@ -382,8 +531,13 @@ object InlineArrowReader:
         readStructFields[ts](structVec, rowIndex, fieldIndex + 1, values)
 
       case _: (t *: ts) =>
-        // Generic fallback for struct field
-        values(fieldIndex) = null
+        // For nested structs within structs, use runtime fallback to avoid inline explosion
+        val childVec = structVec.getChildByOrdinal(fieldIndex)
+        values(fieldIndex) = childVec match
+          case nestedStructVec: StructVector =>
+            if nestedStructVec.isNull(rowIndex) then null
+            else readProductFromStruct(nestedStructVec, rowIndex)
+          case _ => null
         readStructFields[ts](structVec, rowIndex, fieldIndex + 1, values)
 
   /** Fallback for truly unknown types */

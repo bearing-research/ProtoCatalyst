@@ -223,6 +223,16 @@ object InlineArrowWriter:
           vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
+      // === List types ===
+      case _: (List[t] *: ts) =>
+        val listVec = root.getVector(fieldIndex).asInstanceOf[ListVector]
+        val listValue = product.productElement(fieldIndex)
+        if listValue != null then
+          writeListValue[t](listVec, rowIndex, listValue.asInstanceOf[List[t]])
+        else
+          listVec.setNull(rowIndex)
+        writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
+
       // === Option types ===
       case _: (Option[t] *: ts) =>
         product.productElement(fieldIndex) match
@@ -274,6 +284,82 @@ object InlineArrowWriter:
       case _ =>
         writeAnyOptionValue(root, rowIndex, fieldIndex, value)
 
+  /** Write a List[T] to a ListVector with type specialization */
+  private inline def writeListValue[T](
+      listVec: ListVector,
+      rowIndex: Int,
+      list: List[T]
+  ): Unit =
+    val startOffset = listVec.startNewValue(rowIndex)
+    val dataVec = listVec.getDataVector
+    var i = 0
+    for elem <- list do
+      val elemIndex = startOffset + i
+      writeListElement[T](dataVec, elemIndex, elem)
+      i += 1
+    listVec.endValue(rowIndex, list.size)
+
+  /** Write a single list element with type specialization */
+  private inline def writeListElement[T](
+      dataVec: ValueVector,
+      index: Int,
+      value: T
+  ): Unit =
+    inline erasedValue[T] match
+      case _: Int =>
+        dataVec.asInstanceOf[IntVector].setSafe(index, value.asInstanceOf[Int])
+      case _: Long =>
+        dataVec.asInstanceOf[BigIntVector].setSafe(index, value.asInstanceOf[Long])
+      case _: Double =>
+        dataVec.asInstanceOf[Float8Vector].setSafe(index, value.asInstanceOf[Double])
+      case _: Float =>
+        dataVec.asInstanceOf[Float4Vector].setSafe(index, value.asInstanceOf[Float])
+      case _: Boolean =>
+        dataVec.asInstanceOf[BitVector].setSafe(index, if value.asInstanceOf[Boolean] then 1 else 0)
+      case _: String =>
+        val str = value.asInstanceOf[String]
+        if str != null then
+          dataVec.asInstanceOf[VarCharVector].setSafe(index, str.getBytes(StandardCharsets.UTF_8))
+        else
+          dataVec.asInstanceOf[VarCharVector].setNull(index)
+      case _: List[t] =>
+        // Nested list - the data vector is itself a ListVector
+        val innerListVec = dataVec.asInstanceOf[ListVector]
+        val innerList = value.asInstanceOf[List[t]]
+        writeListValue[t](innerListVec, index, innerList)
+      case _ =>
+        // Try to handle as a product (struct) or fall back to runtime dispatch
+        writeListElementGeneric(dataVec, index, value)
+
+  /** Runtime fallback for list elements */
+  private def writeListElementGeneric(
+      dataVec: ValueVector,
+      index: Int,
+      value: Any
+  ): Unit =
+    if value == null then
+      dataVec match
+        case v: IntVector => v.setNull(index)
+        case v: BigIntVector => v.setNull(index)
+        case v: Float8Vector => v.setNull(index)
+        case v: VarCharVector => v.setNull(index)
+        case v: StructVector => v.setNull(index)
+        case _ => ()
+    else
+      dataVec match
+        case v: IntVector => v.setSafe(index, value.asInstanceOf[Int])
+        case v: BigIntVector => v.setSafe(index, value.asInstanceOf[Long])
+        case v: Float8Vector => v.setSafe(index, value.asInstanceOf[Double])
+        case v: Float4Vector => v.setSafe(index, value.asInstanceOf[Float])
+        case v: VarCharVector =>
+          v.setSafe(index, value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8))
+        case v: StructVector =>
+          // Write product fields to struct
+          val product = value.asInstanceOf[Product]
+          writeProductToStruct(product, v, index)
+          v.setIndexDefined(index)
+        case _ => ()
+
   /** Fallback for complex Option types */
   private def writeAnyOptionValue(
       root: VectorSchemaRoot,
@@ -319,6 +405,11 @@ object InlineArrowWriter:
             v.setSafe(rowIndex, bytes)
           case v: BitVector =>
             v.setSafe(rowIndex, if value.asInstanceOf[Boolean] then 1 else 0)
+          case v: StructVector =>
+            // Recursively write nested product
+            val nestedProduct = value.asInstanceOf[Product]
+            writeProductToStruct(nestedProduct, v, rowIndex)
+            v.setIndexDefined(rowIndex)
           case _ => ()
       else
         childVec match
@@ -328,6 +419,7 @@ object InlineArrowWriter:
           case v: Float8Vector => v.setNull(rowIndex)
           case v: Float4Vector => v.setNull(rowIndex)
           case v: BitVector => v.setNull(rowIndex)
+          case v: StructVector => v.setNull(rowIndex)
           case _ => ()
       i += 1
 

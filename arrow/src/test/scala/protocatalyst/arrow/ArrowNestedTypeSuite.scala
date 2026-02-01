@@ -29,6 +29,10 @@ case class ArrowAddressBook(contacts: Map[String, ArrowAddress]) derives ProtoEn
 // Nested collections
 case class ArrowMatrix(rows: List[List[Int]]) derives ProtoEncoder
 
+// Simple struct for list testing
+case class ArrowSimpleStruct(name: String, value: Int) derives ProtoEncoder
+case class ArrowListOfSimple(items: List[ArrowSimpleStruct]) derives ProtoEncoder
+
 class ArrowNestedTypeSuite extends munit.FunSuite:
 
   var allocator: RootAllocator = uninitialized
@@ -194,14 +198,57 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
     finally
       root.close()
 
-  // TODO: Nested collections (List[List[T]]) require ListVector read support
-  // This is an advanced edge case - basic nested types work correctly
-  test("roundtrip nested List of Int".ignore):
+  test("roundtrip nested List of Int"):
     val writer = InlineArrowWriter.derived[ArrowMatrix]
     val reader = InlineArrowReader.derived[ArrowMatrix]
     val original = Seq(
       ArrowMatrix(List(List(1, 2, 3), List(4, 5, 6))),
       ArrowMatrix(List(List(7, 8), List(9)))
+    )
+
+    val root = VectorSchemaRoot.create(writer.schema, allocator)
+    try
+      writer.write(original, root)
+      val result = reader.read(root)
+      assertEquals(result, original)
+    finally
+      root.close()
+
+  // Note: List elements with nested products (e.g., ArrowPerson with ArrowAddress)
+  // require multi-level Mirror reconstruction which hits Scala 3 inline limits.
+  // This is a known limitation - use flat structs or explicit conversion for complex cases.
+  test("roundtrip List of nested case class (ArrowTeam)".ignore):
+    val writer = InlineArrowWriter.derived[ArrowTeam]
+    val reader = InlineArrowReader.derived[ArrowTeam]
+    val original = Seq(
+      ArrowTeam("Engineering", List(
+        ArrowPerson("Alice", 30, ArrowAddress("123 Main St", "NYC")),
+        ArrowPerson("Bob", 25, ArrowAddress("456 Oak Ave", "LA"))
+      )),
+      ArrowTeam("Sales", List(
+        ArrowPerson("Carol", 35, ArrowAddress("789 Pine Rd", "SF"))
+      ))
+    )
+
+    val root = VectorSchemaRoot.create(writer.schema, allocator)
+    try
+      writer.write(original, root)
+      val result = reader.read(root)
+      assertEquals(result, original)
+    finally
+      root.close()
+
+  test("roundtrip List of simple struct (no nested products)"):
+    val writer = InlineArrowWriter.derived[ArrowListOfSimple]
+    val reader = InlineArrowReader.derived[ArrowListOfSimple]
+    val original = Seq(
+      ArrowListOfSimple(List(
+        ArrowSimpleStruct("a", 1),
+        ArrowSimpleStruct("b", 2)
+      )),
+      ArrowListOfSimple(List(
+        ArrowSimpleStruct("c", 3)
+      ))
     )
 
     val root = VectorSchemaRoot.create(writer.schema, allocator)
