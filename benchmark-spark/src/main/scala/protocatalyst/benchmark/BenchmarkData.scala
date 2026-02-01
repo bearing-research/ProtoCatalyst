@@ -19,6 +19,9 @@ case class Person(name: String, age: Int, address: Address)
 // Collection fields - tests array/map encoding
 case class WithCollections(items: List[String], scores: Map[String, Double])
 
+// Collections of custom types - tests nested struct serialization in arrays/maps
+case class Team(name: String, members: List[Person])
+
 // Complex case class - comprehensive test
 case class Complex(
     id: Long,
@@ -40,6 +43,15 @@ object BenchmarkData {
   val withCollections: WithCollections = WithCollections(
     items = List("item1", "item2", "item3"),
     scores = Map("a" -> 1.0, "b" -> 2.0, "c" -> 3.0)
+  )
+
+  val team: Team = Team(
+    name = "Engineering",
+    members = List(
+      Person("Alice", 30, Address("123 Main St", "NYC", "10001")),
+      Person("Bob", 25, Address("456 Oak Ave", "LA", "90001")),
+      Person("Charlie", 35, Address("789 Pine Rd", "SF", "94102"))
+    )
   )
 
   val complex: Complex = Complex(

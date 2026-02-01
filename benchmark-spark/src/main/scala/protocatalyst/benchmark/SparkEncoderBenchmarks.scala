@@ -23,26 +23,31 @@ class SparkEncoderBenchmarks {
   // Test data
   val simpleData: Simple = BenchmarkData.simple
   val personData: Person = BenchmarkData.person
+  val teamData: Team = BenchmarkData.team
   val complexData: Complex = BenchmarkData.complex
 
   // Pre-created encoders for serialization benchmarks
   var simpleEncoder: ExpressionEncoder[Simple] = _
   var personEncoder: ExpressionEncoder[Person] = _
+  var teamEncoder: ExpressionEncoder[Team] = _
   var complexEncoder: ExpressionEncoder[Complex] = _
 
   // Pre-created serializers (bound to schema)
   var simpleSerializer: Simple => InternalRow = _
   var personSerializer: Person => InternalRow = _
+  var teamSerializer: Team => InternalRow = _
   var complexSerializer: Complex => InternalRow = _
 
   // Pre-created deserializers
   var simpleDeserializer: InternalRow => Simple = _
   var personDeserializer: InternalRow => Person = _
+  var teamDeserializer: InternalRow => Team = _
   var complexDeserializer: InternalRow => Complex = _
 
   // Pre-serialized rows for deserialization benchmarks
   var simpleSerialized: InternalRow = _
   var personSerialized: InternalRow = _
+  var teamSerialized: InternalRow = _
   var complexSerialized: InternalRow = _
 
   @Setup
@@ -50,21 +55,25 @@ class SparkEncoderBenchmarks {
     // Create encoders (this includes schema inference via TypeTag)
     simpleEncoder = ExpressionEncoder[Simple]()
     personEncoder = ExpressionEncoder[Person]()
+    teamEncoder = ExpressionEncoder[Team]()
     complexEncoder = ExpressionEncoder[Complex]()
 
     // Create serializers
     simpleSerializer = simpleEncoder.createSerializer()
     personSerializer = personEncoder.createSerializer()
+    teamSerializer = teamEncoder.createSerializer()
     complexSerializer = complexEncoder.createSerializer()
 
     // Create deserializers (requires resolveAndBind)
     simpleDeserializer = simpleEncoder.resolveAndBind().createDeserializer()
     personDeserializer = personEncoder.resolveAndBind().createDeserializer()
+    teamDeserializer = teamEncoder.resolveAndBind().createDeserializer()
     complexDeserializer = complexEncoder.resolveAndBind().createDeserializer()
 
     // Pre-serialize for deserialization benchmarks
     simpleSerialized = simpleSerializer(simpleData)
     personSerialized = personSerializer(personData)
+    teamSerialized = teamSerializer(teamData)
     complexSerialized = complexSerializer(complexData)
   }
 
@@ -124,4 +133,22 @@ class SparkEncoderBenchmarks {
   @Benchmark
   def roundtripComplex(): Complex =
     complexDeserializer(complexSerializer(complexData))
+
+  // ========== Team (List[Person] - collection of custom types) ==========
+
+  @Benchmark
+  def deriveTeam(): ExpressionEncoder[Team] =
+    ExpressionEncoder[Team]()
+
+  @Benchmark
+  def serializeTeam(): InternalRow =
+    teamSerializer(teamData)
+
+  @Benchmark
+  def deserializeTeam(): Team =
+    teamDeserializer(teamSerialized)
+
+  @Benchmark
+  def roundtripTeam(): Team =
+    teamDeserializer(teamSerializer(teamData))
 }

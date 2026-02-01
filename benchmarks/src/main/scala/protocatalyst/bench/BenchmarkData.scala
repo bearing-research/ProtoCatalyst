@@ -24,6 +24,10 @@ case class WithCollections(items: List[String], scores: Map[String, Double]) der
 // Temporal types - tests date/time encoding
 case class Temporal(date: LocalDate, time: Instant) derives ProtoEncoder
 
+// Collections of custom types - tests nested struct serialization in arrays/maps
+case class Team(name: String, members: List[Person]) derives ProtoEncoder
+case class Directory(name: String, personByName: Map[String, Person]) derives ProtoEncoder
+
 // Wide schema - tests many fields
 case class Wide(
     f1: Int,
@@ -69,6 +73,23 @@ object BenchmarkData:
   val withCollections: WithCollections = WithCollections(
     items = List("item1", "item2", "item3"),
     scores = Map("a" -> 1.0, "b" -> 2.0, "c" -> 3.0)
+  )
+
+  val team: Team = Team(
+    name = "Engineering",
+    members = List(
+      Person("Alice", 30, Address("123 Main St", "NYC", "10001")),
+      Person("Bob", 25, Address("456 Oak Ave", "LA", "90001")),
+      Person("Charlie", 35, Address("789 Pine Rd", "SF", "94102"))
+    )
+  )
+
+  val directory: Directory = Directory(
+    name = "Staff",
+    personByName = Map(
+      "alice" -> Person("Alice", 30, Address("123 Main St", "NYC", "10001")),
+      "bob" -> Person("Bob", 25, Address("456 Oak Ave", "LA", "90001"))
+    )
   )
 
   val temporal: Temporal = Temporal(

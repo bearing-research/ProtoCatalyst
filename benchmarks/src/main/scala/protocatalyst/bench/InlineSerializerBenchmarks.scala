@@ -30,33 +30,40 @@ class InlineSerializerBenchmarks:
   val currentSimple: RowSerializer[Simple] = RowSerializer.derived[Simple]
   val currentPerson: RowSerializer[Person] = RowSerializer.derived[Person]
   val currentWide: RowSerializer[Wide] = RowSerializer.derived[Wide]
+  val currentTeam: RowSerializer[Team] = RowSerializer.derived[Team]
 
   // ========== Inline specialized serializers ==========
   val inlineSimple: InlineRowSerializer[Simple] = InlineRowSerializer.derived[Simple]
   val inlinePerson: InlineRowSerializer[Person] = InlineRowSerializer.derived[Person]
   val inlineWide: InlineRowSerializer[Wide] = InlineRowSerializer.derived[Wide]
+  val inlineTeam: InlineRowSerializer[Team] = InlineRowSerializer.derived[Team]
 
   // Test data
   val simpleData: Simple = BenchmarkData.simple
   val personData: Person = BenchmarkData.person
   val wideData: Wide = BenchmarkData.wide
+  val teamData: Team = BenchmarkData.team
 
   // Pre-serialized data for deserialization benchmarks
   var currentSimpleSerialized: Array[Any] = uninitialized
   var currentPersonSerialized: Array[Any] = uninitialized
   var currentWideSerialized: Array[Any] = uninitialized
+  var currentTeamSerialized: Array[Any] = uninitialized
   var inlineSimpleSerialized: Array[Any] = uninitialized
   var inlinePersonSerialized: Array[Any] = uninitialized
   var inlineWideSerialized: Array[Any] = uninitialized
+  var inlineTeamSerialized: Array[Any] = uninitialized
 
   @Setup
   def setup(): Unit =
     currentSimpleSerialized = currentSimple.serialize(simpleData)
     currentPersonSerialized = currentPerson.serialize(personData)
     currentWideSerialized = currentWide.serialize(wideData)
+    currentTeamSerialized = currentTeam.serialize(teamData)
     inlineSimpleSerialized = inlineSimple.serialize(simpleData)
     inlinePersonSerialized = inlinePerson.serialize(personData)
     inlineWideSerialized = inlineWide.serialize(wideData)
+    inlineTeamSerialized = inlineTeam.serialize(teamData)
 
   // ========== Simple (2 fields: String, Int) ==========
 
@@ -137,3 +144,29 @@ class InlineSerializerBenchmarks:
   @Benchmark
   def inlineRoundtripWide(): Wide =
     inlineWide.deserialize(inlineWide.serialize(wideData))
+
+  // ========== Team (List[Person] - collection of custom types) ==========
+
+  @Benchmark
+  def currentSerializeTeam(): Array[Any] =
+    currentTeam.serialize(teamData)
+
+  @Benchmark
+  def inlineSerializeTeam(): Array[Any] =
+    inlineTeam.serialize(teamData)
+
+  @Benchmark
+  def currentDeserializeTeam(): Team =
+    currentTeam.deserialize(currentTeamSerialized)
+
+  @Benchmark
+  def inlineDeserializeTeam(): Team =
+    inlineTeam.deserialize(inlineTeamSerialized)
+
+  @Benchmark
+  def currentRoundtripTeam(): Team =
+    currentTeam.deserialize(currentTeam.serialize(teamData))
+
+  @Benchmark
+  def inlineRoundtripTeam(): Team =
+    inlineTeam.deserialize(inlineTeam.serialize(teamData))
