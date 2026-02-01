@@ -95,27 +95,71 @@ Tests Spark's ExpressionEncoder (runtime TypeTag reflection):
 | `deserializeSimple` | Deserialize from InternalRow |
 | `roundtripSimple` | Full serialize→deserialize cycle |
 
-## Expected Results
+## Benchmark Results (2026-01-31)
 
-### Schema Derivation
+Environment: JDK 21.0.10, Apple Silicon, JMH 1.37
 
-Proto (compile-time Mirror) should be faster than Spark (runtime TypeTag):
-- Proto: ~0.01-0.1 μs (already compiled)
-- Spark: ~10-100 μs (runtime reflection)
+### Schema Derivation: Proto vs Spark
 
-### Serialization/Deserialization
+| Benchmark | Proto (μs) | Spark (μs) | Speedup |
+|-----------|-----------|-----------|---------|
+| deriveSimple | 0.135 | 105.6 | **782x** |
+| derivePerson | 0.384 | 254.4 | **662x** |
+| deriveComplex | 0.891 | 664.8 | **746x** |
+| deriveWide | 1.299 | - | - |
 
-Performance depends on object complexity:
-- Simple objects: Comparable performance
-- Complex/nested: Proto may be faster (no expression tree overhead)
+**Key insight**: Proto uses compile-time Mirror derivation; Spark uses runtime TypeTag reflection + code generation.
 
-### Codec Comparison
+### Serialization: Proto vs Spark
 
-| Codec | Relative Speed | Notes |
-|-------|----------------|-------|
-| Java | 1x (baseline) | No dependencies |
-| Kryo | ~10x | Thread-local pooling |
-| Fory | ~170x | Scala 3 native support |
+| Benchmark | Proto (μs) | Spark (μs) | Speedup |
+|-----------|-----------|-----------|---------|
+| serializeSimple | 0.015 | 0.021 | 1.4x |
+| serializePerson | 0.028 | 0.073 | **2.6x** |
+| serializeComplex | 0.035 | 0.253 | **7.2x** |
+| serializeWide | 0.080 | - | - |
+
+### Deserialization: Proto vs Spark
+
+| Benchmark | Proto (μs) | Spark (μs) | Speedup |
+|-----------|-----------|-----------|---------|
+| deserializeSimple | 0.017 | 0.024 | 1.4x |
+| deserializePerson | 0.022 | 0.084 | **3.8x** |
+| deserializeComplex | 0.034 | 0.285 | **8.4x** |
+
+### Roundtrip: Proto vs Spark
+
+| Benchmark | Proto (μs) | Spark (μs) | Speedup |
+|-----------|-----------|-----------|---------|
+| roundtripSimple | 0.038 | 0.054 | 1.4x |
+| roundtripPerson | 0.041 | 0.328 | **8.0x** |
+| roundtripComplex | 0.072 | 0.633 | **8.8x** |
+
+### Codec Comparison (TransformingEncoder)
+
+| Codec | Encode (ops/s) | Decode (ops/s) | vs Java Encode | vs Java Decode |
+|-------|---------------|---------------|----------------|----------------|
+| Java | 16,151 | 2,742 | 1x | 1x |
+| Kryo | 571,179 | 38,871 | **35x** | **14x** |
+| Fory | 331,683 | 522,011 | **21x** | **190x** |
+
+**Codec insights**:
+- Kryo excels at encoding (35x faster than Java)
+- Fory excels at decoding (190x faster than Java)
+- For roundtrip, Kryo slightly faster (373K ops/s vs Fory 126K ops/s)
+
+### Summary
+
+| Category | Proto Advantage |
+|----------|----------------|
+| Schema Derivation | **660-780x faster** |
+| Serialization | 1.4-7.2x faster |
+| Deserialization | 1.4-8.4x faster |
+| Roundtrip | 1.4-8.8x faster |
+
+The massive schema derivation speedup (660-780x) demonstrates the value of
+migrating Spark's encoder from runtime reflection (TypeTag) to compile-time
+derivation (Mirror) when Spark moves to Scala 3.
 
 ## Test Data Classes
 
