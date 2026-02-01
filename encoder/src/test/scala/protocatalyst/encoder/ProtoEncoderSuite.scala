@@ -181,7 +181,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     val enc = summon[ProtoEncoder[java.time.LocalTime]]
     enc.catalystType match
       case ProtoType.TimeType(6) => () // ok - default microsecond precision
-      case other => fail(s"Expected TimeType(6), got $other")
+      case other                 => fail(s"Expected TimeType(6), got $other")
 
   // === Tuple encoder tests ===
 
@@ -239,7 +239,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
       case ProtoType.StructType(fields) =>
         assertEquals(fields.size, 2)
         assertEquals(fields(0).nullable, false)
-        assertEquals(fields(1).nullable, true)  // Option is nullable
+        assertEquals(fields(1).nullable, true) // Option is nullable
       case other =>
         fail(s"Expected StructType for tuple, got $other")
 
@@ -335,7 +335,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(0).name, "name")
     assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
     assertEquals(enc.fields(1).name, "status")
-    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)  // enum as string
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType) // enum as string
 
   test("enum can be summoned via given"):
     val enc = summon[ProtoEncoder[Color]]
@@ -394,7 +394,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     enc.catalystType match
       case ProtoType.MapType(keyType, valType, _) =>
         assertEquals(keyType, ProtoType.StringType)
-        assertEquals(valType, ProtoType.StringType)  // enum as string
+        assertEquals(valType, ProtoType.StringType) // enum as string
       case other =>
         fail(s"Expected MapType, got $other")
 
@@ -406,7 +406,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(0).name, "name")
     assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
     assertEquals(enc.fields(1).name, "priority")
-    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)  // Java enum as string
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType) // Java enum as string
 
   // === Boxed primitive encoder tests ===
 
@@ -495,19 +495,23 @@ class ProtoEncoderSuite extends munit.FunSuite:
         fail(s"Expected ArrayType, got $other")
 
   test("case class containing boxed primitives"):
-    case class BoxedContainer(count: java.lang.Integer, value: java.lang.Double, flag: java.lang.Boolean)
+    case class BoxedContainer(
+        count: java.lang.Integer,
+        value: java.lang.Double,
+        flag: java.lang.Boolean
+    )
     val enc = ProtoEncoder.derived[BoxedContainer]
 
     assertEquals(enc.fields.size, 3)
     assertEquals(enc.fields(0).name, "count")
     assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntType)
-    assertEquals(enc.fields(0).nullable, true)  // Boxed Integer is nullable
+    assertEquals(enc.fields(0).nullable, true) // Boxed Integer is nullable
     assertEquals(enc.fields(1).name, "value")
     assertEquals(enc.fields(1).encoder.catalystType, ProtoType.DoubleType)
-    assertEquals(enc.fields(1).nullable, true)  // Boxed Double is nullable
+    assertEquals(enc.fields(1).nullable, true) // Boxed Double is nullable
     assertEquals(enc.fields(2).name, "flag")
     assertEquals(enc.fields(2).encoder.catalystType, ProtoType.BooleanType)
-    assertEquals(enc.fields(2).nullable, true)  // Boxed Boolean is nullable
+    assertEquals(enc.fields(2).nullable, true) // Boxed Boolean is nullable
 
   // === Additional temporal type encoder tests ===
 
@@ -620,7 +624,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(0).name, "amount")
     enc.fields(0).encoder.catalystType match
       case ProtoType.DecimalType(38, 18) => () // ok
-      case other => fail(s"Expected DecimalType(38, 18), got $other")
+      case other                         => fail(s"Expected DecimalType(38, 18), got $other")
     assertEquals(enc.fields(0).nullable, true) // java.math.BigDecimal is nullable
 
   test("JavaBeanEncoder with enum"):
@@ -960,5 +964,5 @@ class ProtoEncoderSuite extends munit.FunSuite:
     val enc = summon[ProtoEncoder[Event]]
     enc.catalystType match
       case ProtoType.SumType(_, _) => () // ok
-      case other =>
+      case other                   =>
         fail(s"Expected SumType, got $other")

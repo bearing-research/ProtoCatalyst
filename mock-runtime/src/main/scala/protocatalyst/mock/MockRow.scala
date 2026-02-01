@@ -2,11 +2,9 @@ package protocatalyst.mock
 
 import protocatalyst.encoder.ProtoRow
 
-/**
- * Mock row representation for expression evaluation.
- * Similar to Spark's InternalRow.
- * Implements ProtoRow for compatibility with RowEncoder.
- */
+/** Mock row representation for expression evaluation. Similar to Spark's InternalRow. Implements
+  * ProtoRow for compatibility with RowEncoder.
+  */
 case class MockRow(values: Vector[Any]) extends ProtoRow:
   def length: Int = values.size
 
@@ -27,35 +25,35 @@ case class MockRow(values: Vector[Any]) extends ProtoRow:
   def getDouble(i: Int): Double = get(i).asInstanceOf[Double]
 
   def getString(i: Int): String = get(i) match
-    case s: String => s
+    case s: String            => s
     case utf8: MockUTF8String => utf8.value
-    case other => other.toString
+    case other                => other.toString
 
   def getBinary(i: Int): Array[Byte] = get(i).asInstanceOf[Array[Byte]]
 
   def getDecimal(i: Int): BigDecimal = get(i) match
-    case bd: BigDecimal => bd
+    case bd: BigDecimal            => bd
     case jbd: java.math.BigDecimal => BigDecimal(jbd)
-    case l: Long => BigDecimal(l)
-    case i: Int => BigDecimal(i)
-    case d: Double => BigDecimal(d)
-    case other => throw ClassCastException(s"Cannot cast $other to BigDecimal")
+    case l: Long                   => BigDecimal(l)
+    case i: Int                    => BigDecimal(i)
+    case d: Double                 => BigDecimal(d)
+    case other                     => throw ClassCastException(s"Cannot cast $other to BigDecimal")
 
   def getSeq[T](i: Int): Seq[T] = get(i) match
     case arr: MockArrayData => arr.values.asInstanceOf[Seq[T]]
-    case seq: Seq[?] => seq.asInstanceOf[Seq[T]]
-    case other => throw ClassCastException(s"Cannot cast $other to Seq")
+    case seq: Seq[?]        => seq.asInstanceOf[Seq[T]]
+    case other              => throw ClassCastException(s"Cannot cast $other to Seq")
 
   def getMap[K, V](i: Int): Map[K, V] = get(i) match
     case mapData: MockMapData => mapData.keys.zip(mapData.values).toMap.asInstanceOf[Map[K, V]]
-    case m: Map[?, ?] => m.asInstanceOf[Map[K, V]]
-    case other => throw ClassCastException(s"Cannot cast $other to Map")
+    case m: Map[?, ?]         => m.asInstanceOf[Map[K, V]]
+    case other                => throw ClassCastException(s"Cannot cast $other to Map")
 
   def getStruct(i: Int): ProtoRow = get(i) match
-    case row: MockRow => row
-    case row: ProtoRow => row
+    case row: MockRow     => row
+    case row: ProtoRow    => row
     case product: Product => MockRow(product.productIterator.toVector)
-    case other => throw ClassCastException(s"Cannot cast $other to ProtoRow")
+    case other            => throw ClassCastException(s"Cannot cast $other to ProtoRow")
 
   def toSeq: Seq[Any] = values
 
@@ -73,4 +71,4 @@ object MockRow:
   /** Convert from any ProtoRow */
   def fromProtoRow(row: ProtoRow): MockRow = row match
     case mr: MockRow => mr
-    case _ => MockRow(row.toSeq.toVector)
+    case _           => MockRow(row.toSeq.toVector)

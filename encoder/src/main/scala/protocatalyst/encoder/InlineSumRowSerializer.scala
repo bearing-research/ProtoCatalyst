@@ -4,37 +4,35 @@ import protocatalyst.types.*
 import scala.deriving.Mirror
 import scala.compiletime.*
 
-/**
- * Inline-specialized row serializer for sum types (sealed traits).
- *
- * Uses compile-time code generation to serialize/deserialize each variant
- * with type-specialized field handling. This eliminates the runtime reflection
- * and placeholder types used in the legacy SumRowSerializer.
- *
- * Row format: [variantName: String, ordinal: Int, variantData: Array[Any] | null]
- *
- * Usage:
- * {{{
- * sealed trait Event derives ProtoEncoder
- * case class Click(x: Int, y: Int) extends Event derives ProtoEncoder
- * case object Close extends Event
- *
- * val serializer = InlineSumRowSerializer.derived[Event]
- * val row = serializer.serialize(Click(10, 20))  // ["Click", 0, [10, 20]]
- * val event = serializer.deserialize(row)        // Click(10, 20)
- * }}}
- */
+/** Inline-specialized row serializer for sum types (sealed traits).
+  *
+  * Uses compile-time code generation to serialize/deserialize each variant with type-specialized
+  * field handling. This eliminates the runtime reflection and placeholder types used in the legacy
+  * SumRowSerializer.
+  *
+  * Row format: [variantName: String, ordinal: Int, variantData: Array[Any] | null]
+  *
+  * Usage:
+  * {{{
+  * sealed trait Event derives ProtoEncoder
+  * case class Click(x: Int, y: Int) extends Event derives ProtoEncoder
+  * case object Close extends Event
+  *
+  * val serializer = InlineSumRowSerializer.derived[Event]
+  * val row = serializer.serialize(Click(10, 20))  // ["Click", 0, [10, 20]]
+  * val event = serializer.deserialize(row)        // Click(10, 20)
+  * }}}
+  */
 trait InlineSumRowSerializer[T]:
   def serialize(value: T)(using conv: InternalTypeConverter): Array[Any]
   def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T
 
 object InlineSumRowSerializer:
 
-  /**
-   * Derive an inline-specialized sum serializer at compile time.
-   *
-   * Generates specialized serialization code for each variant of the sealed trait.
-   */
+  /** Derive an inline-specialized sum serializer at compile time.
+    *
+    * Generates specialized serialization code for each variant of the sealed trait.
+    */
   inline def derived[T](using m: Mirror.SumOf[T]): InlineSumRowSerializer[T] =
     // Create serialization function that captures inline expansion
     val serializeFn = (value: T, conv: InternalTypeConverter) =>
@@ -75,10 +73,8 @@ object InlineSumRowSerializer:
       case _: EmptyTuple =>
         throw RuntimeException(s"Unknown variant ordinal: $ordinal")
       case _: (v *: vs) =>
-        if ordinal == idx then
-          serializeOneVariant[v](value.asInstanceOf[v], conv)
-        else
-          serializeVariant[vs](value, ordinal, idx + 1, conv)
+        if ordinal == idx then serializeOneVariant[v](value.asInstanceOf[v], conv)
+        else serializeVariant[vs](value, ordinal, idx + 1, conv)
 
   /** Serialize a single variant using its Mirror */
   private inline def serializeOneVariant[V](
@@ -118,10 +114,8 @@ object InlineSumRowSerializer:
       case _: EmptyTuple =>
         throw RuntimeException(s"Unknown variant ordinal: $ordinal")
       case _: (v *: vs) =>
-        if ordinal == idx then
-          deserializeOneVariant[v, T](data, conv)
-        else
-          deserializeVariant[vs, T](ordinal, data, idx + 1, conv)
+        if ordinal == idx then deserializeOneVariant[v, T](data, conv)
+        else deserializeVariant[vs, T](ordinal, data, idx + 1, conv)
 
   /** Deserialize a single variant using its Mirror */
   private inline def deserializeOneVariant[V, T](

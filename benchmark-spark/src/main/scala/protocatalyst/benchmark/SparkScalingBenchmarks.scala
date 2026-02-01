@@ -57,21 +57,42 @@ class SparkScalingBenchmarks {
     persons10000 = (1 to 10000).map(i => Person(s"Person$i", 20 + i % 50, address)).toArray
 
     // Create Team batches (each team has 3 members)
-    teams10 = (1 to 10).map(i => Team(s"Team$i", List(
-      Person(s"Member${i}a", 25, address),
-      Person(s"Member${i}b", 30, address),
-      Person(s"Member${i}c", 35, address)
-    ))).toArray
-    teams100 = (1 to 100).map(i => Team(s"Team$i", List(
-      Person(s"Member${i}a", 25, address),
-      Person(s"Member${i}b", 30, address),
-      Person(s"Member${i}c", 35, address)
-    ))).toArray
-    teams1000 = (1 to 1000).map(i => Team(s"Team$i", List(
-      Person(s"Member${i}a", 25, address),
-      Person(s"Member${i}b", 30, address),
-      Person(s"Member${i}c", 35, address)
-    ))).toArray
+    teams10 = (1 to 10)
+      .map(i =>
+        Team(
+          s"Team$i",
+          List(
+            Person(s"Member${i}a", 25, address),
+            Person(s"Member${i}b", 30, address),
+            Person(s"Member${i}c", 35, address)
+          )
+        )
+      )
+      .toArray
+    teams100 = (1 to 100)
+      .map(i =>
+        Team(
+          s"Team$i",
+          List(
+            Person(s"Member${i}a", 25, address),
+            Person(s"Member${i}b", 30, address),
+            Person(s"Member${i}c", 35, address)
+          )
+        )
+      )
+      .toArray
+    teams1000 = (1 to 1000)
+      .map(i =>
+        Team(
+          s"Team$i",
+          List(
+            Person(s"Member${i}a", 25, address),
+            Person(s"Member${i}b", 30, address),
+            Person(s"Member${i}c", 35, address)
+          )
+        )
+      )
+      .toArray
 
     // Pre-serialize for deserialization benchmarks
     personsSerialized10 = persons10.map(personSerializer)

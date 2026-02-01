@@ -49,10 +49,12 @@ class MockRowEncoderSuite extends FunSuite:
   // === Nested struct serialization ===
 
   test("nested struct converts to MockRow"):
-    val innerSchema = ProtoType.StructType(Vector(
-      ProtoStructField("x", ProtoType.IntType, false),
-      ProtoStructField("y", ProtoType.IntType, false)
-    ))
+    val innerSchema = ProtoType.StructType(
+      Vector(
+        ProtoStructField("x", ProtoType.IntType, false),
+        ProtoStructField("y", ProtoType.IntType, false)
+      )
+    )
     val schema = Vector(
       FieldSchema("name", ProtoType.StringType, nullable = false, 0),
       FieldSchema("point", innerSchema, nullable = false, 1)
@@ -104,7 +106,12 @@ class MockRowEncoderSuite extends FunSuite:
 
   test("map field converts to MockMapData"):
     val schema = Vector(
-      FieldSchema("data", ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, false), nullable = false, 0)
+      FieldSchema(
+        "data",
+        ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, false),
+        nullable = false,
+        0
+      )
     )
     val encoder = RowEncoder(schema)
     val row = MockRow(Map("a" -> 1, "b" -> 2))

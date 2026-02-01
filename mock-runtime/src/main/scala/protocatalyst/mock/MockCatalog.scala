@@ -2,18 +2,16 @@ package protocatalyst.mock
 
 import protocatalyst.schema.ProtoSchema
 
-/**
- * Mock table catalog that simulates Spark's catalog.
- * Provides schemas for table names referenced in queries.
- */
+/** Mock table catalog that simulates Spark's catalog. Provides schemas for table names referenced
+  * in queries.
+  */
 trait MockCatalog:
   def getTableSchema(tableName: String): Option[MockDataType.StructType]
   def tableExists(tableName: String): Boolean
   def listTables: Vector[String]
 
-/**
- * In-memory catalog implementation for testing.
- */
+/** In-memory catalog implementation for testing.
+  */
 class InMemoryCatalog extends MockCatalog:
   private var tables: Map[String, MockDataType.StructType] = Map.empty
 

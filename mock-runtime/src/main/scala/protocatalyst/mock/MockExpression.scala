@@ -2,12 +2,11 @@ package protocatalyst.mock
 
 import protocatalyst.mock.MockDataType.*
 
-/**
- * Mock Spark Expression hierarchy.
- *
- * Mirrors org.apache.spark.sql.catalyst.expressions.Expression for testing
- * the conversion layer before real Spark Scala 3 is available.
- */
+/** Mock Spark Expression hierarchy.
+  *
+  * Mirrors org.apache.spark.sql.catalyst.expressions.Expression for testing the conversion layer
+  * before real Spark Scala 3 is available.
+  */
 sealed trait MockExpression:
   def dataType: MockDataType
   def nullable: Boolean
@@ -34,7 +33,8 @@ object MockExpression:
   ) extends MockExpression:
     def children: Seq[MockExpression] = Seq.empty
 
-  case class BoundReference(ordinal: Int, dataType: MockDataType, nullable: Boolean) extends MockExpression:
+  case class BoundReference(ordinal: Int, dataType: MockDataType, nullable: Boolean)
+      extends MockExpression:
     def children: Seq[MockExpression] = Seq.empty
 
   // === Comparison Expressions ===
@@ -51,7 +51,8 @@ object MockExpression:
   case class LessThan(left: MockExpression, right: MockExpression) extends BinaryComparison
   case class LessThanOrEqual(left: MockExpression, right: MockExpression) extends BinaryComparison
   case class GreaterThan(left: MockExpression, right: MockExpression) extends BinaryComparison
-  case class GreaterThanOrEqual(left: MockExpression, right: MockExpression) extends BinaryComparison
+  case class GreaterThanOrEqual(left: MockExpression, right: MockExpression)
+      extends BinaryComparison
 
   // === Logical Expressions ===
 
@@ -174,7 +175,8 @@ object MockExpression:
     def dataType: MockDataType = StringType
     def nullable: Boolean = children.exists(_.nullable)
 
-  case class Substring(str: MockExpression, pos: MockExpression, len: MockExpression) extends MockExpression:
+  case class Substring(str: MockExpression, pos: MockExpression, len: MockExpression)
+      extends MockExpression:
     def dataType: MockDataType = StringType
     def nullable: Boolean = str.nullable || pos.nullable || len.nullable
     def children: Seq[MockExpression] = Seq(str, pos, len)
@@ -189,12 +191,14 @@ object MockExpression:
     def nullable: Boolean = child.nullable
     def children: Seq[MockExpression] = Seq(child)
 
-  case class Like(left: MockExpression, right: MockExpression, escapeChar: Option[Char] = None) extends MockExpression:
+  case class Like(left: MockExpression, right: MockExpression, escapeChar: Option[Char] = None)
+      extends MockExpression:
     def dataType: MockDataType = BooleanType
     def nullable: Boolean = left.nullable || right.nullable
     def children: Seq[MockExpression] = Seq(left, right)
 
-  case class Trim(child: MockExpression, trimStr: Option[MockExpression], trimType: TrimType) extends MockExpression:
+  case class Trim(child: MockExpression, trimStr: Option[MockExpression], trimType: TrimType)
+      extends MockExpression:
     def dataType: MockDataType = StringType
     def nullable: Boolean = child.nullable
     def children: Seq[MockExpression] = Seq(child) ++ trimStr.toSeq
@@ -204,27 +208,38 @@ object MockExpression:
     def nullable: Boolean = child.nullable
     def children: Seq[MockExpression] = Seq(child)
 
-  case class Replace(str: MockExpression, search: MockExpression, replace: MockExpression) extends MockExpression:
+  case class Replace(str: MockExpression, search: MockExpression, replace: MockExpression)
+      extends MockExpression:
     def dataType: MockDataType = StringType
     def nullable: Boolean = str.nullable || search.nullable || replace.nullable
     def children: Seq[MockExpression] = Seq(str, search, replace)
 
-  case class StringLocate(substr: MockExpression, str: MockExpression, start: Option[MockExpression]) extends MockExpression:
+  case class StringLocate(
+      substr: MockExpression,
+      str: MockExpression,
+      start: Option[MockExpression]
+  ) extends MockExpression:
     def dataType: MockDataType = IntegerType
     def nullable: Boolean = substr.nullable || str.nullable
     def children: Seq[MockExpression] = Seq(substr, str) ++ start.toSeq
 
-  case class Lpad(str: MockExpression, len: MockExpression, pad: MockExpression) extends MockExpression:
+  case class Lpad(str: MockExpression, len: MockExpression, pad: MockExpression)
+      extends MockExpression:
     def dataType: MockDataType = StringType
     def nullable: Boolean = str.nullable || len.nullable || pad.nullable
     def children: Seq[MockExpression] = Seq(str, len, pad)
 
-  case class Rpad(str: MockExpression, len: MockExpression, pad: MockExpression) extends MockExpression:
+  case class Rpad(str: MockExpression, len: MockExpression, pad: MockExpression)
+      extends MockExpression:
     def dataType: MockDataType = StringType
     def nullable: Boolean = str.nullable || len.nullable || pad.nullable
     def children: Seq[MockExpression] = Seq(str, len, pad)
 
-  case class StringSplit(str: MockExpression, delimiter: MockExpression, limit: Option[MockExpression]) extends MockExpression:
+  case class StringSplit(
+      str: MockExpression,
+      delimiter: MockExpression,
+      limit: Option[MockExpression]
+  ) extends MockExpression:
     def dataType: MockDataType = ArrayType(StringType, false)
     def nullable: Boolean = str.nullable || delimiter.nullable
     def children: Seq[MockExpression] = Seq(str, delimiter) ++ limit.toSeq
@@ -278,10 +293,12 @@ object MockExpression:
       elseValue: Option[MockExpression] = None
   ) extends MockExpression:
     def dataType: MockDataType = branches.headOption.map(_._2.dataType).getOrElse(StringType)
-    def nullable: Boolean = branches.exists(_._2.nullable) || elseValue.exists(_.nullable) || elseValue.isEmpty
+    def nullable: Boolean =
+      branches.exists(_._2.nullable) || elseValue.exists(_.nullable) || elseValue.isEmpty
     def children: Seq[MockExpression] = branches.flatMap(b => Seq(b._1, b._2)) ++ elseValue.toSeq
 
-  case class If(predicate: MockExpression, trueValue: MockExpression, falseValue: MockExpression) extends MockExpression:
+  case class If(predicate: MockExpression, trueValue: MockExpression, falseValue: MockExpression)
+      extends MockExpression:
     def dataType: MockDataType = trueValue.dataType
     def nullable: Boolean = predicate.nullable || trueValue.nullable || falseValue.nullable
     def children: Seq[MockExpression] = Seq(predicate, trueValue, falseValue)
@@ -342,12 +359,14 @@ object MockExpression:
     def nullable: Boolean = false
     def children: Seq[MockExpression] = Seq(n)
 
-  case class Lead(input: MockExpression, offset: MockExpression, default: Option[MockExpression]) extends WindowFunction:
+  case class Lead(input: MockExpression, offset: MockExpression, default: Option[MockExpression])
+      extends WindowFunction:
     def dataType: MockDataType = input.dataType
     def nullable: Boolean = true
     def children: Seq[MockExpression] = Seq(input, offset) ++ default.toSeq
 
-  case class Lag(input: MockExpression, offset: MockExpression, default: Option[MockExpression]) extends WindowFunction:
+  case class Lag(input: MockExpression, offset: MockExpression, default: Option[MockExpression])
+      extends WindowFunction:
     def dataType: MockDataType = input.dataType
     def nullable: Boolean = true
     def children: Seq[MockExpression] = Seq(input, offset) ++ default.toSeq
@@ -379,7 +398,8 @@ object MockExpression:
   ) extends MockExpression:
     def dataType: MockDataType = windowFunction.dataType
     def nullable: Boolean = windowFunction.nullable
-    def children: Seq[MockExpression] = Seq(windowFunction) ++ windowSpec.partitionSpec ++ windowSpec.orderSpec.map(_.child)
+    def children: Seq[MockExpression] =
+      Seq(windowFunction) ++ windowSpec.partitionSpec ++ windowSpec.orderSpec.map(_.child)
 
   // === Sort Specification ===
 
@@ -429,10 +449,10 @@ object MockExpression:
 
   private def promoteNumericTypes(t1: MockDataType, t2: MockDataType): MockDataType =
     (t1, t2) match
-      case (DoubleType, _) | (_, DoubleType) => DoubleType
-      case (FloatType, _) | (_, FloatType) => FloatType
-      case (LongType, _) | (_, LongType) => LongType
+      case (DoubleType, _) | (_, DoubleType)   => DoubleType
+      case (FloatType, _) | (_, FloatType)     => FloatType
+      case (LongType, _) | (_, LongType)       => LongType
       case (IntegerType, _) | (_, IntegerType) => IntegerType
-      case (ShortType, _) | (_, ShortType) => ShortType
-      case (ByteType, _) | (_, ByteType) => ByteType
-      case _ => t1
+      case (ShortType, _) | (_, ShortType)     => ShortType
+      case (ByteType, _) | (_, ByteType)       => ByteType
+      case _                                   => t1

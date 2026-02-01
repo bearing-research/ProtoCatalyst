@@ -27,11 +27,11 @@ object SchemaFingerprint:
     s"${f.name}:${typeString(f.dataType)}:${f.nullable}"
 
   private def typeString(t: ProtoType): String = t match
-    case ProtoType.StructType(fs) => s"struct<${fs.map(canonicalize).mkString(",")}>"
-    case ProtoType.ArrayType(e, n) => s"array<${typeString(e)},$n>"
-    case ProtoType.MapType(k, v, n) => s"map<${typeString(k)},${typeString(v)},$n>"
+    case ProtoType.StructType(fs)    => s"struct<${fs.map(canonicalize).mkString(",")}>"
+    case ProtoType.ArrayType(e, n)   => s"array<${typeString(e)},$n>"
+    case ProtoType.MapType(k, v, n)  => s"map<${typeString(k)},${typeString(v)},$n>"
     case ProtoType.DecimalType(p, s) => s"decimal($p,$s)"
-    case other => other.toString.toLowerCase
+    case other                       => other.toString.toLowerCase
 
   extension (fp: SchemaFingerprint)
     def toLong: Long = fp

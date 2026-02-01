@@ -74,10 +74,10 @@ class LiteralValueSuite extends munit.FunSuite:
     val falseVal = LiteralValue.BooleanValue(false)
     trueVal match
       case LiteralValue.BooleanValue(v) => assertEquals(v, true)
-      case _ => fail("Expected BooleanValue")
+      case _                            => fail("Expected BooleanValue")
     falseVal match
       case LiteralValue.BooleanValue(v) => assertEquals(v, false)
-      case _ => fail("Expected BooleanValue")
+      case _                            => fail("Expected BooleanValue")
 
   test("ByteValue boundary values"):
     val minVal = LiteralValue.ByteValue(Byte.MinValue)
@@ -85,43 +85,43 @@ class LiteralValueSuite extends munit.FunSuite:
     val zeroVal = LiteralValue.ByteValue(0)
     minVal match
       case LiteralValue.ByteValue(v) => assertEquals(v, Byte.MinValue)
-      case _ => fail("Expected ByteValue")
+      case _                         => fail("Expected ByteValue")
     maxVal match
       case LiteralValue.ByteValue(v) => assertEquals(v, Byte.MaxValue)
-      case _ => fail("Expected ByteValue")
+      case _                         => fail("Expected ByteValue")
     zeroVal match
       case LiteralValue.ByteValue(v) => assertEquals(v, 0.toByte)
-      case _ => fail("Expected ByteValue")
+      case _                         => fail("Expected ByteValue")
 
   test("ShortValue boundary values"):
     val minVal = LiteralValue.ShortValue(Short.MinValue)
     val maxVal = LiteralValue.ShortValue(Short.MaxValue)
     minVal match
       case LiteralValue.ShortValue(v) => assertEquals(v, Short.MinValue)
-      case _ => fail("Expected ShortValue")
+      case _                          => fail("Expected ShortValue")
     maxVal match
       case LiteralValue.ShortValue(v) => assertEquals(v, Short.MaxValue)
-      case _ => fail("Expected ShortValue")
+      case _                          => fail("Expected ShortValue")
 
   test("IntValue boundary values"):
     val minVal = LiteralValue.IntValue(Int.MinValue)
     val maxVal = LiteralValue.IntValue(Int.MaxValue)
     minVal match
       case LiteralValue.IntValue(v) => assertEquals(v, Int.MinValue)
-      case _ => fail("Expected IntValue")
+      case _                        => fail("Expected IntValue")
     maxVal match
       case LiteralValue.IntValue(v) => assertEquals(v, Int.MaxValue)
-      case _ => fail("Expected IntValue")
+      case _                        => fail("Expected IntValue")
 
   test("LongValue boundary values"):
     val minVal = LiteralValue.LongValue(Long.MinValue)
     val maxVal = LiteralValue.LongValue(Long.MaxValue)
     minVal match
       case LiteralValue.LongValue(v) => assertEquals(v, Long.MinValue)
-      case _ => fail("Expected LongValue")
+      case _                         => fail("Expected LongValue")
     maxVal match
       case LiteralValue.LongValue(v) => assertEquals(v, Long.MaxValue)
-      case _ => fail("Expected LongValue")
+      case _                         => fail("Expected LongValue")
 
   test("FloatValue special values"):
     val posInf = LiteralValue.FloatValue(Float.PositiveInfinity)
@@ -132,13 +132,13 @@ class LiteralValueSuite extends munit.FunSuite:
 
     posInf match
       case LiteralValue.FloatValue(v) => assert(v.isPosInfinity)
-      case _ => fail("Expected FloatValue")
+      case _                          => fail("Expected FloatValue")
     negInf match
       case LiteralValue.FloatValue(v) => assert(v.isNegInfinity)
-      case _ => fail("Expected FloatValue")
+      case _                          => fail("Expected FloatValue")
     nan match
       case LiteralValue.FloatValue(v) => assert(v.isNaN)
-      case _ => fail("Expected FloatValue")
+      case _                          => fail("Expected FloatValue")
 
   test("DoubleValue special values"):
     val posInf = LiteralValue.DoubleValue(Double.PositiveInfinity)
@@ -149,13 +149,13 @@ class LiteralValueSuite extends munit.FunSuite:
 
     posInf match
       case LiteralValue.DoubleValue(v) => assert(v.isPosInfinity)
-      case _ => fail("Expected DoubleValue")
+      case _                           => fail("Expected DoubleValue")
     negInf match
       case LiteralValue.DoubleValue(v) => assert(v.isNegInfinity)
-      case _ => fail("Expected DoubleValue")
+      case _                           => fail("Expected DoubleValue")
     nan match
       case LiteralValue.DoubleValue(v) => assert(v.isNaN)
-      case _ => fail("Expected DoubleValue")
+      case _                           => fail("Expected DoubleValue")
 
   test("StringValue with various content"):
     val empty = LiteralValue.StringValue("")
@@ -165,13 +165,13 @@ class LiteralValueSuite extends munit.FunSuite:
 
     empty match
       case LiteralValue.StringValue(v) => assertEquals(v, "")
-      case _ => fail("Expected StringValue")
+      case _                           => fail("Expected StringValue")
     unicode match
       case LiteralValue.StringValue(v) => assertEquals(v, "hello 世界 🌍")
-      case _ => fail("Expected StringValue")
+      case _                           => fail("Expected StringValue")
     newlines match
       case LiteralValue.StringValue(v) => assertEquals(v, "line1\nline2\r\n")
-      case _ => fail("Expected StringValue")
+      case _                           => fail("Expected StringValue")
 
   test("BinaryValue with various content"):
     val empty = LiteralValue.BinaryValue(Array.emptyByteArray)
@@ -180,7 +180,7 @@ class LiteralValueSuite extends munit.FunSuite:
 
     empty match
       case LiteralValue.BinaryValue(v) => assertEquals(v.length, 0)
-      case _ => fail("Expected BinaryValue")
+      case _                           => fail("Expected BinaryValue")
     single match
       case LiteralValue.BinaryValue(v) =>
         assertEquals(v.length, 1)
@@ -199,13 +199,13 @@ class LiteralValueSuite extends munit.FunSuite:
 
     small match
       case LiteralValue.DecimalValue(v) => assertEquals(v, BigDecimal("0.001"))
-      case _ => fail("Expected DecimalValue")
+      case _                            => fail("Expected DecimalValue")
     negative match
       case LiteralValue.DecimalValue(v) => assertEquals(v, BigDecimal("-123.456"))
-      case _ => fail("Expected DecimalValue")
+      case _                            => fail("Expected DecimalValue")
     zero match
       case LiteralValue.DecimalValue(v) => assertEquals(v, BigDecimal("0"))
-      case _ => fail("Expected DecimalValue")
+      case _                            => fail("Expected DecimalValue")
 
   test("DateValue edge cases"):
     val epoch = LiteralValue.DateValue(0)
@@ -214,13 +214,13 @@ class LiteralValueSuite extends munit.FunSuite:
 
     epoch match
       case LiteralValue.DateValue(v) => assertEquals(v, 0)
-      case _ => fail("Expected DateValue")
+      case _                         => fail("Expected DateValue")
     positive match
       case LiteralValue.DateValue(v) => assertEquals(v, 19000)
-      case _ => fail("Expected DateValue")
+      case _                         => fail("Expected DateValue")
     negative match
       case LiteralValue.DateValue(v) => assertEquals(v, -10000)
-      case _ => fail("Expected DateValue")
+      case _                         => fail("Expected DateValue")
 
   test("TimestampValue edge cases"):
     val epoch = LiteralValue.TimestampValue(0L)
@@ -229,13 +229,13 @@ class LiteralValueSuite extends munit.FunSuite:
 
     epoch match
       case LiteralValue.TimestampValue(v) => assertEquals(v, 0L)
-      case _ => fail("Expected TimestampValue")
+      case _                              => fail("Expected TimestampValue")
     positive match
       case LiteralValue.TimestampValue(v) => assertEquals(v, 1700000000000000L)
-      case _ => fail("Expected TimestampValue")
+      case _                              => fail("Expected TimestampValue")
     negative match
       case LiteralValue.TimestampValue(v) => assertEquals(v, -1000000000000000L)
-      case _ => fail("Expected TimestampValue")
+      case _                              => fail("Expected TimestampValue")
 
   // === Equality Tests ===
 

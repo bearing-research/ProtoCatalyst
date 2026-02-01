@@ -4,10 +4,9 @@ import protocatalyst.query.CompiledQuery
 import protocatalyst.schema.*
 import protocatalyst.types.*
 
-/**
- * Validates schema contracts against actual table schemas.
- * This is the mock equivalent of spark/QueryBinder.validate().
- */
+/** Validates schema contracts against actual table schemas. This is the mock equivalent of
+  * spark/QueryBinder.validate().
+  */
 object SchemaValidator:
 
   sealed trait ValidationResult:
@@ -35,7 +34,8 @@ object SchemaValidator:
       expected: ProtoType,
       actual: MockDataType
   ) extends ValidationError:
-    def message = s"Type mismatch for '$relationName.$fieldName': expected $expected, got ${actual.typeName}"
+    def message =
+      s"Type mismatch for '$relationName.$fieldName': expected $expected, got ${actual.typeName}"
 
   case class NullabilityMismatch(
       relationName: String,
@@ -43,19 +43,18 @@ object SchemaValidator:
       expectedNullable: Boolean,
       actualNullable: Boolean
   ) extends ValidationError:
-    def message = s"Nullability mismatch for '$relationName.$fieldName': expected nullable=$expectedNullable, got nullable=$actualNullable"
+    def message =
+      s"Nullability mismatch for '$relationName.$fieldName': expected nullable=$expectedNullable, got nullable=$actualNullable"
 
-  /**
-   * Validate a compiled query against a catalog.
-   */
+  /** Validate a compiled query against a catalog.
+    */
   def validate(compiled: CompiledQuery[?], catalog: MockCatalog): ValidationResult =
     val errors = compiled.requiredSchemas.flatMap(validateContract(_, catalog))
     if errors.isEmpty then Success(Vector.empty)
     else Failure(errors)
 
-  /**
-   * Validate a single schema contract.
-   */
+  /** Validate a single schema contract.
+    */
   def validateContract(contract: SchemaContract, catalog: MockCatalog): Vector[ValidationError] =
     catalog.getTableSchema(contract.relationName) match
       case None =>
@@ -89,23 +88,27 @@ object SchemaValidator:
     // Nullability check: actual can be more permissive (nullable) but query expecting
     // nullable cannot receive non-nullable (stricter actual would fail at runtime)
     if expected.expectedNullable && !actual.nullable then
-      errors :+= NullabilityMismatch(relationName, expected.name, expected.expectedNullable, actual.nullable)
+      errors :+= NullabilityMismatch(
+        relationName,
+        expected.name,
+        expected.expectedNullable,
+        actual.nullable
+      )
 
     errors
 
-  /**
-   * Type compatibility check with safe widening rules.
-   * The actual type can be narrower (will be implicitly widened).
-   */
+  /** Type compatibility check with safe widening rules. The actual type can be narrower (will be
+    * implicitly widened).
+    */
   def isTypeCompatible(expected: MockDataType, actual: MockDataType): Boolean =
     (expected, actual) match
       // Exact match
       case (e, a) if e == a => true
 
       // Safe widening: actual narrower -> expected wider
-      case (MockDataType.LongType, MockDataType.IntegerType) => true
-      case (MockDataType.LongType, MockDataType.ShortType)   => true
-      case (MockDataType.LongType, MockDataType.ByteType)    => true
+      case (MockDataType.LongType, MockDataType.IntegerType)  => true
+      case (MockDataType.LongType, MockDataType.ShortType)    => true
+      case (MockDataType.LongType, MockDataType.ByteType)     => true
       case (MockDataType.IntegerType, MockDataType.ShortType) => true
       case (MockDataType.IntegerType, MockDataType.ByteType)  => true
       case (MockDataType.ShortType, MockDataType.ByteType)    => true

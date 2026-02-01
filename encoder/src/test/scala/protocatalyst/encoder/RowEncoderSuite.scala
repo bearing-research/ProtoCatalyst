@@ -22,10 +22,12 @@ class RowEncoderSuite extends FunSuite:
     assertEquals(encoder.fieldNames, Vector("name", "age"))
 
   test("create from StructType"):
-    val structType: ProtoType.StructType = ProtoType.StructType(Vector(
-      ProtoStructField("a", ProtoType.IntType, false),
-      ProtoStructField("b", ProtoType.StringType, true)
-    ))
+    val structType: ProtoType.StructType = ProtoType.StructType(
+      Vector(
+        ProtoStructField("a", ProtoType.IntType, false),
+        ProtoStructField("b", ProtoType.StringType, true)
+      )
+    )
 
     val encoder = RowEncoder.fromStructType(structType)
     assertEquals(encoder.numFields, 2)
@@ -34,10 +36,12 @@ class RowEncoderSuite extends FunSuite:
     assertEquals(encoder.schema(1).nullable, true)
 
   test("create from ProtoSchema"):
-    val protoSchema = ProtoSchema(Vector(
-      ProtoStructField("id", ProtoType.LongType, false),
-      ProtoStructField("value", ProtoType.DoubleType, true)
-    ))
+    val protoSchema = ProtoSchema(
+      Vector(
+        ProtoStructField("id", ProtoType.LongType, false),
+        ProtoStructField("value", ProtoType.DoubleType, true)
+      )
+    )
 
     val encoder = RowEncoder.fromProtoSchema(protoSchema)
     assertEquals(encoder.numFields, 2)
@@ -86,7 +90,7 @@ class RowEncoderSuite extends FunSuite:
 
   test("serialize row length mismatch throws"):
     val encoder = RowEncoder(userSchema)
-    val row = ProtoRow("Alice")  // Only 1 field, schema expects 2
+    val row = ProtoRow("Alice") // Only 1 field, schema expects 2
 
     intercept[IllegalArgumentException]:
       encoder.serialize(row)

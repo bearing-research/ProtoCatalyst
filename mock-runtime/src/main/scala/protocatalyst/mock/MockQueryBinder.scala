@@ -5,10 +5,9 @@ import protocatalyst.plan.*
 import protocatalyst.schema.*
 import protocatalyst.types.*
 
-/**
- * Binds ColumnRef expressions to BoundRef with ordinal positions.
- * Simulates Spark's attribute resolution phase.
- */
+/** Binds ColumnRef expressions to BoundRef with ordinal positions. Simulates Spark's attribute
+  * resolution phase.
+  */
 object MockQueryBinder:
 
   case class BindingContext(
@@ -18,7 +17,10 @@ object MockQueryBinder:
     def withAlias(alias: String, schema: MockDataType.StructType): BindingContext =
       copy(schemas = schemas + (alias -> schema))
 
-    def resolveColumn(name: String, qualifier: Option[String]): Either[String, (Int, ProtoType, Boolean)] =
+    def resolveColumn(
+        name: String,
+        qualifier: Option[String]
+    ): Either[String, (Int, ProtoType, Boolean)] =
       val candidates = schemas.flatMap { case (tableName, schema) =>
         schema.fields.zipWithIndex.collectFirst {
           case (field, idx) if field.name.equalsIgnoreCase(name) =>
@@ -34,20 +36,21 @@ object MockQueryBinder:
         case multiple if qualifier.isDefined =>
           multiple.find(_._4.equalsIgnoreCase(qualifier.get)) match
             case Some((idx, dt, nullable, _)) => Right((idx, dt, nullable))
-            case None => Left(s"Column '${qualifier.get}.$name' not found")
+            case None                         => Left(s"Column '${qualifier.get}.$name' not found")
         case multiple =>
-          Left(s"Ambiguous column reference '$name' found in tables: ${multiple.map(_._4).mkString(", ")}")
+          Left(
+            s"Ambiguous column reference '$name' found in tables: ${multiple.map(_._4).mkString(", ")}"
+          )
 
   sealed trait BindingResult
   case class BoundPlan(plan: ProtoLogicalPlan) extends BindingResult
   case class BindingError(message: String, location: Option[String] = None) extends BindingResult
 
-  /**
-   * Bind a plan, resolving all ColumnRef to BoundRef.
-   */
+  /** Bind a plan, resolving all ColumnRef to BoundRef.
+    */
   def bind(plan: ProtoLogicalPlan, catalog: MockCatalog): BindingResult =
     collectSchemas(plan, catalog) match
-      case Left(err) => BindingError(err)
+      case Left(err)        => BindingError(err)
       case Right(schemaMap) =>
         val ctx = BindingContext(schemaMap)
         bindPlan(plan, ctx)
@@ -66,12 +69,12 @@ object MockQueryBinder:
           case None =>
             Left(s"Table '$name' not found in catalog")
 
-      case Project(_, child)    => collectSchemas(child, catalog)
-      case Filter(_, child)     => collectSchemas(child, catalog)
+      case Project(_, child)      => collectSchemas(child, catalog)
+      case Filter(_, child)       => collectSchemas(child, catalog)
       case Aggregate(_, _, child) => collectSchemas(child, catalog)
-      case Sort(_, _, child)    => collectSchemas(child, catalog)
-      case Limit(_, child)      => collectSchemas(child, catalog)
-      case Distinct(child)      => collectSchemas(child, catalog)
+      case Sort(_, _, child)      => collectSchemas(child, catalog)
+      case Limit(_, child)        => collectSchemas(child, catalog)
+      case Distinct(child)        => collectSchemas(child, catalog)
       case Window(_, _, _, child) => collectSchemas(child, catalog)
 
       case SubqueryAlias(alias, child) =>
@@ -89,7 +92,7 @@ object MockQueryBinder:
 
       case Union(children, _, _) =>
         children.foldLeft(Right(Map.empty): Either[String, Map[String, MockDataType.StructType]]) {
-          case (Left(err), _) => Left(err)
+          case (Left(err), _)      => Left(err)
           case (Right(acc), child) => collectSchemas(child, catalog).map(acc ++ _)
         }
 
@@ -110,8 +113,10 @@ object MockQueryBinder:
 
       case With(cteRelations, child) =>
         // Collect schemas from all CTE relations and the main child
-        val cteSchemas = cteRelations.foldLeft(Right(Map.empty): Either[String, Map[String, MockDataType.StructType]]) {
-          case (Left(err), _) => Left(err)
+        val cteSchemas = cteRelations.foldLeft(
+          Right(Map.empty): Either[String, Map[String, MockDataType.StructType]]
+        ) {
+          case (Left(err), _)                   => Left(err)
           case (Right(acc), (cteName, ctePlan)) =>
             collectSchemas(ctePlan, catalog).map { schemas =>
               // Merge CTE's schemas under its name
@@ -152,24 +157,25 @@ object MockQueryBinder:
       case Sort(order, global, child) =>
         bindPlan(child, ctx) match
           case BoundPlan(boundChild) =>
-            val boundOrder = order.map(o => SortOrder(bindExpr(o.child, ctx), o.direction, o.nullOrdering))
+            val boundOrder =
+              order.map(o => SortOrder(bindExpr(o.child, ctx), o.direction, o.nullOrdering))
             BoundPlan(Sort(boundOrder, global, boundChild))
           case err => err
 
       case Limit(n, child) =>
         bindPlan(child, ctx) match
           case BoundPlan(boundChild) => BoundPlan(Limit(n, boundChild))
-          case err => err
+          case err                   => err
 
       case Distinct(child) =>
         bindPlan(child, ctx) match
           case BoundPlan(boundChild) => BoundPlan(Distinct(boundChild))
-          case err => err
+          case err                   => err
 
       case SubqueryAlias(alias, child) =>
         bindPlan(child, ctx) match
           case BoundPlan(boundChild) => BoundPlan(SubqueryAlias(alias, boundChild))
-          case err => err
+          case err                   => err
 
       case Join(left, right, joinType, cond) =>
         (bindPlan(left, ctx), bindPlan(right, ctx)) match
@@ -183,26 +189,28 @@ object MockQueryBinder:
         val boundChildren = children.map(bindPlan(_, ctx))
         val errors = boundChildren.collect { case e: BindingError => e }
         if errors.nonEmpty then errors.head
-        else BoundPlan(Union(boundChildren.collect { case BoundPlan(p) => p }, byName, allowMissing))
+        else
+          BoundPlan(Union(boundChildren.collect { case BoundPlan(p) => p }, byName, allowMissing))
 
       case Intersect(left, right, isAll) =>
         (bindPlan(left, ctx), bindPlan(right, ctx)) match
           case (BoundPlan(l), BoundPlan(r)) => BoundPlan(Intersect(l, r, isAll))
-          case (err: BindingError, _) => err
-          case (_, err: BindingError) => err
+          case (err: BindingError, _)       => err
+          case (_, err: BindingError)       => err
 
       case Except(left, right, isAll) =>
         (bindPlan(left, ctx), bindPlan(right, ctx)) match
           case (BoundPlan(l), BoundPlan(r)) => BoundPlan(Except(l, r, isAll))
-          case (err: BindingError, _) => err
-          case (_, err: BindingError) => err
+          case (err: BindingError, _)       => err
+          case (_, err: BindingError)       => err
 
       case Window(windowExprs, partitionSpec, orderSpec, child) =>
         bindPlan(child, ctx) match
           case BoundPlan(boundChild) =>
             val boundWindow = windowExprs.map(bindExpr(_, ctx))
             val boundPartition = partitionSpec.map(bindExpr(_, ctx))
-            val boundOrder = orderSpec.map(o => SortOrder(bindExpr(o.child, ctx), o.direction, o.nullOrdering))
+            val boundOrder =
+              orderSpec.map(o => SortOrder(bindExpr(o.child, ctx), o.direction, o.nullOrdering))
             BoundPlan(Window(boundWindow, boundPartition, boundOrder, boundChild))
           case err => err
 
@@ -210,19 +218,20 @@ object MockQueryBinder:
 
       case With(cteRelations, child) =>
         // Bind all CTE plans
-        val boundCtes = cteRelations.foldLeft[Either[BindingError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
-          case (Left(err), _) => Left(err)
-          case (Right(acc), (cteName, ctePlan)) =>
-            bindPlan(ctePlan, ctx) match
-              case BoundPlan(bound) => Right(acc :+ (cteName, bound))
-              case err: BindingError => Left(err)
-        }
+        val boundCtes = cteRelations
+          .foldLeft[Either[BindingError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
+            case (Left(err), _)                   => Left(err)
+            case (Right(acc), (cteName, ctePlan)) =>
+              bindPlan(ctePlan, ctx) match
+                case BoundPlan(bound)  => Right(acc :+ (cteName, bound))
+                case err: BindingError => Left(err)
+          }
         boundCtes match
-          case Left(err) => err
+          case Left(err)   => err
           case Right(ctes) =>
             bindPlan(child, ctx) match
               case BoundPlan(boundChild) => BoundPlan(With(ctes, boundChild))
-              case err => err
+              case err                   => err
 
   private def bindExpr(expr: ProtoExpr, ctx: BindingContext): ProtoExpr =
     import ProtoExpr.*
@@ -230,7 +239,7 @@ object MockQueryBinder:
       case ColumnRef(name, qualifier, _, _) =>
         ctx.resolveColumn(name, qualifier) match
           case Right((ordinal, dt, nullable)) => BoundRef(ordinal, dt, nullable)
-          case Left(_) => expr // Keep unresolved if not found
+          case Left(_)                        => expr // Keep unresolved if not found
 
       // Binary expressions
       case Eq(l, r)       => Eq(bindExpr(l, ctx), bindExpr(r, ctx))
@@ -250,34 +259,34 @@ object MockQueryBinder:
       case Not(child)    => Not(bindExpr(child, ctx))
 
       // Null handling
-      case IsNull(child)    => IsNull(bindExpr(child, ctx))
-      case IsNotNull(child) => IsNotNull(bindExpr(child, ctx))
+      case IsNull(child)      => IsNull(bindExpr(child, ctx))
+      case IsNotNull(child)   => IsNotNull(bindExpr(child, ctx))
       case Coalesce(children) => Coalesce(children.map(bindExpr(_, ctx)))
-      case NullIf(l, r) => NullIf(bindExpr(l, ctx), bindExpr(r, ctx))
+      case NullIf(l, r)       => NullIf(bindExpr(l, ctx), bindExpr(r, ctx))
 
       // Math functions
-      case Abs(child) => Abs(bindExpr(child, ctx))
-      case Ceil(child) => Ceil(bindExpr(child, ctx))
-      case Floor(child) => Floor(bindExpr(child, ctx))
-      case Round(child, scale) => Round(bindExpr(child, ctx), bindExpr(scale, ctx))
+      case Abs(child)             => Abs(bindExpr(child, ctx))
+      case Ceil(child)            => Ceil(bindExpr(child, ctx))
+      case Floor(child)           => Floor(bindExpr(child, ctx))
+      case Round(child, scale)    => Round(bindExpr(child, ctx), bindExpr(scale, ctx))
       case Truncate(child, scale) => Truncate(bindExpr(child, ctx), bindExpr(scale, ctx))
-      case Sqrt(child) => Sqrt(bindExpr(child, ctx))
-      case Cbrt(child) => Cbrt(bindExpr(child, ctx))
-      case Pow(l, r) => Pow(bindExpr(l, ctx), bindExpr(r, ctx))
-      case Pmod(l, r) => Pmod(bindExpr(l, ctx), bindExpr(r, ctx))
-      case Sign(child) => Sign(bindExpr(child, ctx))
-      case Log(child, base) => Log(bindExpr(child, ctx), base.map(bindExpr(_, ctx)))
-      case Exp(child) => Exp(bindExpr(child, ctx))
+      case Sqrt(child)            => Sqrt(bindExpr(child, ctx))
+      case Cbrt(child)            => Cbrt(bindExpr(child, ctx))
+      case Pow(l, r)              => Pow(bindExpr(l, ctx), bindExpr(r, ctx))
+      case Pmod(l, r)             => Pmod(bindExpr(l, ctx), bindExpr(r, ctx))
+      case Sign(child)            => Sign(bindExpr(child, ctx))
+      case Log(child, base)       => Log(bindExpr(child, ctx), base.map(bindExpr(_, ctx)))
+      case Exp(child)             => Exp(bindExpr(child, ctx))
 
       // String
-      case Concat(children) => Concat(children.map(bindExpr(_, ctx)))
+      case Concat(children)         => Concat(children.map(bindExpr(_, ctx)))
       case Substring(str, pos, len) =>
         Substring(bindExpr(str, ctx), bindExpr(pos, ctx), bindExpr(len, ctx))
-      case Upper(child) => Upper(bindExpr(child, ctx))
-      case Lower(child) => Lower(bindExpr(child, ctx))
+      case Upper(child)                   => Upper(bindExpr(child, ctx))
+      case Lower(child)                   => Lower(bindExpr(child, ctx))
       case Trim(child, trimStr, trimType) =>
         Trim(bindExpr(child, ctx), trimStr.map(bindExpr(_, ctx)), trimType)
-      case Length(child) => Length(bindExpr(child, ctx))
+      case Length(child)                 => Length(bindExpr(child, ctx))
       case Replace(str, search, replace) =>
         Replace(bindExpr(str, ctx), bindExpr(search, ctx), bindExpr(replace, ctx))
       case StringLocate(substr, str, start) =>
@@ -288,16 +297,16 @@ object MockQueryBinder:
         Rpad(bindExpr(str, ctx), bindExpr(len, ctx), bindExpr(pad, ctx))
       case StringSplit(str, delimiter, limit) =>
         StringSplit(bindExpr(str, ctx), bindExpr(delimiter, ctx), limit.map(bindExpr(_, ctx)))
-      case Reverse(child) => Reverse(bindExpr(child, ctx))
+      case Reverse(child)           => Reverse(bindExpr(child, ctx))
       case StringRepeat(str, times) =>
         StringRepeat(bindExpr(str, ctx), bindExpr(times, ctx))
 
       // Aggregates
       case Count(child, distinct) => Count(bindExpr(child, ctx), distinct)
-      case Sum(child)   => Sum(bindExpr(child, ctx))
-      case Avg(child)   => Avg(bindExpr(child, ctx))
-      case Min(child)   => Min(bindExpr(child, ctx))
-      case Max(child)   => Max(bindExpr(child, ctx))
+      case Sum(child)             => Sum(bindExpr(child, ctx))
+      case Avg(child)             => Avg(bindExpr(child, ctx))
+      case Min(child)             => Min(bindExpr(child, ctx))
+      case Max(child)             => Max(bindExpr(child, ctx))
 
       // Control flow
       case CaseWhen(branches, elseVal) =>
@@ -323,22 +332,22 @@ object MockQueryBinder:
         OpaqueCall(name, args.map(bindExpr(_, ctx)), returnType, det)
 
       // Subquery expressions - keep as-is, subplan binding would be handled separately
-      case s: ScalarSubquery => s
-      case e: Exists         => e
+      case s: ScalarSubquery       => s
+      case e: Exists               => e
       case InSubquery(value, plan) => InSubquery(bindExpr(value, ctx), plan)
 
       // Window functions - bind child expressions
-      case RowNumber() => RowNumber()
-      case Rank() => Rank()
-      case DenseRank() => DenseRank()
-      case Ntile(n) => Ntile(bindExpr(n, ctx))
+      case RowNumber()                  => RowNumber()
+      case Rank()                       => Rank()
+      case DenseRank()                  => DenseRank()
+      case Ntile(n)                     => Ntile(bindExpr(n, ctx))
       case Lead(input, offset, default) =>
         Lead(bindExpr(input, ctx), bindExpr(offset, ctx), default.map(bindExpr(_, ctx)))
       case Lag(input, offset, default) =>
         Lag(bindExpr(input, ctx), bindExpr(offset, ctx), default.map(bindExpr(_, ctx)))
       case FirstValue(input, ignoreNulls) => FirstValue(bindExpr(input, ctx), ignoreNulls)
-      case LastValue(input, ignoreNulls) => LastValue(bindExpr(input, ctx), ignoreNulls)
-      case NthValue(input, n) => NthValue(bindExpr(input, ctx), bindExpr(n, ctx))
+      case LastValue(input, ignoreNulls)  => LastValue(bindExpr(input, ctx), ignoreNulls)
+      case NthValue(input, n)             => NthValue(bindExpr(input, ctx), bindExpr(n, ctx))
       case WindowExpr(function, partitionSpec, orderSpec, frameSpec) =>
         WindowExpr(
           bindExpr(function, ctx),

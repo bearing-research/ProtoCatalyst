@@ -59,7 +59,10 @@ class ArtifactCodecSuite extends munit.FunSuite:
     val result = CodecImpl.deserializeWithHeader(bytes)
 
     assert(result.isLeft, "Expected Left")
-    assert(result.left.getOrElse("").contains("Unknown format byte"), "Expected unknown format error")
+    assert(
+      result.left.getOrElse("").contains("Unknown format byte"),
+      "Expected unknown format error"
+    )
 
   test("deserialize protobuf format byte returns not implemented"):
     val magic = "PCAT".getBytes("UTF-8")
@@ -96,7 +99,8 @@ class ArtifactCodecSuite extends munit.FunSuite:
     val unknownCodec = new ArtifactCodec:
       def format: String = "unknown"
       def serialize(artifact: CompiledArtifact): Array[Byte] = Array.emptyByteArray
-      def deserialize(bytes: Array[Byte]): Either[String, CompiledArtifact] = Left("not implemented")
+      def deserialize(bytes: Array[Byte]): Either[String, CompiledArtifact] =
+        Left("not implemented")
 
     val artifact = simpleArtifact
     interceptMessage[IllegalArgumentException]("Unknown codec format: unknown"):
@@ -143,7 +147,8 @@ class ArtifactCodecSuite extends munit.FunSuite:
         )
       ),
       plan = baseRelation,
-      outputSchema = ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntType, nullable = false))),
+      outputSchema =
+        ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntType, nullable = false))),
       sourceInfo = Some(SourceInfo("file.scala", 100, Some("SELECT * FROM t")))
     )
 
@@ -188,7 +193,8 @@ class ArtifactCodecSuite extends munit.FunSuite:
     contentHash = 12345L,
     schemaContracts = Vector.empty,
     plan = baseRelation,
-    outputSchema = ProtoSchema(Vector(ProtoStructField("id", ProtoType.LongType, nullable = false))),
+    outputSchema =
+      ProtoSchema(Vector(ProtoStructField("id", ProtoType.LongType, nullable = false))),
     sourceInfo = None
   )
 
@@ -210,16 +216,30 @@ class ArtifactCodecSuite extends munit.FunSuite:
     plan = ProtoLogicalPlan.Project(
       Vector(
         ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
-        ProtoExpr.Alias(ProtoExpr.Upper(ProtoExpr.ColumnRef("name", None, ProtoType.StringType, nullable = true)), "upper_name")
+        ProtoExpr.Alias(
+          ProtoExpr.Upper(ProtoExpr.ColumnRef("name", None, ProtoType.StringType, nullable = true)),
+          "upper_name"
+        )
       ),
       ProtoLogicalPlan.Filter(
-        ProtoExpr.Gt(ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false), ProtoExpr.lit(0)),
+        ProtoExpr.Gt(
+          ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
+          ProtoExpr.lit(0)
+        ),
         baseRelation
       )
     ),
-    outputSchema = ProtoSchema(Vector(
-      ProtoStructField("id", ProtoType.LongType, nullable = false),
-      ProtoStructField("upper_name", ProtoType.StringType, nullable = true)
-    )),
-    sourceInfo = Some(SourceInfo("query.scala", 42, Some("SELECT id, UPPER(name) AS upper_name FROM users WHERE id > 0")))
+    outputSchema = ProtoSchema(
+      Vector(
+        ProtoStructField("id", ProtoType.LongType, nullable = false),
+        ProtoStructField("upper_name", ProtoType.StringType, nullable = true)
+      )
+    ),
+    sourceInfo = Some(
+      SourceInfo(
+        "query.scala",
+        42,
+        Some("SELECT id, UPPER(name) AS upper_name FROM users WHERE id > 0")
+      )
+    )
   )

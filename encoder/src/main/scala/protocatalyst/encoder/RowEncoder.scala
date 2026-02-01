@@ -3,30 +3,29 @@ package protocatalyst.encoder
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.types.*
 
-/**
- * Encoder for ProtoRow (generic, schema-less row type).
- *
- * Unlike ProtoEncoder which derives schema at compile-time from case classes,
- * RowEncoder takes schema at runtime and handles the dynamic Row type.
- *
- * This mirrors Spark's RowEncoder which:
- * - Takes StructType schema at construction
- * - Serializes Row to InternalRow using schema
- * - Deserializes InternalRow back to Row
- *
- * Usage:
- * {{{
- * val schema = Vector(
- *   FieldSchema("name", ProtoType.StringType, nullable = false, 0),
- *   FieldSchema("age", ProtoType.IntType, nullable = false, 1)
- * )
- * val encoder = RowEncoder(schema)
- *
- * val row = ProtoRow("Alice", 30)
- * val serialized: Array[Any] = encoder.serialize(row)
- * val deserialized: ProtoRow = encoder.deserialize(serialized)
- * }}}
- */
+/** Encoder for ProtoRow (generic, schema-less row type).
+  *
+  * Unlike ProtoEncoder which derives schema at compile-time from case classes, RowEncoder takes
+  * schema at runtime and handles the dynamic Row type.
+  *
+  * This mirrors Spark's RowEncoder which:
+  *   - Takes StructType schema at construction
+  *   - Serializes Row to InternalRow using schema
+  *   - Deserializes InternalRow back to Row
+  *
+  * Usage:
+  * {{{
+  * val schema = Vector(
+  *   FieldSchema("name", ProtoType.StringType, nullable = false, 0),
+  *   FieldSchema("age", ProtoType.IntType, nullable = false, 1)
+  * )
+  * val encoder = RowEncoder(schema)
+  *
+  * val row = ProtoRow("Alice", 30)
+  * val serialized: Array[Any] = encoder.serialize(row)
+  * val deserialized: ProtoRow = encoder.deserialize(serialized)
+  * }}}
+  */
 trait RowEncoder:
   /** The schema this encoder uses */
   def schema: Vector[FieldSchema]
@@ -73,9 +72,8 @@ object RowEncoder:
     }.toVector
     GenericRowEncoder(fieldSchemas)
 
-/**
- * Default implementation of RowEncoder using runtime schema.
- */
+/** Default implementation of RowEncoder using runtime schema.
+  */
 class GenericRowEncoder(val schema: Vector[FieldSchema]) extends RowEncoder:
 
   def serialize(row: ProtoRow)(using conv: InternalTypeConverter): Array[Any] =
@@ -114,11 +112,9 @@ class GenericRowEncoder(val schema: Vector[FieldSchema]) extends RowEncoder:
       conv: InternalTypeConverter
   ): Any =
     if value == null then
-      if !nullable then
-        throw NullPointerException(s"Non-nullable field cannot be null")
+      if !nullable then throw NullPointerException(s"Non-nullable field cannot be null")
       null
-    else
-      conv.toInternal(value, dataType)
+    else conv.toInternal(value, dataType)
 
   private def deserializeField(
       value: Any,

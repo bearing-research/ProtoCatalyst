@@ -3,26 +3,25 @@ package protocatalyst.mock
 import java.nio.{ByteBuffer, ByteOrder}
 import scala.collection.mutable.ArrayBuffer
 
-/**
- * Mock implementation of Spark's UnsafeRow binary format.
- *
- * UnsafeRow is Spark's optimized row format that stores data in a contiguous
- * byte array for CPU cache efficiency and zero-copy serialization.
- *
- * Memory Layout:
- * {{{
- * [Null Bitmap][Fixed-Width Values][Variable-Width Data]
- *
- * - Null Bitmap: 1 bit per field, rounded up to 8-byte word boundary
- * - Fixed-Width: 8 bytes per field (primitives stored directly, var-length as offset+length)
- * - Variable-Width: Actual bytes for strings, arrays, nested rows
- * }}}
- *
- * For a row with N fields:
- * - Null bitmap size: ((N + 63) / 64) * 8 bytes
- * - Fixed-width region: N * 8 bytes
- * - Variable-width region: varies based on actual data
- */
+/** Mock implementation of Spark's UnsafeRow binary format.
+  *
+  * UnsafeRow is Spark's optimized row format that stores data in a contiguous byte array for CPU
+  * cache efficiency and zero-copy serialization.
+  *
+  * Memory Layout:
+  * {{{
+  * [Null Bitmap][Fixed-Width Values][Variable-Width Data]
+  *
+  * - Null Bitmap: 1 bit per field, rounded up to 8-byte word boundary
+  * - Fixed-Width: 8 bytes per field (primitives stored directly, var-length as offset+length)
+  * - Variable-Width: Actual bytes for strings, arrays, nested rows
+  * }}}
+  *
+  * For a row with N fields:
+  *   - Null bitmap size: ((N + 63) / 64) * 8 bytes
+  *   - Fixed-width region: N * 8 bytes
+  *   - Variable-width region: varies based on actual data
+  */
 class MockUnsafeRow private (
     private[mock] val baseArray: Array[Byte],
     private[mock] val baseOffset: Int,
@@ -110,10 +109,9 @@ class MockUnsafeRow private (
   // Variable-Width Accessors
   // ============================================
 
-  /**
-   * Get the offset and length of a variable-length field.
-   * The fixed-width slot stores: upper 32 bits = offset, lower 32 bits = length
-   */
+  /** Get the offset and length of a variable-length field. The fixed-width slot stores: upper 32
+    * bits = offset, lower 32 bits = length
+    */
   private def getOffsetAndSize(ordinal: Int): (Int, Int) =
     val offsetAndSize = readLongAt(getFieldOffset(ordinal))
     val offset = (offsetAndSize >> 32).toInt
@@ -139,10 +137,9 @@ class MockUnsafeRow private (
     if bytes == null then null
     else MockUTF8String.fromBytes(bytes)
 
-  /**
-   * Get a nested struct as an UnsafeRow.
-   * The variable-length region contains another UnsafeRow's bytes.
-   */
+  /** Get a nested struct as an UnsafeRow. The variable-length region contains another UnsafeRow's
+    * bytes.
+    */
   def getStruct(ordinal: Int, numFields: Int): MockUnsafeRow =
     assertValidOrdinal(ordinal)
     if isNullAt(ordinal) then null
@@ -170,31 +167,32 @@ class MockUnsafeRow private (
 
   def get(ordinal: Int, dataType: MockDataType): Any =
     if isNullAt(ordinal) then null
-    else dataType match
-      case MockDataType.BooleanType => getBoolean(ordinal)
-      case MockDataType.ByteType => getByte(ordinal)
-      case MockDataType.ShortType => getShort(ordinal)
-      case MockDataType.IntegerType => getInt(ordinal)
-      case MockDataType.LongType => getLong(ordinal)
-      case MockDataType.FloatType => getFloat(ordinal)
-      case MockDataType.DoubleType => getDouble(ordinal)
-      case MockDataType.StringType => getUTF8String(ordinal)
-      case MockDataType.BinaryType => getBinary(ordinal)
-      case MockDataType.DateType => getInt(ordinal) // Days since epoch
-      case MockDataType.TimestampType => getLong(ordinal) // Micros since epoch
-      case MockDataType.TimestampNTZType => getLong(ordinal)
-      case MockDataType.DayTimeIntervalType => getLong(ordinal) // Duration as micros
-      case MockDataType.YearMonthIntervalType => getInt(ordinal) // Period as months
-      case _: MockDataType.TimeType => getLong(ordinal) // Time as micros since midnight
-      case MockDataType.CalendarIntervalType =>
-        throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
-      case MockDataType.VariantType =>
-        throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
-      case _: MockDataType.CharType | _: MockDataType.VarcharType => getUTF8String(ordinal)
-      case _: MockDataType.DecimalType => getDecimal(ordinal)
-      case st: MockDataType.StructType => getStruct(ordinal, st.fields.size)
-      case _: MockDataType.ArrayType => getArray(ordinal)
-      case _: MockDataType.MapType => getMap(ordinal)
+    else
+      dataType match
+        case MockDataType.BooleanType           => getBoolean(ordinal)
+        case MockDataType.ByteType              => getByte(ordinal)
+        case MockDataType.ShortType             => getShort(ordinal)
+        case MockDataType.IntegerType           => getInt(ordinal)
+        case MockDataType.LongType              => getLong(ordinal)
+        case MockDataType.FloatType             => getFloat(ordinal)
+        case MockDataType.DoubleType            => getDouble(ordinal)
+        case MockDataType.StringType            => getUTF8String(ordinal)
+        case MockDataType.BinaryType            => getBinary(ordinal)
+        case MockDataType.DateType              => getInt(ordinal) // Days since epoch
+        case MockDataType.TimestampType         => getLong(ordinal) // Micros since epoch
+        case MockDataType.TimestampNTZType      => getLong(ordinal)
+        case MockDataType.DayTimeIntervalType   => getLong(ordinal) // Duration as micros
+        case MockDataType.YearMonthIntervalType => getInt(ordinal) // Period as months
+        case _: MockDataType.TimeType           => getLong(ordinal) // Time as micros since midnight
+        case MockDataType.CalendarIntervalType  =>
+          throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
+        case MockDataType.VariantType =>
+          throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+        case _: MockDataType.CharType | _: MockDataType.VarcharType => getUTF8String(ordinal)
+        case _: MockDataType.DecimalType                            => getDecimal(ordinal)
+        case st: MockDataType.StructType => getStruct(ordinal, st.fields.size)
+        case _: MockDataType.ArrayType   => getArray(ordinal)
+        case _: MockDataType.MapType     => getMap(ordinal)
 
   def getDecimal(ordinal: Int): BigDecimal =
     assertValidOrdinal(ordinal)
@@ -270,7 +268,6 @@ class MockUnsafeRow private (
     if ordinal < 0 || ordinal >= numFields then
       throw IndexOutOfBoundsException(s"Ordinal $ordinal out of bounds [0, $numFields)")
 
-
 object MockUnsafeRow:
 
   /** Calculate the size of the null bitmap in bytes (8-byte aligned) */
@@ -293,15 +290,13 @@ object MockUnsafeRow:
   def pointTo(array: Array[Byte], offset: Int, sizeInBytes: Int, numFields: Int): MockUnsafeRow =
     new MockUnsafeRow(array, offset, sizeInBytes, numFields)
 
-
-/**
- * Mock UnsafeArrayData - binary format for arrays.
- *
- * Layout:
- * {{{
- * [numElements (8 bytes)][null bitmap][fixed-width values][variable-width data]
- * }}}
- */
+/** Mock UnsafeArrayData - binary format for arrays.
+  *
+  * Layout:
+  * {{{
+  * [numElements (8 bytes)][null bitmap][fixed-width values][variable-width data]
+  * }}}
+  */
 class MockUnsafeArrayData private[mock] (
     private val baseArray: Array[Byte],
     private val baseOffset: Int,
@@ -329,8 +324,10 @@ class MockUnsafeArrayData private[mock] (
 
   def getInt(ordinal: Int): Int =
     if isNullAt(ordinal) then throw NullPointerException(s"Element $ordinal is null")
-    ByteBuffer.wrap(baseArray, fixedWidthOffset + ordinal * 8, 4)
-      .order(ByteOrder.LITTLE_ENDIAN).getInt
+    ByteBuffer
+      .wrap(baseArray, fixedWidthOffset + ordinal * 8, 4)
+      .order(ByteOrder.LITTLE_ENDIAN)
+      .getInt
 
   def getLong(ordinal: Int): Long =
     if isNullAt(ordinal) then throw NullPointerException(s"Element $ordinal is null")
@@ -351,27 +348,27 @@ class MockUnsafeArrayData private[mock] (
   def toArray[T](dataType: MockDataType): Array[Any] =
     (0 until numElements).map { i =>
       if isNullAt(i) then null
-      else dataType match
-        case MockDataType.BooleanType => getBoolean(i)
-        case MockDataType.IntegerType => getInt(i)
-        case MockDataType.LongType => getLong(i)
-        case MockDataType.DoubleType => getDouble(i)
-        case MockDataType.StringType => getString(i)
-        case _ => throw UnsupportedOperationException(s"Unsupported array element type: $dataType")
+      else
+        dataType match
+          case MockDataType.BooleanType => getBoolean(i)
+          case MockDataType.IntegerType => getInt(i)
+          case MockDataType.LongType    => getLong(i)
+          case MockDataType.DoubleType  => getDouble(i)
+          case MockDataType.StringType  => getString(i)
+          case _                        =>
+            throw UnsupportedOperationException(s"Unsupported array element type: $dataType")
     }.toArray
 
   private def readLongAt(offset: Int): Long =
     ByteBuffer.wrap(baseArray, offset, 8).order(ByteOrder.LITTLE_ENDIAN).getLong
 
-
-/**
- * Mock UnsafeMapData - binary format for maps.
- *
- * Layout:
- * {{{
- * [keyArraySize (8 bytes)][keyArrayData...][valueArrayData...]
- * }}}
- */
+/** Mock UnsafeMapData - binary format for maps.
+  *
+  * Layout:
+  * {{{
+  * [keyArraySize (8 bytes)][keyArrayData...][valueArrayData...]
+  * }}}
+  */
 class MockUnsafeMapData private[mock] (
     private val baseArray: Array[Byte],
     private val baseOffset: Int,
@@ -384,7 +381,11 @@ class MockUnsafeMapData private[mock] (
     new MockUnsafeArrayData(baseArray, baseOffset + 8, keyArraySize)
 
   val valueArray: MockUnsafeArrayData =
-    new MockUnsafeArrayData(baseArray, baseOffset + 8 + keyArraySize, sizeInBytes - 8 - keyArraySize)
+    new MockUnsafeArrayData(
+      baseArray,
+      baseOffset + 8 + keyArraySize,
+      sizeInBytes - 8 - keyArraySize
+    )
 
   def numElements: Int = keyArray.size
 

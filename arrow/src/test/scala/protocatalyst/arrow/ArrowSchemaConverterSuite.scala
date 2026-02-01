@@ -107,11 +107,13 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
   // === Schema Conversion Tests ===
 
   test("convert simple ProtoSchema to Arrow Schema"):
-    val protoSchema = ProtoSchema(Vector(
-      ProtoStructField("id", ProtoType.LongType, false),
-      ProtoStructField("name", ProtoType.StringType, true),
-      ProtoStructField("score", ProtoType.DoubleType, false)
-    ))
+    val protoSchema = ProtoSchema(
+      Vector(
+        ProtoStructField("id", ProtoType.LongType, false),
+        ProtoStructField("name", ProtoType.StringType, true),
+        ProtoStructField("score", ProtoType.DoubleType, false)
+      )
+    )
 
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(protoSchema)
 
@@ -189,13 +191,19 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
     assertEquals(backToProto.fields.head.dataType, pt)
 
   test("roundtrip complex schema"):
-    val protoSchema = ProtoSchema(Vector(
-      ProtoStructField("id", ProtoType.LongType, false),
-      ProtoStructField("name", ProtoType.StringType, true),
-      ProtoStructField("scores", ProtoType.ArrayType(ProtoType.DoubleType, true), false),
-      ProtoStructField("metadata", ProtoType.MapType(ProtoType.StringType, ProtoType.StringType, true), true),
-      ProtoStructField("created", ProtoType.TimestampType, false)
-    ))
+    val protoSchema = ProtoSchema(
+      Vector(
+        ProtoStructField("id", ProtoType.LongType, false),
+        ProtoStructField("name", ProtoType.StringType, true),
+        ProtoStructField("scores", ProtoType.ArrayType(ProtoType.DoubleType, true), false),
+        ProtoStructField(
+          "metadata",
+          ProtoType.MapType(ProtoType.StringType, ProtoType.StringType, true),
+          true
+        ),
+        ProtoStructField("created", ProtoType.TimestampType, false)
+      )
+    )
 
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(protoSchema)
     val backToProto = ArrowSchemaConverter.fromArrowSchema(arrowSchema)

@@ -11,9 +11,9 @@ object AstToProtoTransform:
 
   /** Transform any SQL statement to a ProtoLogicalPlan. */
   def transformStmt(
-    stmt: SqlStatement,
-    schema: ProtoSchema,
-    tableName: String
+      stmt: SqlStatement,
+      schema: ProtoSchema,
+      tableName: String
   ): Either[TransformError, ProtoLogicalPlan] =
     stmt match
       case s: SqlStatement.SelectStatement =>
@@ -24,7 +24,11 @@ object AstToProtoTransform:
           rightPlan <- transformStmt(right, schema, tableName)
         yield op match
           case SetOperation.Union(all) =>
-            ProtoLogicalPlan.Union(Vector(leftPlan, rightPlan), byName = false, allowMissingColumns = false)
+            ProtoLogicalPlan.Union(
+              Vector(leftPlan, rightPlan),
+              byName = false,
+              allowMissingColumns = false
+            )
           case SetOperation.Intersect(all) =>
             ProtoLogicalPlan.Intersect(leftPlan, rightPlan, isAll = all)
           case SetOperation.Except(all) =>
@@ -34,11 +38,11 @@ object AstToProtoTransform:
 
   /** Transform a WITH statement (CTEs) to a ProtoLogicalPlan. */
   private def transformWithStatement(
-    ctes: Vector[CteDefinition],
-    recursive: Boolean,
-    query: SqlStatement,
-    schema: ProtoSchema,
-    tableName: String
+      ctes: Vector[CteDefinition],
+      recursive: Boolean,
+      query: SqlStatement,
+      schema: ProtoSchema,
+      tableName: String
   ): Either[TransformError, ProtoLogicalPlan] =
     // Transform each CTE definition into a plan
     // Note: For recursive CTEs, we would need special handling (not implemented yet)
@@ -46,22 +50,23 @@ object AstToProtoTransform:
       Left(TransformError.UnsupportedFeature("Recursive CTEs are not yet supported"))
     else
       // Transform each CTE
-      val cteResults = ctes.foldLeft[Either[TransformError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
-        case (Right(acc), CteDefinition(cteName, columnAliases, cteQuery)) =>
-          // Transform the CTE query
-          transformStmt(cteQuery, schema, tableName).map { ctePlan =>
-            // Wrap with SubqueryAlias if needed and apply column aliases
-            val aliasedPlan = columnAliases match
-              case Some(aliases) =>
-                // Create a Project with renamed columns if column aliases are specified
-                // For now, just use SubqueryAlias (proper column renaming would need type analysis)
-                ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
-              case None =>
-                ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
-            acc :+ (cteName, aliasedPlan)
-          }
-        case (Left(err), _) => Left(err)
-      }
+      val cteResults = ctes
+        .foldLeft[Either[TransformError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
+          case (Right(acc), CteDefinition(cteName, columnAliases, cteQuery)) =>
+            // Transform the CTE query
+            transformStmt(cteQuery, schema, tableName).map { ctePlan =>
+              // Wrap with SubqueryAlias if needed and apply column aliases
+              val aliasedPlan = columnAliases match
+                case Some(aliases) =>
+                  // Create a Project with renamed columns if column aliases are specified
+                  // For now, just use SubqueryAlias (proper column renaming would need type analysis)
+                  ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
+                case None =>
+                  ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
+              acc :+ (cteName, aliasedPlan)
+            }
+          case (Left(err), _) => Left(err)
+        }
 
       // Transform the main query and wrap with With
       cteResults.flatMap { cteRelations =>
@@ -72,9 +77,9 @@ object AstToProtoTransform:
 
   /** Transform a SELECT statement to a ProtoLogicalPlan. */
   def transform(
-    stmt: SqlStatement.SelectStatement,
-    schema: ProtoSchema,
-    tableName: String
+      stmt: SqlStatement.SelectStatement,
+      schema: ProtoSchema,
+      tableName: String
   ): Either[TransformError, ProtoLogicalPlan] =
     // Build context with all table schemas
     val schemas = collectTableSchemas(stmt.from, schema, tableName)
@@ -92,10 +97,10 @@ object AstToProtoTransform:
           Right(basePlan)
 
       // Apply GROUP BY if present
-      aggregated <- if stmt.groupBy.nonEmpty then
-        transformAggregate(stmt.projections, stmt.groupBy, filtered, ctx)
-      else
-        Right(filtered)
+      aggregated <-
+        if stmt.groupBy.nonEmpty then
+          transformAggregate(stmt.projections, stmt.groupBy, filtered, ctx)
+        else Right(filtered)
 
       // Apply HAVING (filter after aggregation)
       havingFiltered <- stmt.having match
@@ -105,13 +110,14 @@ object AstToProtoTransform:
           Right(aggregated)
 
       // Apply DISTINCT if needed (before projection for SQL semantics)
-      distinctPlan = if stmt.distinct then ProtoLogicalPlan.Distinct(havingFiltered) else havingFiltered
+      distinctPlan =
+        if stmt.distinct then ProtoLogicalPlan.Distinct(havingFiltered) else havingFiltered
 
       // Apply projection (skip if we already have an aggregate, as aggregates handle projection)
-      projected <- if stmt.groupBy.nonEmpty then
-        Right(distinctPlan) // Aggregate already handles the expressions
-      else
-        transformProjections(stmt.projections, ctx, distinctPlan)
+      projected <-
+        if stmt.groupBy.nonEmpty then
+          Right(distinctPlan) // Aggregate already handles the expressions
+        else transformProjections(stmt.projections, ctx, distinctPlan)
 
       // Apply ORDER BY
       sorted <- stmt.orderBy match
@@ -125,15 +131,14 @@ object AstToProtoTransform:
       // Apply LIMIT
       limited = stmt.limit match
         case Some(n) => ProtoLogicalPlan.Limit(n.toInt, sorted)
-        case None => sorted
-
+        case None    => sorted
     yield limited
 
   /** Collect all table schemas from the FROM clause. */
   private def collectTableSchemas(
-    from: FromClause,
-    defaultSchema: ProtoSchema,
-    defaultTableName: String
+      from: FromClause,
+      defaultSchema: ProtoSchema,
+      defaultTableName: String
   ): Map[String, ProtoSchema] =
     from match
       case FromClause.Table(ref) =>
@@ -149,10 +154,10 @@ object AstToProtoTransform:
 
   /** Transform the FROM clause to a plan. */
   private def transformFromClause(
-    from: FromClause,
-    schema: ProtoSchema,
-    tableName: String,
-    ctx: TransformContext
+      from: FromClause,
+      schema: ProtoSchema,
+      tableName: String,
+      ctx: TransformContext
   ): Either[TransformError, ProtoLogicalPlan] =
     from match
       case FromClause.Table(ref) =>
@@ -163,7 +168,7 @@ object AstToProtoTransform:
           rightPlan <- transformFromClause(right, schema, tableName, ctx)
           condExpr <- condition.map(transformExpr(_, ctx)).getOrElse(Right(None)).map {
             case e: ProtoExpr => Some(e)
-            case _ => None
+            case _            => None
           }
         yield ProtoLogicalPlan.Join(leftPlan, rightPlan, toProtoJoinType(joinType), condExpr)
       case FromClause.Subquery(stmt, alias) =>
@@ -177,16 +182,16 @@ object AstToProtoTransform:
     import protocatalyst.sql.ast.{JoinType => SqlJoinType}
     import protocatalyst.plan.{JoinType => PlanJoinType}
     jt match
-      case SqlJoinType.Inner => PlanJoinType.Inner
-      case SqlJoinType.LeftOuter => PlanJoinType.LeftOuter
+      case SqlJoinType.Inner      => PlanJoinType.Inner
+      case SqlJoinType.LeftOuter  => PlanJoinType.LeftOuter
       case SqlJoinType.RightOuter => PlanJoinType.RightOuter
-      case SqlJoinType.FullOuter => PlanJoinType.FullOuter
-      case SqlJoinType.Cross => PlanJoinType.Cross
+      case SqlJoinType.FullOuter  => PlanJoinType.FullOuter
+      case SqlJoinType.Cross      => PlanJoinType.Cross
 
   private def createRelationRef(
-    tableName: String,
-    alias: Option[String],
-    schema: ProtoSchema
+      tableName: String,
+      alias: Option[String],
+      schema: ProtoSchema
   ): ProtoLogicalPlan =
     val contract = SchemaContract(
       relationName = tableName,
@@ -198,14 +203,14 @@ object AstToProtoTransform:
     ProtoLogicalPlan.RelationRef(tableName, alias, contract)
 
   private def transformProjections(
-    projections: Vector[Projection],
-    ctx: TransformContext,
-    child: ProtoLogicalPlan
+      projections: Vector[Projection],
+      ctx: TransformContext,
+      child: ProtoLogicalPlan
   ): Either[TransformError, ProtoLogicalPlan] =
     // Check for SELECT *
     val hasStar = projections.exists {
       case Projection(SqlExpr.Star(_), _) => true
-      case _ => false
+      case _                              => false
     }
 
     if hasStar && projections.size == 1 then
@@ -224,25 +229,28 @@ object AstToProtoTransform:
             transformExpr(expr, ctx).map { e =>
               proj.alias match
                 case Some(name) => Vector(ProtoExpr.Alias(e, name))
-                case None => Vector(e)
+                case None       => Vector(e)
             }
       }
 
       // Sequence the results - fail on first error
-      results.foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
-        case (Right(acc), Right(exprs)) => Right(acc ++ exprs)
-        case (Left(err), _) => Left(err)
-        case (_, Left(err)) => Left(err)
-      }.map(exprs => ProtoLogicalPlan.Project(exprs, child))
+      results
+        .foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
+          case (Right(acc), Right(exprs)) => Right(acc ++ exprs)
+          case (Left(err), _)             => Left(err)
+          case (_, Left(err))             => Left(err)
+        }
+        .map(exprs => ProtoLogicalPlan.Project(exprs, child))
 
   private def transformOrderBy(
-    orders: Vector[OrderSpec],
-    ctx: TransformContext
+      orders: Vector[OrderSpec],
+      ctx: TransformContext
   ): Either[TransformError, Vector[SortOrder]] =
     val transformed = orders.map { spec =>
       transformExpr(spec.expr, ctx).map { expr =>
         val direction = if spec.ascending then SortDirection.Ascending else SortDirection.Descending
-        val nullOrdering = if spec.ascending then NullOrdering.NullsLast else NullOrdering.NullsFirst
+        val nullOrdering =
+          if spec.ascending then NullOrdering.NullsLast else NullOrdering.NullsFirst
         SortOrder(expr, direction, nullOrdering)
       }
     }
@@ -250,16 +258,16 @@ object AstToProtoTransform:
     // Sequence the results
     transformed.foldLeft[Either[TransformError, Vector[SortOrder]]](Right(Vector.empty)) {
       case (Right(acc), Right(order)) => Right(acc :+ order)
-      case (Left(err), _) => Left(err)
-      case (_, Left(err)) => Left(err)
+      case (Left(err), _)             => Left(err)
+      case (_, Left(err))             => Left(err)
     }
 
   /** Transform GROUP BY to an Aggregate plan. */
   private def transformAggregate(
-    projections: Vector[Projection],
-    groupBy: Vector[SqlExpr],
-    child: ProtoLogicalPlan,
-    ctx: TransformContext
+      projections: Vector[Projection],
+      groupBy: Vector[SqlExpr],
+      child: ProtoLogicalPlan,
+      ctx: TransformContext
   ): Either[TransformError, ProtoLogicalPlan] =
     for
       // Transform GROUP BY expressions
@@ -267,13 +275,12 @@ object AstToProtoTransform:
 
       // Extract aggregate expressions from projections
       aggregateExprs <- extractAggregateExprs(projections, ctx)
-
     yield ProtoLogicalPlan.Aggregate(groupingExprs, aggregateExprs, child)
 
   /** Extract aggregate expressions from projections. */
   private def extractAggregateExprs(
-    projections: Vector[Projection],
-    ctx: TransformContext
+      projections: Vector[Projection],
+      ctx: TransformContext
   ): Either[TransformError, Vector[ProtoExpr]] =
     val results = projections.map { proj =>
       proj.expr match
@@ -286,25 +293,27 @@ object AstToProtoTransform:
             // Otherwise, treat the whole expression as a grouping/result expression
             if aggs.nonEmpty then aggs
             else
-              transformExpr(expr, ctx).map { e =>
-                proj.alias match
-                  case Some(name) => Vector(ProtoExpr.Alias(e, name))
-                  case None => Vector(e)
-              }.getOrElse(Vector.empty)
+              transformExpr(expr, ctx)
+                .map { e =>
+                  proj.alias match
+                    case Some(name) => Vector(ProtoExpr.Alias(e, name))
+                    case None       => Vector(e)
+                }
+                .getOrElse(Vector.empty)
           }
     }
 
     // Sequence the results
     results.foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
       case (Right(acc), Right(exprs)) => Right(acc ++ exprs)
-      case (Left(err), _) => Left(err)
-      case (_, Left(err)) => Left(err)
+      case (Left(err), _)             => Left(err)
+      case (_, Left(err))             => Left(err)
     }
 
   /** Extract aggregate function calls from an expression. */
   private def extractAggregates(
-    expr: SqlExpr,
-    ctx: TransformContext
+      expr: SqlExpr,
+      ctx: TransformContext
   ): Either[TransformError, Vector[ProtoExpr]] =
     expr match
       case SqlExpr.FunctionCall(name, args, distinct) if isAggregateFunction(name) =>
@@ -314,7 +323,7 @@ object AstToProtoTransform:
         // For non-aggregate functions, look for aggregates in args
         args.foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
           case (Right(acc), arg) => extractAggregates(arg, ctx).map(acc ++ _)
-          case (Left(err), _) => Left(err)
+          case (Left(err), _)    => Left(err)
         }
       case SqlExpr.And(left, right) =>
         for
@@ -339,14 +348,15 @@ object AstToProtoTransform:
       case SqlExpr.Paren(child) =>
         extractAggregates(child, ctx)
       case SqlExpr.CaseWhen(branches, elseValue) =>
-        val branchAggs = branches.foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
-          case (Right(acc), (cond, result)) =>
-            for
-              condAggs <- extractAggregates(cond, ctx)
-              resultAggs <- extractAggregates(result, ctx)
-            yield acc ++ condAggs ++ resultAggs
-          case (Left(err), _) => Left(err)
-        }
+        val branchAggs =
+          branches.foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
+            case (Right(acc), (cond, result)) =>
+              for
+                condAggs <- extractAggregates(cond, ctx)
+                resultAggs <- extractAggregates(result, ctx)
+              yield acc ++ condAggs ++ resultAggs
+            case (Left(err), _) => Left(err)
+          }
         elseValue match
           case Some(e) =>
             for
@@ -363,7 +373,7 @@ object AstToProtoTransform:
   private def isAggregateFunction(name: String): Boolean =
     name match
       case "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" => true
-      case _ => false
+      case _                                       => false
 
   /** Transform a SQL expression to a ProtoExpr. */
   def transformExpr(expr: SqlExpr, ctx: TransformContext): Either[TransformError, ProtoExpr] =
@@ -395,22 +405,22 @@ object AstToProtoTransform:
           l <- transformExpr(left, ctx)
           r <- transformExpr(right, ctx)
         yield op match
-          case CompareOp.Eq => ProtoExpr.Eq(l, r)
+          case CompareOp.Eq    => ProtoExpr.Eq(l, r)
           case CompareOp.NotEq => ProtoExpr.NotEq(l, r)
-          case CompareOp.Lt => ProtoExpr.Lt(l, r)
-          case CompareOp.LtEq => ProtoExpr.LtEq(l, r)
-          case CompareOp.Gt => ProtoExpr.Gt(l, r)
-          case CompareOp.GtEq => ProtoExpr.GtEq(l, r)
+          case CompareOp.Lt    => ProtoExpr.Lt(l, r)
+          case CompareOp.LtEq  => ProtoExpr.LtEq(l, r)
+          case CompareOp.Gt    => ProtoExpr.Gt(l, r)
+          case CompareOp.GtEq  => ProtoExpr.GtEq(l, r)
 
       case SqlExpr.Arithmetic(left, op, right) =>
         for
           l <- transformExpr(left, ctx)
           r <- transformExpr(right, ctx)
         yield op match
-          case ArithOp.Add => ProtoExpr.Add(l, r)
+          case ArithOp.Add      => ProtoExpr.Add(l, r)
           case ArithOp.Subtract => ProtoExpr.Subtract(l, r)
           case ArithOp.Multiply => ProtoExpr.Multiply(l, r)
-          case ArithOp.Divide => ProtoExpr.Divide(l, r)
+          case ArithOp.Divide   => ProtoExpr.Divide(l, r)
 
       case SqlExpr.And(left, right) =>
         for
@@ -458,7 +468,7 @@ object AstToProtoTransform:
           p <- transformExpr(pattern, ctx)
           e <- escape.map(transformExpr(_, ctx)).getOrElse(Right(None)).map {
             case e: ProtoExpr => Some(e)
-            case _ => None
+            case _            => None
           }
         yield ProtoExpr.Like(v, p, e)
 
@@ -468,7 +478,7 @@ object AstToProtoTransform:
           p <- transformExpr(pattern, ctx)
           e <- escape.map(transformExpr(_, ctx)).getOrElse(Right(None)).map {
             case e: ProtoExpr => Some(e)
-            case _ => None
+            case _            => None
           }
         yield ProtoExpr.Not(ProtoExpr.Like(v, p, e))
 
@@ -492,7 +502,7 @@ object AstToProtoTransform:
           transformedBranches <- transformCaseWhenBranches(branches, ctx)
           transformedElse <- elseValue match
             case Some(e) => transformExpr(e, ctx).map(Some(_))
-            case None => Right(None)
+            case None    => Right(None)
         yield ProtoExpr.CaseWhen(transformedBranches, transformedElse)
 
       case SqlExpr.Cast(expr, targetType) =>
@@ -537,10 +547,10 @@ object AstToProtoTransform:
     import ProtoExpr.*
     expr match
       // Known window functions
-      case OpaqueCall("ROW_NUMBER", Vector(), _, _) => Right(RowNumber())
-      case OpaqueCall("RANK", Vector(), _, _) => Right(Rank())
-      case OpaqueCall("DENSE_RANK", Vector(), _, _) => Right(DenseRank())
-      case OpaqueCall("NTILE", Vector(n), _, _) => Right(Ntile(n))
+      case OpaqueCall("ROW_NUMBER", Vector(), _, _)        => Right(RowNumber())
+      case OpaqueCall("RANK", Vector(), _, _)              => Right(Rank())
+      case OpaqueCall("DENSE_RANK", Vector(), _, _)        => Right(DenseRank())
+      case OpaqueCall("NTILE", Vector(n), _, _)            => Right(Ntile(n))
       case OpaqueCall("LEAD", args, _, _) if args.nonEmpty =>
         val input = args.head
         val offset = args.lift(1).getOrElse(lit(1))
@@ -564,8 +574,8 @@ object AstToProtoTransform:
 
   /** Transform order specs for window functions. */
   private def transformOrderSpecs(
-    orderSpecs: Vector[OrderSpec],
-    ctx: TransformContext
+      orderSpecs: Vector[OrderSpec],
+      ctx: TransformContext
   ): Either[TransformError, Vector[SortOrder]] =
     orderSpecs.foldLeft[Either[TransformError, Vector[SortOrder]]](Right(Vector.empty)) {
       case (Right(acc), OrderSpec(expr, ascending)) =>
@@ -577,30 +587,34 @@ object AstToProtoTransform:
     }
 
   /** Transform window frame specification. */
-  private def transformFrame(frame: protocatalyst.sql.ast.WindowFrame): protocatalyst.expr.WindowFrame =
+  private def transformFrame(
+      frame: protocatalyst.sql.ast.WindowFrame
+  ): protocatalyst.expr.WindowFrame =
     import protocatalyst.sql.ast.{FrameType as SFT, FrameBound as SFB}
     import protocatalyst.expr.{FrameType as PFT, FrameBound as PFB}
     val frameType = frame.frameType match
-      case SFT.Rows => PFT.Rows
+      case SFT.Rows  => PFT.Rows
       case SFT.Range => PFT.Range
     val lower = transformFrameBound(frame.start)
     val upper = transformFrameBound(frame.end)
     protocatalyst.expr.WindowFrame(frameType, lower, upper)
 
-  private def transformFrameBound(bound: protocatalyst.sql.ast.FrameBound): protocatalyst.expr.FrameBound =
+  private def transformFrameBound(
+      bound: protocatalyst.sql.ast.FrameBound
+  ): protocatalyst.expr.FrameBound =
     import protocatalyst.sql.ast.{FrameBound as SFB}
     import protocatalyst.expr.{FrameBound as PFB}
     bound match
       case SFB.UnboundedPreceding => PFB.UnboundedPreceding
       case SFB.UnboundedFollowing => PFB.UnboundedFollowing
-      case SFB.CurrentRow => PFB.CurrentRow
-      case SFB.Preceding(n) => PFB.Preceding(n)
-      case SFB.Following(n) => PFB.Following(n)
+      case SFB.CurrentRow         => PFB.CurrentRow
+      case SFB.Preceding(n)       => PFB.Preceding(n)
+      case SFB.Following(n)       => PFB.Following(n)
 
   /** Transform a subquery statement to a plan. */
   private def transformSubquery(
-    stmt: SqlStatement.SelectStatement,
-    ctx: TransformContext
+      stmt: SqlStatement.SelectStatement,
+      ctx: TransformContext
   ): Either[TransformError, ProtoLogicalPlan] =
     // For subqueries, we use the same context (for correlated subqueries)
     // The subquery's own tables will be added when transforming its FROM clause
@@ -609,13 +623,13 @@ object AstToProtoTransform:
 
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref) => ref.alias.getOrElse(ref.name)
+      case FromClause.Table(ref)          => ref.alias.getOrElse(ref.name)
       case FromClause.Join(left, _, _, _) => extractTableName(left)
-      case FromClause.Subquery(_, alias) => alias
+      case FromClause.Subquery(_, alias)  => alias
 
   private def transformCaseWhenBranches(
-    branches: Vector[(SqlExpr, SqlExpr)],
-    ctx: TransformContext
+      branches: Vector[(SqlExpr, SqlExpr)],
+      ctx: TransformContext
   ): Either[TransformError, Vector[(ProtoExpr, ProtoExpr)]] =
     branches.foldLeft[Either[TransformError, Vector[(ProtoExpr, ProtoExpr)]]](Right(Vector.empty)) {
       case (Right(acc), (condition, result)) =>
@@ -629,17 +643,17 @@ object AstToProtoTransform:
   private def sqlTypeToProtoType(sqlType: SqlType): ProtoType =
     import protocatalyst.sql.ast.SqlType as ST
     sqlType match
-      case ST.IntType => ProtoType.IntType
-      case ST.LongType => ProtoType.LongType
-      case ST.DoubleType => ProtoType.DoubleType
-      case ST.StringType => ProtoType.StringType
-      case ST.BooleanType => ProtoType.BooleanType
-      case ST.DateType => ProtoType.DateType
+      case ST.IntType       => ProtoType.IntType
+      case ST.LongType      => ProtoType.LongType
+      case ST.DoubleType    => ProtoType.DoubleType
+      case ST.StringType    => ProtoType.StringType
+      case ST.BooleanType   => ProtoType.BooleanType
+      case ST.DateType      => ProtoType.DateType
       case ST.TimestampType => ProtoType.TimestampType
 
   private def transformExprList(
-    exprs: Vector[SqlExpr],
-    ctx: TransformContext
+      exprs: Vector[SqlExpr],
+      ctx: TransformContext
   ): Either[TransformError, Vector[ProtoExpr]] =
     exprs.foldLeft[Either[TransformError, Vector[ProtoExpr]]](Right(Vector.empty)) {
       case (Right(acc), expr) =>
@@ -648,17 +662,17 @@ object AstToProtoTransform:
     }
 
   private def transformFunctionCall(
-    name: String,
-    args: Vector[SqlExpr],
-    distinct: Boolean,
-    ctx: TransformContext
+      name: String,
+      args: Vector[SqlExpr],
+      distinct: Boolean,
+      ctx: TransformContext
   ): Either[TransformError, ProtoExpr] =
     // Handle COUNT(*) specially - Star is valid here
     name match
       case "COUNT" =>
         val hasStar = args.exists {
           case SqlExpr.Star(_) => true
-          case _ => false
+          case _               => false
         }
         if hasStar || args.isEmpty then
           // COUNT(*) or COUNT() - count all rows
@@ -702,7 +716,13 @@ object AstToProtoTransform:
             case "RPAD" if transformedArgs.size == 3 =>
               Right(ProtoExpr.Rpad(transformedArgs(0), transformedArgs(1), transformedArgs(2)))
             case "SPLIT" if transformedArgs.size >= 2 =>
-              Right(ProtoExpr.StringSplit(transformedArgs(0), transformedArgs(1), transformedArgs.lift(2)))
+              Right(
+                ProtoExpr.StringSplit(
+                  transformedArgs(0),
+                  transformedArgs(1),
+                  transformedArgs.lift(2)
+                )
+              )
             case "REVERSE" if transformedArgs.size == 1 =>
               Right(ProtoExpr.Reverse(transformedArgs.head))
             case "REPEAT" if transformedArgs.size == 2 =>
@@ -770,9 +790,9 @@ object AstToProtoTransform:
         }
 
   private def resolveColumn(
-    name: String,
-    qualifier: Option[String],
-    ctx: TransformContext
+      name: String,
+      qualifier: Option[String],
+      ctx: TransformContext
   ): Either[TransformError, ProtoExpr] =
     qualifier match
       case Some(q) =>
@@ -801,8 +821,8 @@ object AstToProtoTransform:
 
 /** Context for transformation. */
 case class TransformContext(
-  tableSchemas: Map[String, ProtoSchema],
-  outputSchema: ProtoSchema
+    tableSchemas: Map[String, ProtoSchema],
+    outputSchema: ProtoSchema
 ):
   /** Get schema for expansion of SELECT * */
   def schema: ProtoSchema = outputSchema

@@ -299,7 +299,10 @@ class InlineRowSerializerSuite extends munit.FunSuite:
 
   test("serialize Map[String, CustomType]"):
     val serializer = InlineRowSerializer.derived[InlineWithUserMap]
-    val data = InlineWithUserMap("lookup", Map("alice" -> InlineUser("Alice", 30), "bob" -> InlineUser("Bob", 25)))
+    val data = InlineWithUserMap(
+      "lookup",
+      Map("alice" -> InlineUser("Alice", 30), "bob" -> InlineUser("Bob", 25))
+    )
 
     val serialized = serializer.serialize(data)
 
@@ -311,7 +314,10 @@ class InlineRowSerializerSuite extends munit.FunSuite:
 
   test("roundtrip Map[String, CustomType]"):
     val serializer = InlineRowSerializer.derived[InlineWithUserMap]
-    val original = InlineWithUserMap("lookup", Map("alice" -> InlineUser("Alice", 30), "bob" -> InlineUser("Bob", 25)))
+    val original = InlineWithUserMap(
+      "lookup",
+      Map("alice" -> InlineUser("Alice", 30), "bob" -> InlineUser("Bob", 25))
+    )
 
     val deserialized = serializer.deserialize(serializer.serialize(original))
 

@@ -2,14 +2,12 @@ package protocatalyst.encoder
 
 import java.io.Serializable
 
-/**
- * Generic row type for ProtoCatalyst, equivalent to Spark's Row.
- * Provides positional access to values with type-specific getters.
- *
- * Unlike case classes which have compile-time known structure,
- * ProtoRow is a dynamic container that can hold any values.
- * Schema is provided externally via RowEncoder.
- */
+/** Generic row type for ProtoCatalyst, equivalent to Spark's Row. Provides positional access to
+  * values with type-specific getters.
+  *
+  * Unlike case classes which have compile-time known structure, ProtoRow is a dynamic container
+  * that can hold any values. Schema is provided externally via RowEncoder.
+  */
 trait ProtoRow extends Serializable:
   /** Number of fields in this row */
   def length: Int
@@ -56,9 +54,8 @@ object ProtoRow:
   /** Empty row */
   val empty: ProtoRow = GenericProtoRow(Vector.empty)
 
-/**
- * Default implementation of ProtoRow backed by a Vector.
- */
+/** Default implementation of ProtoRow backed by a Vector.
+  */
 case class GenericProtoRow(values: Vector[Any]) extends ProtoRow:
   def length: Int = values.size
 
@@ -79,26 +76,26 @@ case class GenericProtoRow(values: Vector[Any]) extends ProtoRow:
 
   def getString(i: Int): String = get(i) match
     case s: String => s
-    case other => other.toString
+    case other     => other.toString
 
   def getBinary(i: Int): Array[Byte] = get(i).asInstanceOf[Array[Byte]]
 
   def getDecimal(i: Int): BigDecimal = get(i) match
-    case bd: BigDecimal => bd
+    case bd: BigDecimal            => bd
     case jbd: java.math.BigDecimal => BigDecimal(jbd)
-    case l: Long => BigDecimal(l)
-    case i: Int => BigDecimal(i)
-    case d: Double => BigDecimal(d)
-    case other => throw ClassCastException(s"Cannot cast $other to BigDecimal")
+    case l: Long                   => BigDecimal(l)
+    case i: Int                    => BigDecimal(i)
+    case d: Double                 => BigDecimal(d)
+    case other                     => throw ClassCastException(s"Cannot cast $other to BigDecimal")
 
   def getSeq[T](i: Int): Seq[T] = get(i).asInstanceOf[Seq[T]]
 
   def getMap[K, V](i: Int): Map[K, V] = get(i).asInstanceOf[Map[K, V]]
 
   def getStruct(i: Int): ProtoRow = get(i) match
-    case row: ProtoRow => row
+    case row: ProtoRow    => row
     case product: Product => GenericProtoRow(product.productIterator.toVector)
-    case other => throw ClassCastException(s"Cannot cast $other to ProtoRow")
+    case other            => throw ClassCastException(s"Cannot cast $other to ProtoRow")
 
   def toSeq: Seq[Any] = values
 

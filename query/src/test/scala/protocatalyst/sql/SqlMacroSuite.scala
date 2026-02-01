@@ -96,7 +96,8 @@ class SqlMacroSuite extends munit.FunSuite:
     assertNotEquals(query.contentHash, 0L)
 
   test("WHERE with NOT BETWEEN"):
-    val query = CompiledQuery.sql[SqlTestUser]("SELECT name FROM users WHERE age NOT BETWEEN 0 AND 17")
+    val query =
+      CompiledQuery.sql[SqlTestUser]("SELECT name FROM users WHERE age NOT BETWEEN 0 AND 17")
     assertNotEquals(query.contentHash, 0L)
 
   test("WHERE with LIKE"):
@@ -104,11 +105,13 @@ class SqlMacroSuite extends munit.FunSuite:
     assertNotEquals(query.contentHash, 0L)
 
   test("WHERE with NOT LIKE"):
-    val query = CompiledQuery.sql[SqlTestUser]("SELECT name FROM users WHERE name NOT LIKE '%test%'")
+    val query =
+      CompiledQuery.sql[SqlTestUser]("SELECT name FROM users WHERE name NOT LIKE '%test%'")
     assertNotEquals(query.contentHash, 0L)
 
   test("WHERE with IN"):
-    val query = CompiledQuery.sql[SqlTestUser]("SELECT name FROM users WHERE age IN (18, 21, 25, 30)")
+    val query =
+      CompiledQuery.sql[SqlTestUser]("SELECT name FROM users WHERE age IN (18, 21, 25, 30)")
     assertNotEquals(query.contentHash, 0L)
 
   test("WHERE with NOT IN"):

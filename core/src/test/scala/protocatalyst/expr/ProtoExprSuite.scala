@@ -128,7 +128,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.Not(child)
     expr match
       case ProtoExpr.Not(c) => assertEquals(c, child)
-      case _ => fail(s"Expected Not, got $expr")
+      case _                => fail(s"Expected Not, got $expr")
 
   // === Null Handling Expressions ===
 
@@ -137,14 +137,14 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.IsNull(col)
     expr match
       case ProtoExpr.IsNull(c) => assertEquals(c, col)
-      case _ => fail(s"Expected IsNull, got $expr")
+      case _                   => fail(s"Expected IsNull, got $expr")
 
   test("IsNotNull construction"):
     val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, nullable = true)
     val expr = ProtoExpr.IsNotNull(col)
     expr match
       case ProtoExpr.IsNotNull(c) => assertEquals(c, col)
-      case _ => fail(s"Expected IsNotNull, got $expr")
+      case _                      => fail(s"Expected IsNotNull, got $expr")
 
   test("Coalesce construction"):
     val a = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, nullable = true)
@@ -176,8 +176,7 @@ class ProtoExprSuite extends munit.FunSuite:
       ProtoExpr.Multiply(left, right),
       ProtoExpr.Divide(left, right)
     )
-    for expr <- arithmetic do
-      assert(expr.isInstanceOf[ProtoExpr])
+    for expr <- arithmetic do assert(expr.isInstanceOf[ProtoExpr])
 
   // === Math Functions ===
 
@@ -186,7 +185,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.Abs(child)
     expr match
       case ProtoExpr.Abs(c) => assertEquals(c, child)
-      case _ => fail(s"Expected Abs, got $expr")
+      case _                => fail(s"Expected Abs, got $expr")
 
   test("Round construction"):
     val child = ProtoExpr.lit(3.14159)
@@ -208,8 +207,7 @@ class ProtoExprSuite extends munit.FunSuite:
       ProtoExpr.Sign(child),
       ProtoExpr.Exp(child)
     )
-    for expr <- mathFuncs do
-      assert(expr.isInstanceOf[ProtoExpr])
+    for expr <- mathFuncs do assert(expr.isInstanceOf[ProtoExpr])
 
   test("Pow construction"):
     val base = ProtoExpr.lit(2.0)
@@ -236,7 +234,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.Log(child, None)
     expr match
       case ProtoExpr.Log(c, None) => assertEquals(c, child)
-      case _ => fail(s"Expected Log without base, got $expr")
+      case _                      => fail(s"Expected Log without base, got $expr")
 
   // === String Expressions ===
 
@@ -275,7 +273,7 @@ class ProtoExprSuite extends munit.FunSuite:
 
     trimBoth match
       case ProtoExpr.Trim(_, _, TrimType.Both) => ()
-      case _ => fail("Expected TrimType.Both")
+      case _                                   => fail("Expected TrimType.Both")
 
     trimLeading match
       case ProtoExpr.Trim(_, Some(_), TrimType.Leading) => ()
@@ -283,14 +281,14 @@ class ProtoExprSuite extends munit.FunSuite:
 
     trimTrailing match
       case ProtoExpr.Trim(_, _, TrimType.Trailing) => ()
-      case _ => fail("Expected TrimType.Trailing")
+      case _                                       => fail("Expected TrimType.Trailing")
 
   test("Length construction"):
     val str = ProtoExpr.lit("hello")
     val expr = ProtoExpr.Length(str)
     expr match
       case ProtoExpr.Length(c) => assertEquals(c, str)
-      case _ => fail(s"Expected Length, got $expr")
+      case _                   => fail(s"Expected Length, got $expr")
 
   test("Replace construction"):
     val str = ProtoExpr.lit("hello world")
@@ -310,7 +308,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.StringLocate(substr, str, Some(ProtoExpr.lit(1)))
     expr match
       case ProtoExpr.StringLocate(ss, s, Some(_)) => ()
-      case _ => fail(s"Expected StringLocate, got $expr")
+      case _                                      => fail(s"Expected StringLocate, got $expr")
 
   // === Aggregate Expressions ===
 
@@ -321,11 +319,11 @@ class ProtoExprSuite extends munit.FunSuite:
 
     countAll match
       case ProtoExpr.Count(_, false) => ()
-      case _ => fail("Expected Count with distinct=false")
+      case _                         => fail("Expected Count with distinct=false")
 
     countDistinct match
       case ProtoExpr.Count(_, true) => ()
-      case _ => fail("Expected Count with distinct=true")
+      case _                        => fail("Expected Count with distinct=true")
 
   test("aggregate functions construct correctly"):
     val col = ProtoExpr.ColumnRef("value", None, ProtoType.DoubleType, nullable = false)
@@ -335,8 +333,7 @@ class ProtoExprSuite extends munit.FunSuite:
       ProtoExpr.Min(col),
       ProtoExpr.Max(col)
     )
-    for expr <- aggregates do
-      assert(expr.isInstanceOf[ProtoExpr])
+    for expr <- aggregates do assert(expr.isInstanceOf[ProtoExpr])
 
   // === Control Flow Expressions ===
 
@@ -413,7 +410,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.Like(value, pattern, Some(escape))
     expr match
       case ProtoExpr.Like(_, _, Some(e)) => assertEquals(e, escape)
-      case _ => fail(s"Expected Like with escape, got $expr")
+      case _                             => fail(s"Expected Like with escape, got $expr")
 
   // === Cast and Alias ===
 
@@ -442,14 +439,14 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.ScalarSubquery(plan)
     expr match
       case ProtoExpr.ScalarSubquery(p) => assertEquals(p, plan)
-      case _ => fail(s"Expected ScalarSubquery, got $expr")
+      case _                           => fail(s"Expected ScalarSubquery, got $expr")
 
   test("Exists construction"):
     val plan = ProtoLogicalPlan.RelationRef("t", None, emptyContract)
     val expr = ProtoExpr.Exists(plan)
     expr match
       case ProtoExpr.Exists(p) => assertEquals(p, plan)
-      case _ => fail(s"Expected Exists, got $expr")
+      case _                   => fail(s"Expected Exists, got $expr")
 
   test("InSubquery construction"):
     val value = ProtoExpr.lit(1)
@@ -478,7 +475,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.Ntile(n)
     expr match
       case ProtoExpr.Ntile(num) => assertEquals(num, n)
-      case _ => fail(s"Expected Ntile, got $expr")
+      case _                    => fail(s"Expected Ntile, got $expr")
 
   test("Lead construction"):
     val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = true)
@@ -509,11 +506,11 @@ class ProtoExprSuite extends munit.FunSuite:
 
     first match
       case ProtoExpr.FirstValue(_, true) => ()
-      case _ => fail(s"Expected FirstValue with ignoreNulls=true")
+      case _                             => fail(s"Expected FirstValue with ignoreNulls=true")
 
     last match
       case ProtoExpr.LastValue(_, false) => ()
-      case _ => fail(s"Expected LastValue with ignoreNulls=false")
+      case _                             => fail(s"Expected LastValue with ignoreNulls=false")
 
   test("NthValue construction"):
     val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = true)
@@ -528,11 +525,13 @@ class ProtoExprSuite extends munit.FunSuite:
   test("WindowExpr construction"):
     val func = ProtoExpr.RowNumber()
     val partition = Vector(ProtoExpr.ColumnRef("dept", None, ProtoType.StringType, nullable = true))
-    val order = Vector(SortOrder(
-      ProtoExpr.ColumnRef("date", None, ProtoType.DateType, nullable = false),
-      SortDirection.Ascending,
-      NullOrdering.NullsFirst
-    ))
+    val order = Vector(
+      SortOrder(
+        ProtoExpr.ColumnRef("date", None, ProtoType.DateType, nullable = false),
+        SortDirection.Ascending,
+        NullOrdering.NullsFirst
+      )
+    )
     val frame = WindowFrame(FrameType.Rows, FrameBound.UnboundedPreceding, FrameBound.CurrentRow)
     val expr = ProtoExpr.WindowExpr(func, partition, order, Some(frame))
 
@@ -585,10 +584,10 @@ class ProtoExprSuite extends munit.FunSuite:
     assertEquals(frame.frameType, FrameType.Range)
     frame.lower match
       case FrameBound.Preceding(n) => assertEquals(n, 10L)
-      case _ => fail("Expected Preceding(10)")
+      case _                       => fail("Expected Preceding(10)")
     frame.upper match
       case FrameBound.Following(n) => assertEquals(n, 5L)
-      case _ => fail("Expected Following(5)")
+      case _                       => fail("Expected Following(5)")
 
   test("all FrameBound variants"):
     val bounds = List(
@@ -598,8 +597,7 @@ class ProtoExprSuite extends munit.FunSuite:
       FrameBound.Preceding(100),
       FrameBound.Following(50)
     )
-    for bound <- bounds do
-      assert(bound.isInstanceOf[FrameBound])
+    for bound <- bounds do assert(bound.isInstanceOf[FrameBound])
 
   // === Helper ===
 

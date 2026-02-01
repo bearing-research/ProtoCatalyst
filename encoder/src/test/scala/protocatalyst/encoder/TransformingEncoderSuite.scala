@@ -1,7 +1,11 @@
 package protocatalyst.encoder
 
 import protocatalyst.types.ProtoType
-import protocatalyst.encoder.codec.{JavaSerializationCodec, KryoSerializationCodec, ForySerializationCodec}
+import protocatalyst.encoder.codec.{
+  JavaSerializationCodec,
+  KryoSerializationCodec,
+  ForySerializationCodec
+}
 import munit.FunSuite
 
 // Test types must be top-level to be Serializable
@@ -151,5 +155,7 @@ class TransformingEncoderSuite extends FunSuite:
     val kryoBytes = kryoEnc.encode(data)
 
     // Kryo should generally produce smaller output
-    assert(kryoBytes.length <= javaBytes.length,
-      s"Expected Kryo (${kryoBytes.length}) <= Java (${javaBytes.length})")
+    assert(
+      kryoBytes.length <= javaBytes.length,
+      s"Expected Kryo (${kryoBytes.length}) <= Java (${javaBytes.length})"
+    )

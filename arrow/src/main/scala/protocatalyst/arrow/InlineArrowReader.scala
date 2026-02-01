@@ -10,27 +10,26 @@ import scala.deriving.Mirror
 import scala.compiletime.*
 import java.nio.charset.StandardCharsets
 
-/**
- * Compile-time specialized Arrow column reader.
- *
- * Uses the same `inline erasedValue[Types]` pattern as InlineArrowWriter
- * to generate type-specialized code for reading from Arrow vectors at compile time.
- * This eliminates runtime type dispatch that Spark's ArrowColumnVector performs.
- *
- * Benefits:
- *   - Zero runtime type matching for known field types
- *   - Direct vector reads with type-specialized code paths
- *   - Compile-time unrolling of field iteration
- *   - JIT-friendly specialized code
- *
- * Usage:
- * {{{
- * case class Person(name: String, age: Int) derives ProtoEncoder
- *
- * val reader = InlineArrowReader.derived[Person]
- * val persons = reader.read(root)  // Seq[Person]
- * }}}
- */
+/** Compile-time specialized Arrow column reader.
+  *
+  * Uses the same `inline erasedValue[Types]` pattern as InlineArrowWriter to generate
+  * type-specialized code for reading from Arrow vectors at compile time. This eliminates runtime
+  * type dispatch that Spark's ArrowColumnVector performs.
+  *
+  * Benefits:
+  *   - Zero runtime type matching for known field types
+  *   - Direct vector reads with type-specialized code paths
+  *   - Compile-time unrolling of field iteration
+  *   - JIT-friendly specialized code
+  *
+  * Usage:
+  * {{{
+  * case class Person(name: String, age: Int) derives ProtoEncoder
+  *
+  * val reader = InlineArrowReader.derived[Person]
+  * val persons = reader.read(root)  // Seq[Person]
+  * }}}
+  */
 trait InlineArrowReader[T]:
   /** Arrow schema for this type */
   def schema: Schema
@@ -46,10 +45,8 @@ trait InlineArrowReader[T]:
 
 object InlineArrowReader:
 
-  /**
-   * Derive an InlineArrowReader at compile time.
-   * Generates type-specialized code for each field.
-   */
+  /** Derive an InlineArrowReader at compile time. Generates type-specialized code for each field.
+    */
   inline def derived[T](using m: Mirror.ProductOf[T], enc: ProtoEncoder[T]): InlineArrowReader[T] =
     val count = constValue[Tuple.Size[m.MirroredElemTypes]]
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(enc.schema)
@@ -318,7 +315,9 @@ object InlineArrowReader:
             product.asInstanceOf[T]
         }
 
-  /** Read product fields from struct vector with compile-time type dispatch (non-recursive for nested products) */
+  /** Read product fields from struct vector with compile-time type dispatch (non-recursive for
+    * nested products)
+    */
   private inline def readProductFields[Types <: Tuple](
       structVec: StructVector,
       rowIndex: Int,
@@ -326,7 +325,7 @@ object InlineArrowReader:
       values: Array[Any]
   ): Unit =
     inline erasedValue[Types] match
-      case _: EmptyTuple => ()
+      case _: EmptyTuple      => ()
       case _: (Boolean *: ts) =>
         val vec = structVec.getChildByOrdinal(fieldIndex).asInstanceOf[BitVector]
         values(fieldIndex) = vec.get(rowIndex) == 1
@@ -372,14 +371,14 @@ object InlineArrowReader:
     while i < values.length do
       val childVec = structVec.getChildByOrdinal(i)
       values(i) = childVec match
-        case v: IntVector if !v.isNull(rowIndex) => v.get(rowIndex)
-        case v: BigIntVector if !v.isNull(rowIndex) => v.get(rowIndex)
-        case v: Float8Vector if !v.isNull(rowIndex) => v.get(rowIndex)
-        case v: Float4Vector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: IntVector if !v.isNull(rowIndex)     => v.get(rowIndex)
+        case v: BigIntVector if !v.isNull(rowIndex)  => v.get(rowIndex)
+        case v: Float8Vector if !v.isNull(rowIndex)  => v.get(rowIndex)
+        case v: Float4Vector if !v.isNull(rowIndex)  => v.get(rowIndex)
         case v: VarCharVector if !v.isNull(rowIndex) =>
           new String(v.get(rowIndex), StandardCharsets.UTF_8)
         case v: BitVector if !v.isNull(rowIndex) => v.get(rowIndex) == 1
-        case _ => null
+        case _                                   => null
       i += 1
 
   /** Runtime fallback for list elements */
@@ -388,11 +387,11 @@ object InlineArrowReader:
       index: Int
   ): Any =
     dataVec match
-      case v: IntVector => v.get(index)
-      case v: BigIntVector => v.get(index)
-      case v: Float8Vector => v.get(index)
-      case v: Float4Vector => v.get(index)
-      case v: BitVector => v.get(index) == 1
+      case v: IntVector     => v.get(index)
+      case v: BigIntVector  => v.get(index)
+      case v: Float8Vector  => v.get(index)
+      case v: Float4Vector  => v.get(index)
+      case v: BitVector     => v.get(index) == 1
       case v: VarCharVector =>
         if v.isNull(index) then null
         else new String(v.get(index), StandardCharsets.UTF_8)
@@ -407,13 +406,13 @@ object InlineArrowReader:
       fieldIndex: Int
   ): Any =
     root.getVector(fieldIndex) match
-      case v: IntVector => v.get(rowIndex)
-      case v: BigIntVector => v.get(rowIndex)
-      case v: Float8Vector => v.get(rowIndex)
-      case v: Float4Vector => v.get(rowIndex)
+      case v: IntVector     => v.get(rowIndex)
+      case v: BigIntVector  => v.get(rowIndex)
+      case v: Float8Vector  => v.get(rowIndex)
+      case v: Float4Vector  => v.get(rowIndex)
       case v: VarCharVector =>
         new String(v.get(rowIndex), StandardCharsets.UTF_8)
-      case v: BitVector => v.get(rowIndex) == 1
+      case v: BitVector     => v.get(rowIndex) == 1
       case v: DateDayVector =>
         java.time.LocalDate.ofEpochDay(v.get(rowIndex).toLong)
       case v: TimeStampMicroTZVector =>
@@ -436,13 +435,13 @@ object InlineArrowReader:
     while i < numChildren do
       val childVec = structVec.getChildByOrdinal(i)
       values(i) = childVec match
-        case v: IntVector if !v.isNull(rowIndex) => v.get(rowIndex)
-        case v: BigIntVector if !v.isNull(rowIndex) => v.get(rowIndex)
-        case v: Float8Vector if !v.isNull(rowIndex) => v.get(rowIndex)
-        case v: Float4Vector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: IntVector if !v.isNull(rowIndex)     => v.get(rowIndex)
+        case v: BigIntVector if !v.isNull(rowIndex)  => v.get(rowIndex)
+        case v: Float8Vector if !v.isNull(rowIndex)  => v.get(rowIndex)
+        case v: Float4Vector if !v.isNull(rowIndex)  => v.get(rowIndex)
         case v: VarCharVector if !v.isNull(rowIndex) =>
           new String(v.get(rowIndex), StandardCharsets.UTF_8)
-        case v: BitVector if !v.isNull(rowIndex) => v.get(rowIndex) == 1
+        case v: BitVector if !v.isNull(rowIndex)    => v.get(rowIndex) == 1
         case v: StructVector if !v.isNull(rowIndex) =>
           // Recursively read nested struct
           readProductFromStruct(v, rowIndex)
@@ -453,23 +452,23 @@ object InlineArrowReader:
   /** Check if field is null at position */
   private def isNullAt(root: VectorSchemaRoot, fieldIndex: Int, rowIndex: Int): Boolean =
     root.getVector(fieldIndex) match
-      case v: BitVector => v.isNull(rowIndex)
-      case v: TinyIntVector => v.isNull(rowIndex)
-      case v: SmallIntVector => v.isNull(rowIndex)
-      case v: IntVector => v.isNull(rowIndex)
-      case v: BigIntVector => v.isNull(rowIndex)
-      case v: Float4Vector => v.isNull(rowIndex)
-      case v: Float8Vector => v.isNull(rowIndex)
-      case v: VarCharVector => v.isNull(rowIndex)
-      case v: VarBinaryVector => v.isNull(rowIndex)
-      case v: DecimalVector => v.isNull(rowIndex)
-      case v: DateDayVector => v.isNull(rowIndex)
+      case v: BitVector              => v.isNull(rowIndex)
+      case v: TinyIntVector          => v.isNull(rowIndex)
+      case v: SmallIntVector         => v.isNull(rowIndex)
+      case v: IntVector              => v.isNull(rowIndex)
+      case v: BigIntVector           => v.isNull(rowIndex)
+      case v: Float4Vector           => v.isNull(rowIndex)
+      case v: Float8Vector           => v.isNull(rowIndex)
+      case v: VarCharVector          => v.isNull(rowIndex)
+      case v: VarBinaryVector        => v.isNull(rowIndex)
+      case v: DecimalVector          => v.isNull(rowIndex)
+      case v: DateDayVector          => v.isNull(rowIndex)
       case v: TimeStampMicroTZVector => v.isNull(rowIndex)
-      case v: TimeStampMicroVector => v.isNull(rowIndex)
-      case v: DurationVector => v.isNull(rowIndex)
-      case v: StructVector => v.isNull(rowIndex)
-      case v: ListVector => v.isNull(rowIndex)
-      case _ => true
+      case v: TimeStampMicroVector   => v.isNull(rowIndex)
+      case v: DurationVector         => v.isNull(rowIndex)
+      case v: StructVector           => v.isNull(rowIndex)
+      case v: ListVector             => v.isNull(rowIndex)
+      case _                         => true
 
   /** Fallback for nested structs and unknown types */
   private inline def readAnyField[T](
@@ -477,8 +476,7 @@ object InlineArrowReader:
       rowIndex: Int,
       fieldIndex: Int
   ): T =
-    if isNullAt(root, fieldIndex, rowIndex) then
-      null.asInstanceOf[T]
+    if isNullAt(root, fieldIndex, rowIndex) then null.asInstanceOf[T]
     else
       summonFrom {
         case m: Mirror.ProductOf[T] =>
@@ -547,10 +545,10 @@ object InlineArrowReader:
       rowIndex: Int
   ): Any =
     root.getVector(fieldIndex) match
-      case v: IntVector => v.get(rowIndex)
-      case v: BigIntVector => v.get(rowIndex)
-      case v: Float8Vector => v.get(rowIndex)
-      case v: Float4Vector => v.get(rowIndex)
+      case v: IntVector     => v.get(rowIndex)
+      case v: BigIntVector  => v.get(rowIndex)
+      case v: Float8Vector  => v.get(rowIndex)
+      case v: Float4Vector  => v.get(rowIndex)
       case v: VarCharVector =>
         new String(v.get(rowIndex), StandardCharsets.UTF_8)
       case _ => null

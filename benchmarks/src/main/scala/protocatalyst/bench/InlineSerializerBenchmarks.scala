@@ -7,8 +7,8 @@ import protocatalyst.encoder.{InlineRowSerializer, RowSerializer, InternalTypeCo
 
 /** Benchmarks comparing InlineRowSerializer vs RowSerializer.
   *
-  * InlineRowSerializer uses compile-time type specialization to eliminate
-  * runtime type dispatch in serialization/deserialization.
+  * InlineRowSerializer uses compile-time type specialization to eliminate runtime type dispatch in
+  * serialization/deserialization.
   *
   * Expected improvements:
   *   - ~10% faster for primitives only (no type dispatch)

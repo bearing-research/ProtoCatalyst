@@ -111,8 +111,7 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
       val cityVec = addressVec.getChild("city").asInstanceOf[VarCharVector]
       assertEquals(new String(streetVec.get(0), StandardCharsets.UTF_8), "123 Main St")
       assertEquals(new String(cityVec.get(0), StandardCharsets.UTF_8), "NYC")
-    finally
-      root.close()
+    finally root.close()
 
   test("roundtrip nested case class"):
     val writer = InlineArrowWriter.derived[ArrowPerson]
@@ -127,13 +126,16 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
       writer.write(original, root)
       val result = reader.read(root)
       assertEquals(result, original)
-    finally
-      root.close()
+    finally root.close()
 
   test("write Optional nested with Some"):
     val writer = InlineArrowWriter.derived[ArrowEmployee]
     val data = Seq(
-      ArrowEmployee("Alice", Some(ArrowAddress("123 Home", "NYC")), Some(ArrowAddress("456 Work", "NYC")))
+      ArrowEmployee(
+        "Alice",
+        Some(ArrowAddress("123 Home", "NYC")),
+        Some(ArrowAddress("456 Work", "NYC"))
+      )
     )
 
     val root = VectorSchemaRoot.create(writer.schema, allocator)
@@ -147,8 +149,7 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
 
       assert(!homeVec.isNull(0))
       assert(!workVec.isNull(0))
-    finally
-      root.close()
+    finally root.close()
 
   test("write Optional nested with None"):
     val writer = InlineArrowWriter.derived[ArrowEmployee]
@@ -165,14 +166,17 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
 
       assert(homeVec.isNull(0))
       assert(workVec.isNull(0))
-    finally
-      root.close()
+    finally root.close()
 
   test("roundtrip Optional nested with Some and None"):
     val writer = InlineArrowWriter.derived[ArrowEmployee]
     val reader = InlineArrowReader.derived[ArrowEmployee]
     val original = Seq(
-      ArrowEmployee("Alice", Some(ArrowAddress("123 Home", "NYC")), Some(ArrowAddress("456 Work", "NYC"))),
+      ArrowEmployee(
+        "Alice",
+        Some(ArrowAddress("123 Home", "NYC")),
+        Some(ArrowAddress("456 Work", "NYC"))
+      ),
       ArrowEmployee("Bob", None, None),
       ArrowEmployee("Carol", Some(ArrowAddress("789 Home", "SF")), None)
     )
@@ -182,8 +186,7 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
       writer.write(original, root)
       val result = reader.read(root)
       assertEquals(result, original)
-    finally
-      root.close()
+    finally root.close()
 
   test("write nested List of Int"):
     val writer = InlineArrowWriter.derived[ArrowMatrix]
@@ -195,8 +198,7 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
     try
       writer.write(data, root)
       assertEquals(root.getRowCount, 1)
-    finally
-      root.close()
+    finally root.close()
 
   test("roundtrip nested List of Int"):
     val writer = InlineArrowWriter.derived[ArrowMatrix]
@@ -211,8 +213,7 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
       writer.write(original, root)
       val result = reader.read(root)
       assertEquals(result, original)
-    finally
-      root.close()
+    finally root.close()
 
   // Note: List elements with nested products (e.g., ArrowPerson with ArrowAddress)
   // require multi-level Mirror reconstruction which hits Scala 3 inline limits.
@@ -221,13 +222,19 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
     val writer = InlineArrowWriter.derived[ArrowTeam]
     val reader = InlineArrowReader.derived[ArrowTeam]
     val original = Seq(
-      ArrowTeam("Engineering", List(
-        ArrowPerson("Alice", 30, ArrowAddress("123 Main St", "NYC")),
-        ArrowPerson("Bob", 25, ArrowAddress("456 Oak Ave", "LA"))
-      )),
-      ArrowTeam("Sales", List(
-        ArrowPerson("Carol", 35, ArrowAddress("789 Pine Rd", "SF"))
-      ))
+      ArrowTeam(
+        "Engineering",
+        List(
+          ArrowPerson("Alice", 30, ArrowAddress("123 Main St", "NYC")),
+          ArrowPerson("Bob", 25, ArrowAddress("456 Oak Ave", "LA"))
+        )
+      ),
+      ArrowTeam(
+        "Sales",
+        List(
+          ArrowPerson("Carol", 35, ArrowAddress("789 Pine Rd", "SF"))
+        )
+      )
     )
 
     val root = VectorSchemaRoot.create(writer.schema, allocator)
@@ -235,20 +242,23 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
       writer.write(original, root)
       val result = reader.read(root)
       assertEquals(result, original)
-    finally
-      root.close()
+    finally root.close()
 
   test("roundtrip List of simple struct (no nested products)"):
     val writer = InlineArrowWriter.derived[ArrowListOfSimple]
     val reader = InlineArrowReader.derived[ArrowListOfSimple]
     val original = Seq(
-      ArrowListOfSimple(List(
-        ArrowSimpleStruct("a", 1),
-        ArrowSimpleStruct("b", 2)
-      )),
-      ArrowListOfSimple(List(
-        ArrowSimpleStruct("c", 3)
-      ))
+      ArrowListOfSimple(
+        List(
+          ArrowSimpleStruct("a", 1),
+          ArrowSimpleStruct("b", 2)
+        )
+      ),
+      ArrowListOfSimple(
+        List(
+          ArrowSimpleStruct("c", 3)
+        )
+      )
     )
 
     val root = VectorSchemaRoot.create(writer.schema, allocator)
@@ -256,5 +266,4 @@ class ArrowNestedTypeSuite extends munit.FunSuite:
       writer.write(original, root)
       val result = reader.read(root)
       assertEquals(result, original)
-    finally
-      root.close()
+    finally root.close()

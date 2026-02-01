@@ -2,9 +2,8 @@ package protocatalyst.encoder
 
 import protocatalyst.types.{ProtoType, ProtoStructField}
 
-/**
- * Test UDTs for ProtoEncoder UDT support testing.
- */
+/** Test UDTs for ProtoEncoder UDT support testing.
+  */
 object TestUDTs:
 
   // === Point UDT ===
@@ -13,17 +12,19 @@ object TestUDTs:
   case class Point(x: Double, y: Double)
 
   object PointUDT extends ProtoUDT[Point]:
-    def sqlType: ProtoType = ProtoType.StructType(Vector(
-      ProtoStructField("x", ProtoType.DoubleType, false),
-      ProtoStructField("y", ProtoType.DoubleType, false)
-    ))
+    def sqlType: ProtoType = ProtoType.StructType(
+      Vector(
+        ProtoStructField("x", ProtoType.DoubleType, false),
+        ProtoStructField("y", ProtoType.DoubleType, false)
+      )
+    )
 
     def serialize(point: Point): Any =
       if point == null then null
       else Array[Any](point.x, point.y)
 
     def deserialize(datum: Any): Point = datum match
-      case null => null
+      case null            => null
       case arr: Array[Any] =>
         Point(arr(0).asInstanceOf[Double], arr(1).asInstanceOf[Double])
       case row: Product =>
@@ -52,12 +53,12 @@ object TestUDTs:
       else Array[Byte](color.red.toByte, color.green.toByte, color.blue.toByte)
 
     def deserialize(datum: Any): RGBColor = datum match
-      case null => null
+      case null                                    => null
       case bytes: Array[Byte] if bytes.length == 3 =>
         RGBColor(
-          bytes(0) & 0xFF,  // Convert signed byte to unsigned int
-          bytes(1) & 0xFF,
-          bytes(2) & 0xFF
+          bytes(0) & 0xff, // Convert signed byte to unsigned int
+          bytes(1) & 0xff,
+          bytes(2) & 0xff
         )
       case _ =>
         throw new IllegalArgumentException(s"Cannot deserialize $datum to RGBColor")
@@ -82,7 +83,7 @@ object TestUDTs:
       else Array[Double](c.real, c.imaginary)
 
     def deserialize(datum: Any): ComplexNumber = datum match
-      case null => null
+      case null                                  => null
       case arr: Array[Double] if arr.length == 2 =>
         ComplexNumber(arr(0), arr(1))
       case arr: Array[Any] if arr.length == 2 =>
@@ -98,9 +99,11 @@ object TestUDTs:
   // An IPv4 address stored as an integer
 
   case class IPAddress(a: Int, b: Int, c: Int, d: Int):
-    require(a >= 0 && a <= 255 && b >= 0 && b <= 255 &&
-            c >= 0 && c <= 255 && d >= 0 && d <= 255,
-            "IP octets must be 0-255")
+    require(
+      a >= 0 && a <= 255 && b >= 0 && b <= 255 &&
+        c >= 0 && c <= 255 && d >= 0 && d <= 255,
+      "IP octets must be 0-255"
+    )
 
     def toInt: Int = (a << 24) | (b << 16) | (c << 8) | d
     override def toString: String = s"$a.$b.$c.$d"
@@ -108,10 +111,10 @@ object TestUDTs:
   object IPAddress:
     def fromInt(ip: Int): IPAddress =
       IPAddress(
-        (ip >> 24) & 0xFF,
-        (ip >> 16) & 0xFF,
-        (ip >> 8) & 0xFF,
-        ip & 0xFF
+        (ip >> 24) & 0xff,
+        (ip >> 16) & 0xff,
+        (ip >> 8) & 0xff,
+        ip & 0xff
       )
 
   object IPAddressUDT extends ProtoUDT[IPAddress]:
@@ -122,10 +125,10 @@ object TestUDTs:
       else ip.toInt
 
     def deserialize(datum: Any): IPAddress = datum match
-      case null => null
-      case i: Int => IPAddress.fromInt(i)
+      case null    => null
+      case i: Int  => IPAddress.fromInt(i)
       case l: Long => IPAddress.fromInt(l.toInt)
-      case _ =>
+      case _       =>
         throw new IllegalArgumentException(s"Cannot deserialize $datum to IPAddress")
 
     def userClass: Class[IPAddress] = classOf[IPAddress]
@@ -146,7 +149,7 @@ object TestUDTs:
     def deserialize(datum: Any): NonEmptyString = datum match
       case null => throw new IllegalArgumentException("NonEmptyString cannot be null")
       case str: String if str.nonEmpty => NonEmptyString(str)
-      case _ =>
+      case _                           =>
         throw new IllegalArgumentException(s"Cannot deserialize $datum to NonEmptyString")
 
     def userClass: Class[NonEmptyString] = classOf[NonEmptyString]

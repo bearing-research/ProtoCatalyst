@@ -5,16 +5,15 @@ import scala.deriving.Mirror
 import scala.compiletime.*
 import scala.reflect.ClassTag
 
-/**
- * Serializes/deserializes case classes to/from row format.
- *
- * This is the foundation for Spark's InternalRow serialization.
- * The serialized format uses Array[Any] with Spark-compatible internal types:
- *   - String → UTF8String (via InternalTypeConverter)
- *   - scala collections → ArrayData
- *   - nested structs → nested rows
- *   - primitives → same
- */
+/** Serializes/deserializes case classes to/from row format.
+  *
+  * This is the foundation for Spark's InternalRow serialization. The serialized format uses
+  * Array[Any] with Spark-compatible internal types:
+  *   - String → UTF8String (via InternalTypeConverter)
+  *   - scala collections → ArrayData
+  *   - nested structs → nested rows
+  *   - primitives → same
+  */
 trait RowSerializer[T]:
   /** Schema for this type */
   def schema: Vector[FieldSchema]
@@ -33,18 +32,16 @@ case class FieldSchema(
     fieldIndex: Int
 )
 
-/**
- * Type converter for internal (Spark-compatible) representations.
- *
- * Spark uses different internal types for efficiency:
- *   - String → UTF8String
- *   - Array/Seq → ArrayData
- *   - Map → MapData
- *   - nested struct → InternalRow
- *
- * This trait abstracts the conversion so the encoder module
- * doesn't need a Spark dependency.
- */
+/** Type converter for internal (Spark-compatible) representations.
+  *
+  * Spark uses different internal types for efficiency:
+  *   - String → UTF8String
+  *   - Array/Seq → ArrayData
+  *   - Map → MapData
+  *   - nested struct → InternalRow
+  *
+  * This trait abstracts the conversion so the encoder module doesn't need a Spark dependency.
+  */
 trait InternalTypeConverter:
   /** Convert external value to internal representation */
   def toInternal(value: Any, dataType: ProtoType): Any
@@ -57,76 +54,78 @@ object InternalTypeConverter:
   given default: InternalTypeConverter with
     def toInternal(value: Any, dataType: ProtoType): Any =
       if value == null then null
-      else dataType match
-        // For struct types, extract product elements into Array[Any]
-        case ProtoType.StructType(fields) =>
-          value match
-            case p: Product =>
-              fields.zipWithIndex.map { case (field, idx) =>
-                toInternal(p.productElement(idx), field.dataType)
-              }.toArray
-            case other => other
-        // For array types, recursively convert elements
-        case ProtoType.ArrayType(elemType, _) =>
-          value match
-            case seq: Seq[?] => seq.map(e => toInternal(e, elemType)).toList
-            case arr: Array[?] => arr.map(e => toInternal(e, elemType)).toList
-            case other => other
-        // For map types, recursively convert keys and values
-        case ProtoType.MapType(keyType, valueType, _) =>
-          value match
-            case m: Map[?, ?] =>
-              m.map { case (k, v) => toInternal(k, keyType) -> toInternal(v, valueType) }
-            case other => other
-        // For other types, pass through unchanged
-        case _ => value
+      else
+        dataType match
+          // For struct types, extract product elements into Array[Any]
+          case ProtoType.StructType(fields) =>
+            value match
+              case p: Product =>
+                fields.zipWithIndex.map { case (field, idx) =>
+                  toInternal(p.productElement(idx), field.dataType)
+                }.toArray
+              case other => other
+          // For array types, recursively convert elements
+          case ProtoType.ArrayType(elemType, _) =>
+            value match
+              case seq: Seq[?]   => seq.map(e => toInternal(e, elemType)).toList
+              case arr: Array[?] => arr.map(e => toInternal(e, elemType)).toList
+              case other         => other
+          // For map types, recursively convert keys and values
+          case ProtoType.MapType(keyType, valueType, _) =>
+            value match
+              case m: Map[?, ?] =>
+                m.map { case (k, v) => toInternal(k, keyType) -> toInternal(v, valueType) }
+              case other => other
+          // For other types, pass through unchanged
+          case _ => value
 
     def fromInternal(value: Any, dataType: ProtoType): Any =
       if value == null then null
-      else dataType match
-        // For struct types, convert Array[Any] back to itself (caller handles reconstruction)
-        case ProtoType.StructType(_) => value
-        // For array types, recursively convert elements back
-        case ProtoType.ArrayType(elemType, _) =>
-          value match
-            case seq: Seq[?] => seq.map(e => fromInternal(e, elemType)).toVector
-            case arr: Array[?] => arr.map(e => fromInternal(e, elemType)).toVector
-            case other => other
-        // For map types, recursively convert keys and values back
-        case ProtoType.MapType(keyType, valueType, _) =>
-          value match
-            case m: Map[?, ?] =>
-              m.map { case (k, v) => fromInternal(k, keyType) -> fromInternal(v, valueType) }
-            case other => other
-        // For other types, pass through unchanged
-        case _ => value
+      else
+        dataType match
+          // For struct types, convert Array[Any] back to itself (caller handles reconstruction)
+          case ProtoType.StructType(_) => value
+          // For array types, recursively convert elements back
+          case ProtoType.ArrayType(elemType, _) =>
+            value match
+              case seq: Seq[?]   => seq.map(e => fromInternal(e, elemType)).toVector
+              case arr: Array[?] => arr.map(e => fromInternal(e, elemType)).toVector
+              case other         => other
+          // For map types, recursively convert keys and values back
+          case ProtoType.MapType(keyType, valueType, _) =>
+            value match
+              case m: Map[?, ?] =>
+                m.map { case (k, v) => fromInternal(k, keyType) -> fromInternal(v, valueType) }
+              case other => other
+          // For other types, pass through unchanged
+          case _ => value
 
 object RowSerializer:
 
-  /**
-   * Derive a RowSerializer for a product type (case class) at compile time.
-   *
-   * This uses InlineRowSerializer internally for optimized serialization
-   * (2.8x-8.7x faster) while preserving the full schema information.
-   */
+  /** Derive a RowSerializer for a product type (case class) at compile time.
+    *
+    * This uses InlineRowSerializer internally for optimized serialization (2.8x-8.7x faster) while
+    * preserving the full schema information.
+    */
   inline def derived[T](using m: Mirror.ProductOf[T]): RowSerializer[T] =
     val fieldSchemas = deriveFieldSchemas[m.MirroredElemTypes, m.MirroredElemLabels](0)
     val inlineSerializer = InlineRowSerializer.derived[T]
     InlineBackedRowSerializer[T](fieldSchemas, inlineSerializer)
 
-  /**
-   * Derive a RowSerializer for a sum type (sealed trait) at compile time.
-   *
-   * This uses InlineSumRowSerializer internally for optimized, type-safe
-   * serialization of each variant.
-   */
+  /** Derive a RowSerializer for a sum type (sealed trait) at compile time.
+    *
+    * This uses InlineSumRowSerializer internally for optimized, type-safe serialization of each
+    * variant.
+    */
   inline def derivedSum[T](using m: Mirror.SumOf[T]): RowSerializer[T] =
     val encoder = ProtoEncoder.derived[T].asInstanceOf[ProtoEncoder.SumEncoder[T]]
     val inlineSerializer = InlineSumRowSerializer.derived[T]
     InlineBackedSumRowSerializer[T](encoder, inlineSerializer)
 
   /** Derive field schemas from tuple types */
-  private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](idx: Int): Vector[FieldSchema] =
+  private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](
+      idx: Int
+  ): Vector[FieldSchema] =
     inline (erasedValue[Types], erasedValue[Labels]) match
       case (_: EmptyTuple, _: EmptyTuple) =>
         Vector.empty
@@ -139,21 +138,19 @@ object RowSerializer:
 
   private inline def summonEncoder[T]: ProtoEncoder[T] =
     summonFrom {
-      case enc: ProtoEncoder[T] => enc
+      case enc: ProtoEncoder[T]   => enc
       case _: Mirror.ProductOf[T] => ProtoEncoder.derived[T]
-      case _ => error("Cannot find ProtoEncoder for field type")
+      case _                      => error("Cannot find ProtoEncoder for field type")
     }
 
   private inline def isOption[T]: Boolean =
     inline erasedValue[T] match
       case _: Option[?] => true
-      case _ => false
+      case _            => false
 
-  /**
-   * RowSerializer backed by InlineRowSerializer for performance.
-   * Provides schema information while delegating serialization to the optimized inline version.
-   * Public for inline access.
-   */
+  /** RowSerializer backed by InlineRowSerializer for performance. Provides schema information while
+    * delegating serialization to the optimized inline version. Public for inline access.
+    */
   class InlineBackedRowSerializer[T](
       val schema: Vector[FieldSchema],
       inlineSerializer: InlineRowSerializer[T]
@@ -165,11 +162,9 @@ object RowSerializer:
     def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T =
       inlineSerializer.deserialize(row)
 
-  /**
-   * RowSerializer for sum types backed by InlineSumRowSerializer for performance.
-   * Provides schema information while delegating to the optimized inline version.
-   * Public for inline access.
-   */
+  /** RowSerializer for sum types backed by InlineSumRowSerializer for performance. Provides schema
+    * information while delegating to the optimized inline version. Public for inline access.
+    */
   class InlineBackedSumRowSerializer[T](
       encoder: ProtoEncoder.SumEncoder[T],
       inlineSerializer: InlineSumRowSerializer[T]
@@ -187,7 +182,9 @@ object RowSerializer:
     def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T =
       inlineSerializer.deserialize(row)
 
-  /** Legacy implementation for product types. Kept for backward compatibility. Public for inline access. */
+  /** Legacy implementation for product types. Kept for backward compatibility. Public for inline
+    * access.
+    */
   class ProductRowSerializer[T](
       val schema: Vector[FieldSchema],
       mirror: Mirror.ProductOf[T]
@@ -223,9 +220,8 @@ object RowSerializer:
       else if nullable && value.isInstanceOf[Option[?]] then
         value.asInstanceOf[Option[?]] match
           case Some(v) => conv.toInternal(v, unwrapOptionType(dataType))
-          case None => null
-      else
-        conv.toInternal(value, dataType)
+          case None    => null
+      else conv.toInternal(value, dataType)
 
     private def deserializeField(
         value: Any,
@@ -236,8 +232,7 @@ object RowSerializer:
       if nullable then
         if value == null then None
         else Some(conv.fromInternal(value, unwrapOptionType(dataType)))
-      else
-        conv.fromInternal(value, dataType)
+      else conv.fromInternal(value, dataType)
 
     private def unwrapOptionType(dataType: ProtoType): ProtoType =
       dataType // Option types have the same catalyst type as their element
@@ -248,7 +243,12 @@ object RowSerializer:
     val schema: Vector[FieldSchema] = Vector(
       FieldSchema("_type", ProtoType.StringType, nullable = false, fieldIndex = 0),
       FieldSchema("_ordinal", ProtoType.IntType, nullable = false, fieldIndex = 1),
-      FieldSchema("value", ProtoType.BinaryType, nullable = true, fieldIndex = 2) // Placeholder type
+      FieldSchema(
+        "value",
+        ProtoType.BinaryType,
+        nullable = true,
+        fieldIndex = 2
+      ) // Placeholder type
     )
 
     def serialize(value: T)(using conv: InternalTypeConverter): Array[Any] =
@@ -314,7 +314,9 @@ object RowSerializer:
             nestedClass.getField("MODULE$").get(null)
           catch
             case _: Exception =>
-              throw RuntimeException(s"Cannot find singleton object $name for sealed trait ${parentClass.getName}")
+              throw RuntimeException(
+                s"Cannot find singleton object $name for sealed trait ${parentClass.getName}"
+              )
 
   /** Helper to construct product from array */
   private class ArrayProduct(values: Array[Any]) extends Product:

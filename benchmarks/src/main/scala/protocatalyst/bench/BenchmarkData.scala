@@ -5,8 +5,8 @@ import protocatalyst.encoder.ProtoEncoder
 
 /** Test data classes for benchmarking.
   *
-  * These classes are used across all benchmarks for consistent comparison.
-  * All derive ProtoEncoder for compile-time schema derivation.
+  * These classes are used across all benchmarks for consistent comparison. All derive ProtoEncoder
+  * for compile-time schema derivation.
   */
 
 // Simple case class - baseline benchmark

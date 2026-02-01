@@ -101,7 +101,7 @@ class MockQueryBinderSuite extends munit.FunSuite:
       case MockQueryBinder.BoundPlan(plan) =>
         plan match
           case ProtoLogicalPlan.Limit(10, _) => () // ok
-          case _ => fail("Expected Limit plan")
+          case _                             => fail("Expected Limit plan")
       case MockQueryBinder.BindingError(msg, _) =>
         fail(s"Binding failed: $msg")
 
@@ -116,21 +116,21 @@ class MockQueryBinderSuite extends munit.FunSuite:
       case MockQueryBinder.BoundPlan(plan) =>
         plan match
           case ProtoLogicalPlan.Distinct(_) => () // ok
-          case _ => fail("Expected Distinct plan")
+          case _                            => fail("Expected Distinct plan")
       case MockQueryBinder.BindingError(msg, _) =>
         fail(s"Binding failed: $msg")
 
   private def containsBoundRef(expr: ProtoExpr): Boolean = expr match
     case ProtoExpr.BoundRef(_, _, _) => true
-    case ProtoExpr.Gt(l, r)       => containsBoundRef(l) || containsBoundRef(r)
-    case ProtoExpr.GtEq(l, r)     => containsBoundRef(l) || containsBoundRef(r)
-    case ProtoExpr.Lt(l, r)       => containsBoundRef(l) || containsBoundRef(r)
-    case ProtoExpr.LtEq(l, r)     => containsBoundRef(l) || containsBoundRef(r)
-    case ProtoExpr.Eq(l, r)       => containsBoundRef(l) || containsBoundRef(r)
-    case ProtoExpr.NotEq(l, r)    => containsBoundRef(l) || containsBoundRef(r)
-    case ProtoExpr.And(children)  => children.exists(containsBoundRef)
-    case ProtoExpr.Or(children)   => children.exists(containsBoundRef)
-    case ProtoExpr.Not(child)     => containsBoundRef(child)
-    case ProtoExpr.Alias(child, _) => containsBoundRef(child)
-    case ProtoExpr.Count(child, _) => containsBoundRef(child)
-    case _ => false
+    case ProtoExpr.Gt(l, r)          => containsBoundRef(l) || containsBoundRef(r)
+    case ProtoExpr.GtEq(l, r)        => containsBoundRef(l) || containsBoundRef(r)
+    case ProtoExpr.Lt(l, r)          => containsBoundRef(l) || containsBoundRef(r)
+    case ProtoExpr.LtEq(l, r)        => containsBoundRef(l) || containsBoundRef(r)
+    case ProtoExpr.Eq(l, r)          => containsBoundRef(l) || containsBoundRef(r)
+    case ProtoExpr.NotEq(l, r)       => containsBoundRef(l) || containsBoundRef(r)
+    case ProtoExpr.And(children)     => children.exists(containsBoundRef)
+    case ProtoExpr.Or(children)      => children.exists(containsBoundRef)
+    case ProtoExpr.Not(child)        => containsBoundRef(child)
+    case ProtoExpr.Alias(child, _)   => containsBoundRef(child)
+    case ProtoExpr.Count(child, _)   => containsBoundRef(child)
+    case _                           => false

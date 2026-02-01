@@ -10,7 +10,7 @@ case class NestedPerson(name: String, age: Int, address: NestedAddress) derives 
 
 // Collection of nested types
 case class Team(name: String, members: List[NestedPerson]) derives ProtoEncoder
-case class Department(name: String, teams: List[Team]) derives ProtoEncoder  // 3 levels deep
+case class Department(name: String, teams: List[Team]) derives ProtoEncoder // 3 levels deep
 
 // Optional nested types
 case class EmployeeRecord(
@@ -88,10 +88,10 @@ class NestedTypeSuite extends munit.FunSuite:
     // Department -> List[Team] -> Team.members: List[Person] -> Person.address: Address
     enc.fields(1).encoder.catalystType match
       case ProtoType.ArrayType(ProtoType.StructType(teamFields), _) =>
-        assertEquals(teamFields.size, 2)  // name, members
+        assertEquals(teamFields.size, 2) // name, members
         teamFields(1).dataType match
           case ProtoType.ArrayType(ProtoType.StructType(personFields), _) =>
-            assertEquals(personFields.size, 3)  // name, age, address
+            assertEquals(personFields.size, 3) // name, age, address
           case other =>
             fail(s"Expected Team.members to be ArrayType[StructType], got $other")
       case other =>
@@ -212,10 +212,12 @@ class NestedTypeSuite extends munit.FunSuite:
 
   test("serialize/deserialize Map with struct values"):
     val serializer = InlineRowSerializer.derived[AddressBook]
-    val book = AddressBook(Map(
-      "home" -> NestedAddress("123 Home", "NYC"),
-      "work" -> NestedAddress("456 Work", "LA")
-    ))
+    val book = AddressBook(
+      Map(
+        "home" -> NestedAddress("123 Home", "NYC"),
+        "work" -> NestedAddress("456 Work", "LA")
+      )
+    )
 
     val serialized = serializer.serialize(book)
     val deserialized = serializer.deserialize(serialized)
@@ -223,11 +225,13 @@ class NestedTypeSuite extends munit.FunSuite:
 
   test("serialize/deserialize nested List (Matrix)"):
     val serializer = InlineRowSerializer.derived[Matrix]
-    val matrix = Matrix(List(
-      List(1, 2, 3),
-      List(4, 5, 6),
-      List(7, 8, 9)
-    ))
+    val matrix = Matrix(
+      List(
+        List(1, 2, 3),
+        List(4, 5, 6),
+        List(7, 8, 9)
+      )
+    )
 
     val serialized = serializer.serialize(matrix)
     val deserialized = serializer.deserialize(serialized)
@@ -235,10 +239,12 @@ class NestedTypeSuite extends munit.FunSuite:
 
   test("serialize/deserialize nested Map"):
     val serializer = InlineRowSerializer.derived[NestedMaps]
-    val data = NestedMaps(Map(
-      "group1" -> Map("a" -> 1, "b" -> 2),
-      "group2" -> Map("c" -> 3, "d" -> 4)
-    ))
+    val data = NestedMaps(
+      Map(
+        "group1" -> Map("a" -> 1, "b" -> 2),
+        "group2" -> Map("c" -> 3, "d" -> 4)
+      )
+    )
 
     val serialized = serializer.serialize(data)
     val deserialized = serializer.deserialize(serialized)
@@ -249,13 +255,19 @@ class NestedTypeSuite extends munit.FunSuite:
     val dept = Department(
       "R&D",
       List(
-        Team("Backend", List(
-          NestedPerson("Alice", 30, NestedAddress("123 Main", "NYC"))
-        )),
-        Team("Frontend", List(
-          NestedPerson("Bob", 25, NestedAddress("456 Oak", "LA")),
-          NestedPerson("Carol", 28, NestedAddress("789 Pine", "SF"))
-        ))
+        Team(
+          "Backend",
+          List(
+            NestedPerson("Alice", 30, NestedAddress("123 Main", "NYC"))
+          )
+        ),
+        Team(
+          "Frontend",
+          List(
+            NestedPerson("Bob", 25, NestedAddress("456 Oak", "LA")),
+            NestedPerson("Carol", 28, NestedAddress("789 Pine", "SF"))
+          )
+        )
       )
     )
 
@@ -269,11 +281,17 @@ class NestedTypeSuite extends munit.FunSuite:
       name = "Acme Corp",
       headquarters = NestedAddress("1 HQ Blvd", "NYC"),
       departments = List(
-        Department("Engineering", List(
-          Team("Backend", List(
-            NestedPerson("Alice", 30, NestedAddress("123 Main", "NYC"))
-          ))
-        ))
+        Department(
+          "Engineering",
+          List(
+            Team(
+              "Backend",
+              List(
+                NestedPerson("Alice", 30, NestedAddress("123 Main", "NYC"))
+              )
+            )
+          )
+        )
       ),
       locations = Map(
         "NYC" -> NestedAddress("1 NYC St", "New York"),

@@ -5,24 +5,23 @@ import protocatalyst.encoder.*
 import scala.deriving.Mirror
 import scala.compiletime.*
 
-/**
- * Serializes/deserializes case classes to/from UnsafeRow binary format.
- *
- * This provides the same functionality as RowSerializer but produces
- * the optimized binary format used by Spark for efficient execution:
- *   - Zero-copy serialization
- *   - Cache-friendly memory layout
- *   - 8-byte aligned fields
- *
- * Usage:
- * {{{
- * case class User(name: String, age: Int) derives UnsafeRowSerializer
- *
- * val ser = summon[UnsafeRowSerializer[User]]
- * val row: MockUnsafeRow = ser.serialize(User("Alice", 30))
- * val user: User = ser.deserialize(row)
- * }}}
- */
+/** Serializes/deserializes case classes to/from UnsafeRow binary format.
+  *
+  * This provides the same functionality as RowSerializer but produces the optimized binary format
+  * used by Spark for efficient execution:
+  *   - Zero-copy serialization
+  *   - Cache-friendly memory layout
+  *   - 8-byte aligned fields
+  *
+  * Usage:
+  * {{{
+  * case class User(name: String, age: Int) derives UnsafeRowSerializer
+  *
+  * val ser = summon[UnsafeRowSerializer[User]]
+  * val row: MockUnsafeRow = ser.serialize(User("Alice", 30))
+  * val user: User = ser.deserialize(row)
+  * }}}
+  */
 trait UnsafeRowSerializer[T]:
   /** Schema for this type */
   def schema: MockDataType.StructType
@@ -36,7 +35,6 @@ trait UnsafeRowSerializer[T]:
   /** Get field schemas as vector */
   def fields: Vector[MockStructField] = schema.fields
 
-
 object UnsafeRowSerializer:
 
   /** Derive an UnsafeRowSerializer for type T at compile time */
@@ -46,7 +44,9 @@ object UnsafeRowSerializer:
     ProductUnsafeRowSerializer[T](structType, m)
 
   /** Derive field schemas from tuple types */
-  private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](idx: Int): Vector[MockStructField] =
+  private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](
+      idx: Int
+  ): Vector[MockStructField] =
     inline (erasedValue[Types], erasedValue[Labels]) match
       case (_: EmptyTuple, _: EmptyTuple) =>
         Vector.empty
@@ -60,15 +60,15 @@ object UnsafeRowSerializer:
 
   private inline def summonEncoder[T]: ProtoEncoder[T] =
     summonFrom {
-      case enc: ProtoEncoder[T] => enc
+      case enc: ProtoEncoder[T]   => enc
       case _: Mirror.ProductOf[T] => ProtoEncoder.derived[T]
-      case _ => error("Cannot find ProtoEncoder for field type")
+      case _                      => error("Cannot find ProtoEncoder for field type")
     }
 
   private inline def isOption[T]: Boolean =
     inline erasedValue[T] match
       case _: Option[?] => true
-      case _ => false
+      case _            => false
 
   /** Implementation for product types (case classes). Public for inline access. */
   class ProductUnsafeRowSerializer[T](
@@ -103,15 +103,13 @@ object UnsafeRowSerializer:
         dataType: MockDataType,
         nullable: Boolean
     ): Unit =
-      if value == null then
-        writer.setNullAt(ordinal)
+      if value == null then writer.setNullAt(ordinal)
       else if nullable then
         value match
           case Some(v) => writeNonNullValue(writer, ordinal, v, dataType)
-          case None => writer.setNullAt(ordinal)
-          case other => writeNonNullValue(writer, ordinal, other, dataType)
-      else
-        writeNonNullValue(writer, ordinal, value, dataType)
+          case None    => writer.setNullAt(ordinal)
+          case other   => writeNonNullValue(writer, ordinal, other, dataType)
+      else writeNonNullValue(writer, ordinal, value, dataType)
 
     private def writeNonNullValue(
         writer: UnsafeRowWriter,
@@ -119,21 +117,22 @@ object UnsafeRowSerializer:
         value: Any,
         dataType: MockDataType
     ): Unit = dataType match
-      case MockDataType.BooleanType => writer.write(ordinal, value.asInstanceOf[Boolean])
-      case MockDataType.ByteType => writer.write(ordinal, value.asInstanceOf[Byte])
-      case MockDataType.ShortType => writer.write(ordinal, value.asInstanceOf[Short])
-      case MockDataType.IntegerType => writer.write(ordinal, value.asInstanceOf[Int])
-      case MockDataType.LongType => writer.write(ordinal, value.asInstanceOf[Long])
-      case MockDataType.FloatType => writer.write(ordinal, value.asInstanceOf[Float])
-      case MockDataType.DoubleType => writer.write(ordinal, value.asInstanceOf[Double])
-      case MockDataType.StringType => writer.write(ordinal, value.toString)
-      case MockDataType.BinaryType => writer.write(ordinal, value.asInstanceOf[Array[Byte]])
-      case MockDataType.DateType => writer.write(ordinal, value.asInstanceOf[Int])
-      case MockDataType.TimestampType => writer.write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.BooleanType      => writer.write(ordinal, value.asInstanceOf[Boolean])
+      case MockDataType.ByteType         => writer.write(ordinal, value.asInstanceOf[Byte])
+      case MockDataType.ShortType        => writer.write(ordinal, value.asInstanceOf[Short])
+      case MockDataType.IntegerType      => writer.write(ordinal, value.asInstanceOf[Int])
+      case MockDataType.LongType         => writer.write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.FloatType        => writer.write(ordinal, value.asInstanceOf[Float])
+      case MockDataType.DoubleType       => writer.write(ordinal, value.asInstanceOf[Double])
+      case MockDataType.StringType       => writer.write(ordinal, value.toString)
+      case MockDataType.BinaryType       => writer.write(ordinal, value.asInstanceOf[Array[Byte]])
+      case MockDataType.DateType         => writer.write(ordinal, value.asInstanceOf[Int])
+      case MockDataType.TimestampType    => writer.write(ordinal, value.asInstanceOf[Long])
       case MockDataType.TimestampNTZType => writer.write(ordinal, value.asInstanceOf[Long])
-      case MockDataType.DayTimeIntervalType => writer.write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.DayTimeIntervalType   => writer.write(ordinal, value.asInstanceOf[Long])
       case MockDataType.YearMonthIntervalType => writer.write(ordinal, value.asInstanceOf[Int])
-      case _: MockDataType.TimeType => writer.write(ordinal, value.asInstanceOf[Long]) // microseconds since midnight
+      case _: MockDataType.TimeType           =>
+        writer.write(ordinal, value.asInstanceOf[Long]) // microseconds since midnight
       case MockDataType.CalendarIntervalType =>
         // CalendarInterval is stored as a struct with (months, days, microseconds)
         throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
@@ -146,8 +145,8 @@ object UnsafeRowSerializer:
       case _: MockDataType.DecimalType =>
         value match
           case bd: BigDecimal => writer.write(ordinal, bd.underlying.unscaledValue().longValue())
-          case l: Long => writer.write(ordinal, l)
-          case i: Int => writer.write(ordinal, i.toLong)
+          case l: Long        => writer.write(ordinal, l)
+          case i: Int         => writer.write(ordinal, i.toLong)
           case _ => throw IllegalArgumentException(s"Cannot serialize decimal from: $value")
       case st: MockDataType.StructType =>
         val nestedWriter = UnsafeRowWriter(st.fields.size)
@@ -159,7 +158,7 @@ object UnsafeRowSerializer:
       case at: MockDataType.ArrayType =>
         val seq = value match
           case arr: Array[?] => arr.toSeq
-          case seq: Seq[?] => seq
+          case seq: Seq[?]   => seq
           case _ => throw IllegalArgumentException(s"Cannot serialize array from: $value")
         writer.writeArray(ordinal, seq.asInstanceOf[Seq[Any]], at.elementType)
       case mt: MockDataType.MapType =>
@@ -172,8 +171,7 @@ object UnsafeRowSerializer:
         dataType: MockDataType,
         nullable: Boolean
     ): Any =
-      if row.isNullAt(ordinal) then
-        if nullable then None else null
+      if row.isNullAt(ordinal) then if nullable then None else null
       else
         val value = readNonNullValue(row, ordinal, dataType)
         if nullable then Some(value) else value
@@ -183,28 +181,28 @@ object UnsafeRowSerializer:
         ordinal: Int,
         dataType: MockDataType
     ): Any = dataType match
-      case MockDataType.BooleanType => row.getBoolean(ordinal)
-      case MockDataType.ByteType => row.getByte(ordinal)
-      case MockDataType.ShortType => row.getShort(ordinal)
-      case MockDataType.IntegerType => row.getInt(ordinal)
-      case MockDataType.LongType => row.getLong(ordinal)
-      case MockDataType.FloatType => row.getFloat(ordinal)
-      case MockDataType.DoubleType => row.getDouble(ordinal)
-      case MockDataType.StringType => row.getString(ordinal)
-      case MockDataType.BinaryType => row.getBinary(ordinal)
-      case MockDataType.DateType => row.getInt(ordinal)
-      case MockDataType.TimestampType => row.getLong(ordinal)
-      case MockDataType.TimestampNTZType => row.getLong(ordinal)
-      case MockDataType.DayTimeIntervalType => row.getLong(ordinal)
+      case MockDataType.BooleanType           => row.getBoolean(ordinal)
+      case MockDataType.ByteType              => row.getByte(ordinal)
+      case MockDataType.ShortType             => row.getShort(ordinal)
+      case MockDataType.IntegerType           => row.getInt(ordinal)
+      case MockDataType.LongType              => row.getLong(ordinal)
+      case MockDataType.FloatType             => row.getFloat(ordinal)
+      case MockDataType.DoubleType            => row.getDouble(ordinal)
+      case MockDataType.StringType            => row.getString(ordinal)
+      case MockDataType.BinaryType            => row.getBinary(ordinal)
+      case MockDataType.DateType              => row.getInt(ordinal)
+      case MockDataType.TimestampType         => row.getLong(ordinal)
+      case MockDataType.TimestampNTZType      => row.getLong(ordinal)
+      case MockDataType.DayTimeIntervalType   => row.getLong(ordinal)
       case MockDataType.YearMonthIntervalType => row.getInt(ordinal)
-      case _: MockDataType.TimeType => row.getLong(ordinal)
-      case MockDataType.CalendarIntervalType =>
+      case _: MockDataType.TimeType           => row.getLong(ordinal)
+      case MockDataType.CalendarIntervalType  =>
         throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
       case MockDataType.VariantType =>
         throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
       case _: MockDataType.CharType | _: MockDataType.VarcharType => row.getString(ordinal)
-      case _: MockDataType.DecimalType => row.getDecimal(ordinal)
-      case st: MockDataType.StructType =>
+      case _: MockDataType.DecimalType                            => row.getDecimal(ordinal)
+      case st: MockDataType.StructType                            =>
         val nestedRow = row.getStruct(ordinal, st.fields.size)
         readStructAsProduct(nestedRow, st)
       case at: MockDataType.ArrayType =>
@@ -227,15 +225,16 @@ object UnsafeRowSerializer:
     private def readArray(arrData: MockUnsafeArrayData, elementType: MockDataType): Seq[Any] =
       (0 until arrData.size).map { i =>
         if arrData.isNullAt(i) then null
-        else elementType match
-          case MockDataType.BooleanType => arrData.getBoolean(i)
-          case MockDataType.IntegerType => arrData.getInt(i)
-          case MockDataType.LongType => arrData.getLong(i)
-          case MockDataType.DoubleType => arrData.getDouble(i)
-          case MockDataType.StringType => arrData.getString(i)
-          case _ => throw UnsupportedOperationException(s"Unsupported array element type: $elementType")
+        else
+          elementType match
+            case MockDataType.BooleanType => arrData.getBoolean(i)
+            case MockDataType.IntegerType => arrData.getInt(i)
+            case MockDataType.LongType    => arrData.getLong(i)
+            case MockDataType.DoubleType  => arrData.getDouble(i)
+            case MockDataType.StringType  => arrData.getString(i)
+            case _                        =>
+              throw UnsupportedOperationException(s"Unsupported array element type: $elementType")
       }
-
 
   /** Helper to construct product from array */
   private[mock] class ArrayProduct(values: Array[Any]) extends Product:

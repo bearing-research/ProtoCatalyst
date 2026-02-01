@@ -18,7 +18,8 @@ case class ArrowPrimitives(
     d: Double
 ) derives ProtoEncoder
 case class ArrowWithStrings(id: Long, firstName: String, lastName: String) derives ProtoEncoder
-case class ArrowWithOption(id: Int, name: Option[String], score: Option[Double]) derives ProtoEncoder
+case class ArrowWithOption(id: Int, name: Option[String], score: Option[Double])
+    derives ProtoEncoder
 case class ArrowNested(name: String, point: ArrowPoint) derives ProtoEncoder
 case class ArrowPoint(x: Int, y: Int) derives ProtoEncoder
 case class ArrowWithDate(id: Int, date: java.time.LocalDate) derives ProtoEncoder
@@ -57,8 +58,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       assertEquals(new String(nameVec.get(1), StandardCharsets.UTF_8), "Bob")
       assertEquals(ageVec.get(0), 30)
       assertEquals(ageVec.get(1), 25)
-    finally
-      root.close()
+    finally root.close()
 
   test("write all primitive types"):
     val writer = InlineArrowWriter.derived[ArrowPrimitives]
@@ -78,8 +78,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       assertEquals(root.getVector(4).asInstanceOf[BigIntVector].get(0), 4L)
       assertEquals(root.getVector(5).asInstanceOf[Float4Vector].get(0), 5.0f)
       assertEquals(root.getVector(6).asInstanceOf[Float8Vector].get(0), 6.0)
-    finally
-      root.close()
+    finally root.close()
 
   // === String Tests ===
 
@@ -103,8 +102,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       assertEquals(new String(lastNameVec.get(0), StandardCharsets.UTF_8), "Doe")
       assertEquals(new String(firstNameVec.get(1), StandardCharsets.UTF_8), "Jane")
       assertEquals(new String(lastNameVec.get(1), StandardCharsets.UTF_8), "Smith")
-    finally
-      root.close()
+    finally root.close()
 
   test("write null strings"):
     val writer = InlineArrowWriter.derived[ArrowWithStrings]
@@ -123,8 +121,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
 
       assertEquals(new String(firstNameVec.get(0), StandardCharsets.UTF_8), "Hello")
       assert(lastNameVec.isNull(0))
-    finally
-      root.close()
+    finally root.close()
 
   // === Option Tests ===
 
@@ -158,8 +155,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       // Row 2: Mixed
       assert(!nameVec.isNull(2))
       assert(scoreVec.isNull(2))
-    finally
-      root.close()
+    finally root.close()
 
   // === Large Dataset Tests ===
 
@@ -181,8 +177,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       assertEquals(ageVec.get(0), 1)
       assertEquals(new String(nameVec.get(9999), StandardCharsets.UTF_8), "User10000")
       assertEquals(ageVec.get(9999), 10000)
-    finally
-      root.close()
+    finally root.close()
 
   // === ArrowBatchBuilder Tests ===
 
@@ -204,8 +199,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
         assertEquals(root.getRowCount, 1)
       finally
         root.close()
-    finally
-      builder.close()
+    finally builder.close()
 
   // === Schema Tests ===
 
@@ -233,8 +227,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
     try
       writer.write(data, root)
       assertEquals(root.getRowCount, 0)
-    finally
-      root.close()
+    finally root.close()
 
   // === Temporal Type Tests ===
 
@@ -250,8 +243,7 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       assertEquals(root.getRowCount, 1)
       val dateVec = root.getVector(1).asInstanceOf[DateDayVector]
       assertEquals(dateVec.get(0), date.toEpochDay.toInt)
-    finally
-      root.close()
+    finally root.close()
 
   test("write Instant field"):
     val writer = InlineArrowWriter.derived[ArrowWithTimestamp]
@@ -266,5 +258,4 @@ class InlineArrowWriterSuite extends munit.FunSuite:
       val tsVec = root.getVector(1).asInstanceOf[TimeStampMicroTZVector]
       val micros = instant.getEpochSecond * 1000000L + instant.getNano / 1000
       assertEquals(tsVec.get(0), micros)
-    finally
-      root.close()
+    finally root.close()

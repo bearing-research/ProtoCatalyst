@@ -6,13 +6,17 @@ import protocatalyst.types.*
 class CanonicalizerSuite extends munit.FunSuite:
 
   test("flatten nested AND"):
-    val nested = ProtoExpr.And(Vector(
-      ProtoExpr.ColumnRef("a", None, ProtoType.BooleanType, false),
-      ProtoExpr.And(Vector(
-        ProtoExpr.ColumnRef("b", None, ProtoType.BooleanType, false),
-        ProtoExpr.ColumnRef("c", None, ProtoType.BooleanType, false)
-      ))
-    ))
+    val nested = ProtoExpr.And(
+      Vector(
+        ProtoExpr.ColumnRef("a", None, ProtoType.BooleanType, false),
+        ProtoExpr.And(
+          Vector(
+            ProtoExpr.ColumnRef("b", None, ProtoType.BooleanType, false),
+            ProtoExpr.ColumnRef("c", None, ProtoType.BooleanType, false)
+          )
+        )
+      )
+    )
 
     val flattened = Canonicalizer.flattenAndOr(nested)
 
@@ -37,33 +41,39 @@ class CanonicalizerSuite extends munit.FunSuite:
         fail("Expected folded literal")
 
   test("simplify double negation"):
-    val expr = ProtoExpr.Not(ProtoExpr.Not(
-      ProtoExpr.ColumnRef("x", None, ProtoType.BooleanType, false)
-    ))
+    val expr = ProtoExpr.Not(
+      ProtoExpr.Not(
+        ProtoExpr.ColumnRef("x", None, ProtoType.BooleanType, false)
+      )
+    )
 
     val simplified = Canonicalizer.simplifyBooleans(expr)
 
     simplified match
       case ProtoExpr.ColumnRef("x", _, _, _) => () // ok
-      case _ => fail("Expected simplified to column ref")
+      case _                                 => fail("Expected simplified to column ref")
 
   test("simplify AND with true literal"):
-    val expr = ProtoExpr.And(Vector(
-      ProtoExpr.Literal(LiteralValue.BooleanValue(true)),
-      ProtoExpr.ColumnRef("x", None, ProtoType.BooleanType, false)
-    ))
+    val expr = ProtoExpr.And(
+      Vector(
+        ProtoExpr.Literal(LiteralValue.BooleanValue(true)),
+        ProtoExpr.ColumnRef("x", None, ProtoType.BooleanType, false)
+      )
+    )
 
     val simplified = Canonicalizer.simplifyBooleans(expr)
 
     simplified match
       case ProtoExpr.ColumnRef("x", _, _, _) => () // ok
-      case _ => fail(s"Expected column ref, got $simplified")
+      case _                                 => fail(s"Expected column ref, got $simplified")
 
   test("simplify AND with false literal"):
-    val expr = ProtoExpr.And(Vector(
-      ProtoExpr.Literal(LiteralValue.BooleanValue(false)),
-      ProtoExpr.ColumnRef("x", None, ProtoType.BooleanType, false)
-    ))
+    val expr = ProtoExpr.And(
+      Vector(
+        ProtoExpr.Literal(LiteralValue.BooleanValue(false)),
+        ProtoExpr.ColumnRef("x", None, ProtoType.BooleanType, false)
+      )
+    )
 
     val simplified = Canonicalizer.simplifyBooleans(expr)
 
@@ -72,10 +82,12 @@ class CanonicalizerSuite extends munit.FunSuite:
       case _ => fail(s"Expected false literal, got $simplified")
 
   test("fold string concatenation"):
-    val expr = ProtoExpr.Concat(Vector(
-      ProtoExpr.Literal(LiteralValue.StringValue("Hello, ")),
-      ProtoExpr.Literal(LiteralValue.StringValue("World!"))
-    ))
+    val expr = ProtoExpr.Concat(
+      Vector(
+        ProtoExpr.Literal(LiteralValue.StringValue("Hello, ")),
+        ProtoExpr.Literal(LiteralValue.StringValue("World!"))
+      )
+    )
 
     val folded = Canonicalizer.foldConstants(expr)
 

@@ -7,8 +7,8 @@ import protocatalyst.encoder.TransformingEncoder
 
 /** Benchmarks for comparing codec performance: Java vs Kryo vs Fory.
   *
-  * TransformingEncoder uses pluggable codecs for binary serialization.
-  * This benchmark compares throughput and latency across codec implementations.
+  * TransformingEncoder uses pluggable codecs for binary serialization. This benchmark compares
+  * throughput and latency across codec implementations.
   */
 @State(Scope.Thread)
 @BenchmarkMode(Array(Mode.Throughput))

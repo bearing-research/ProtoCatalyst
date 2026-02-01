@@ -8,14 +8,12 @@ import protocatalyst.expr.*
 import protocatalyst.schema.*
 import protocatalyst.types.*
 
-/**
- * SQL verification utility for testing and debugging.
- *
- * Usage:
- *   sbt "sqlParser/Test/runMain protocatalyst.sql.SqlVerifier"
- *
- * Or run specific methods in a REPL/worksheet.
- */
+/** SQL verification utility for testing and debugging.
+  *
+  * Usage: sbt "sqlParser/Test/runMain protocatalyst.sql.SqlVerifier"
+  *
+  * Or run specific methods in a REPL/worksheet.
+  */
 object SqlVerifier:
 
   // ============================================
@@ -52,27 +50,47 @@ object SqlVerifier:
     SqlParser.parse(sql)
 
   /** Parse and transform SQL to ProtoLogicalPlan. */
-  def transform(sql: String, schema: ProtoSchema = usersSchema, tableName: String = "users"): Either[String, ProtoLogicalPlan] =
+  def transform(
+      sql: String,
+      schema: ProtoSchema = usersSchema,
+      tableName: String = "users"
+  ): Either[String, ProtoLogicalPlan] =
     parse(sql).flatMap { stmt =>
       AstToProtoTransform.transformStmt(stmt, schema, tableName) match
         case Right(plan) => Right(plan)
-        case Left(err) => Left(s"Transform error: ${err.message}")
+        case Left(err)   => Left(s"Transform error: ${err.message}")
     }
 
   /** Pretty print an AST statement. */
   def prettyPrintAst(stmt: SqlStatement, indent: Int = 0): String =
     val pad = "  " * indent
     stmt match
-      case SqlStatement.SelectStatement(distinct, projections, from, where, groupBy, having, orderBy, limit) =>
+      case SqlStatement.SelectStatement(
+            distinct,
+            projections,
+            from,
+            where,
+            groupBy,
+            having,
+            orderBy,
+            limit
+          ) =>
         val sb = new StringBuilder()
         sb.append(s"${pad}SelectStatement:\n")
         sb.append(s"${pad}  distinct: $distinct\n")
-        sb.append(s"${pad}  projections: ${projections.map(p => prettyPrintProjection(p)).mkString(", ")}\n")
+        sb.append(
+          s"${pad}  projections: ${projections.map(p => prettyPrintProjection(p)).mkString(", ")}\n"
+        )
         sb.append(s"${pad}  from: ${prettyPrintFrom(from)}\n")
         sb.append(s"${pad}  where: ${where.map(prettyPrintExpr).getOrElse("None")}\n")
-        if groupBy.nonEmpty then sb.append(s"${pad}  groupBy: ${groupBy.map(prettyPrintExpr).mkString(", ")}\n")
-        if having.isDefined then sb.append(s"${pad}  having: ${having.map(prettyPrintExpr).getOrElse("None")}\n")
-        if orderBy.nonEmpty then sb.append(s"${pad}  orderBy: ${orderBy.map(o => s"${prettyPrintExpr(o.expr)} ${if o.ascending then "ASC" else "DESC"}").mkString(", ")}\n")
+        if groupBy.nonEmpty then
+          sb.append(s"${pad}  groupBy: ${groupBy.map(prettyPrintExpr).mkString(", ")}\n")
+        if having.isDefined then
+          sb.append(s"${pad}  having: ${having.map(prettyPrintExpr).getOrElse("None")}\n")
+        if orderBy.nonEmpty then
+          sb.append(s"${pad}  orderBy: ${orderBy
+              .map(o => s"${prettyPrintExpr(o.expr)} ${if o.ascending then "ASC" else "DESC"}")
+              .mkString(", ")}\n")
         if limit.isDefined then sb.append(s"${pad}  limit: ${limit.get}\n")
         sb.toString()
 
@@ -80,14 +98,16 @@ object SqlVerifier:
         s"${pad}CompoundStatement($op):\n${prettyPrintAst(left, indent + 1)}${prettyPrintAst(right, indent + 1)}"
 
       case SqlStatement.WithStatement(ctes, recursive, query) =>
-        val ctesStr = ctes.map(c => s"${c.name}${c.columnAliases.map(a => s"(${a.mkString(", ")})").getOrElse("")}").mkString(", ")
+        val ctesStr = ctes
+          .map(c => s"${c.name}${c.columnAliases.map(a => s"(${a.mkString(", ")})").getOrElse("")}")
+          .mkString(", ")
         s"${pad}WithStatement(recursive=$recursive, ctes=[$ctesStr]):\n${prettyPrintAst(query, indent + 1)}"
 
   private def prettyPrintProjection(p: Projection): String =
     val expr = prettyPrintExpr(p.expr)
     p.alias match
       case Some(a) => s"$expr AS $a"
-      case None => expr
+      case None    => expr
 
   private def prettyPrintFrom(from: FromClause): String = from match
     case FromClause.Table(ref) => ref.alias.map(a => s"${ref.name} AS $a").getOrElse(ref.name)
@@ -97,25 +117,31 @@ object SqlVerifier:
 
   private def prettyPrintExpr(expr: SqlExpr): String = expr match
     case SqlExpr.ColumnRef(name, qual) => qual.map(q => s"$q.$name").getOrElse(name)
-    case SqlExpr.IntLit(v) => v.toString
-    case SqlExpr.DoubleLit(v) => v.toString
-    case SqlExpr.StringLit(v) => s"'$v'"
-    case SqlExpr.BoolLit(v) => v.toString
-    case SqlExpr.NullLit => "NULL"
-    case SqlExpr.Star(qual) => qual.map(q => s"$q.*").getOrElse("*")
-    case SqlExpr.Compare(l, op, r) => s"${prettyPrintExpr(l)} $op ${prettyPrintExpr(r)}"
-    case SqlExpr.Arithmetic(l, op, r) => s"(${prettyPrintExpr(l)} $op ${prettyPrintExpr(r)})"
-    case SqlExpr.And(l, r) => s"(${prettyPrintExpr(l)} AND ${prettyPrintExpr(r)})"
-    case SqlExpr.Or(l, r) => s"(${prettyPrintExpr(l)} OR ${prettyPrintExpr(r)})"
-    case SqlExpr.Not(c) => s"NOT ${prettyPrintExpr(c)}"
-    case SqlExpr.IsNull(c) => s"${prettyPrintExpr(c)} IS NULL"
-    case SqlExpr.IsNotNull(c) => s"${prettyPrintExpr(c)} IS NOT NULL"
+    case SqlExpr.IntLit(v)             => v.toString
+    case SqlExpr.DoubleLit(v)          => v.toString
+    case SqlExpr.StringLit(v)          => s"'$v'"
+    case SqlExpr.BoolLit(v)            => v.toString
+    case SqlExpr.NullLit               => "NULL"
+    case SqlExpr.Star(qual)            => qual.map(q => s"$q.*").getOrElse("*")
+    case SqlExpr.Compare(l, op, r)     => s"${prettyPrintExpr(l)} $op ${prettyPrintExpr(r)}"
+    case SqlExpr.Arithmetic(l, op, r)  => s"(${prettyPrintExpr(l)} $op ${prettyPrintExpr(r)})"
+    case SqlExpr.And(l, r)             => s"(${prettyPrintExpr(l)} AND ${prettyPrintExpr(r)})"
+    case SqlExpr.Or(l, r)              => s"(${prettyPrintExpr(l)} OR ${prettyPrintExpr(r)})"
+    case SqlExpr.Not(c)                => s"NOT ${prettyPrintExpr(c)}"
+    case SqlExpr.IsNull(c)             => s"${prettyPrintExpr(c)} IS NULL"
+    case SqlExpr.IsNotNull(c)          => s"${prettyPrintExpr(c)} IS NOT NULL"
     case SqlExpr.FunctionCall(name, args, distinct) =>
       val d = if distinct then "DISTINCT " else ""
       s"$name($d${args.map(prettyPrintExpr).mkString(", ")})"
     case SqlExpr.WindowFunction(func, spec) =>
-      val partBy = if spec.partitionBy.nonEmpty then s"PARTITION BY ${spec.partitionBy.map(prettyPrintExpr).mkString(", ")}" else ""
-      val ordBy = if spec.orderBy.nonEmpty then s"ORDER BY ${spec.orderBy.map(o => prettyPrintExpr(o.expr)).mkString(", ")}" else ""
+      val partBy =
+        if spec.partitionBy.nonEmpty then
+          s"PARTITION BY ${spec.partitionBy.map(prettyPrintExpr).mkString(", ")}"
+        else ""
+      val ordBy =
+        if spec.orderBy.nonEmpty then
+          s"ORDER BY ${spec.orderBy.map(o => prettyPrintExpr(o.expr)).mkString(", ")}"
+        else ""
       s"${prettyPrintExpr(func)} OVER ($partBy $ordBy)"
     case _ => expr.toString
 
@@ -136,7 +162,8 @@ object SqlVerifier:
         s"${pad}Aggregate(groupBy=[${grouping.map(prettyPrintProtoExpr).mkString(", ")}], aggs=[${aggs.map(prettyPrintProtoExpr).mkString(", ")}])\n${prettyPrintPlan(child, indent + 1)}"
 
       case ProtoLogicalPlan.Sort(order, global, child) =>
-        val orders = order.map(o => s"${prettyPrintProtoExpr(o.child)} ${o.direction}").mkString(", ")
+        val orders =
+          order.map(o => s"${prettyPrintProtoExpr(o.child)} ${o.direction}").mkString(", ")
         s"${pad}Sort([$orders], global=$global)\n${prettyPrintPlan(child, indent + 1)}"
 
       case ProtoLogicalPlan.Limit(n, child) =>
@@ -171,35 +198,35 @@ object SqlVerifier:
         s"${pad}Values(${rows.size} rows)\n"
 
   private def prettyPrintProtoExpr(expr: ProtoExpr): String = expr match
-    case ProtoExpr.Literal(value) => value.toString
+    case ProtoExpr.Literal(value)              => value.toString
     case ProtoExpr.ColumnRef(name, qual, _, _) => qual.map(q => s"$q.$name").getOrElse(name)
-    case ProtoExpr.BoundRef(ord, dt, _) => s"#$ord:$dt"
-    case ProtoExpr.Eq(l, r) => s"(${prettyPrintProtoExpr(l)} = ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.NotEq(l, r) => s"(${prettyPrintProtoExpr(l)} != ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.Lt(l, r) => s"(${prettyPrintProtoExpr(l)} < ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.LtEq(l, r) => s"(${prettyPrintProtoExpr(l)} <= ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.Gt(l, r) => s"(${prettyPrintProtoExpr(l)} > ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.GtEq(l, r) => s"(${prettyPrintProtoExpr(l)} >= ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.And(children) => children.map(prettyPrintProtoExpr).mkString("(", " AND ", ")")
-    case ProtoExpr.Or(children) => children.map(prettyPrintProtoExpr).mkString("(", " OR ", ")")
-    case ProtoExpr.Not(c) => s"NOT ${prettyPrintProtoExpr(c)}"
-    case ProtoExpr.IsNull(c) => s"${prettyPrintProtoExpr(c)} IS NULL"
-    case ProtoExpr.IsNotNull(c) => s"${prettyPrintProtoExpr(c)} IS NOT NULL"
-    case ProtoExpr.Add(l, r) => s"(${prettyPrintProtoExpr(l)} + ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.BoundRef(ord, dt, _)        => s"#$ord:$dt"
+    case ProtoExpr.Eq(l, r)       => s"(${prettyPrintProtoExpr(l)} = ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.NotEq(l, r)    => s"(${prettyPrintProtoExpr(l)} != ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.Lt(l, r)       => s"(${prettyPrintProtoExpr(l)} < ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.LtEq(l, r)     => s"(${prettyPrintProtoExpr(l)} <= ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.Gt(l, r)       => s"(${prettyPrintProtoExpr(l)} > ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.GtEq(l, r)     => s"(${prettyPrintProtoExpr(l)} >= ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.And(children)  => children.map(prettyPrintProtoExpr).mkString("(", " AND ", ")")
+    case ProtoExpr.Or(children)   => children.map(prettyPrintProtoExpr).mkString("(", " OR ", ")")
+    case ProtoExpr.Not(c)         => s"NOT ${prettyPrintProtoExpr(c)}"
+    case ProtoExpr.IsNull(c)      => s"${prettyPrintProtoExpr(c)} IS NULL"
+    case ProtoExpr.IsNotNull(c)   => s"${prettyPrintProtoExpr(c)} IS NOT NULL"
+    case ProtoExpr.Add(l, r)      => s"(${prettyPrintProtoExpr(l)} + ${prettyPrintProtoExpr(r)})"
     case ProtoExpr.Subtract(l, r) => s"(${prettyPrintProtoExpr(l)} - ${prettyPrintProtoExpr(r)})"
     case ProtoExpr.Multiply(l, r) => s"(${prettyPrintProtoExpr(l)} * ${prettyPrintProtoExpr(r)})"
-    case ProtoExpr.Divide(l, r) => s"(${prettyPrintProtoExpr(l)} / ${prettyPrintProtoExpr(r)})"
+    case ProtoExpr.Divide(l, r)   => s"(${prettyPrintProtoExpr(l)} / ${prettyPrintProtoExpr(r)})"
     case ProtoExpr.Count(_, distinct) => if distinct then "COUNT(DISTINCT ...)" else "COUNT(...)"
-    case ProtoExpr.Sum(_) => "SUM(...)"
-    case ProtoExpr.Avg(_) => "AVG(...)"
-    case ProtoExpr.Min(_) => "MIN(...)"
-    case ProtoExpr.Max(_) => "MAX(...)"
-    case ProtoExpr.Alias(c, name) => s"${prettyPrintProtoExpr(c)} AS $name"
-    case ProtoExpr.RowNumber() => "ROW_NUMBER()"
-    case ProtoExpr.Rank() => "RANK()"
-    case ProtoExpr.DenseRank() => "DENSE_RANK()"
+    case ProtoExpr.Sum(_)             => "SUM(...)"
+    case ProtoExpr.Avg(_)             => "AVG(...)"
+    case ProtoExpr.Min(_)             => "MIN(...)"
+    case ProtoExpr.Max(_)             => "MAX(...)"
+    case ProtoExpr.Alias(c, name)     => s"${prettyPrintProtoExpr(c)} AS $name"
+    case ProtoExpr.RowNumber()        => "ROW_NUMBER()"
+    case ProtoExpr.Rank()             => "RANK()"
+    case ProtoExpr.DenseRank()        => "DENSE_RANK()"
     case ProtoExpr.WindowExpr(func, _, _, _) => s"WindowExpr(${prettyPrintProtoExpr(func)})"
-    case _ => expr.getClass.getSimpleName
+    case _                                   => expr.getClass.getSimpleName
 
   /** Full verification: parse, transform, and print both representations. */
   def verify(sql: String, schema: ProtoSchema = usersSchema, tableName: String = "users"): Unit =
@@ -242,18 +269,26 @@ object SqlVerifier:
     verify("SELECT name FROM users ORDER BY age DESC LIMIT 10")
 
     // Aggregations
-    verify("SELECT department, COUNT(*) AS cnt, AVG(salary) AS avg_sal FROM users GROUP BY department")
+    verify(
+      "SELECT department, COUNT(*) AS cnt, AVG(salary) AS avg_sal FROM users GROUP BY department"
+    )
     verify("SELECT department, COUNT(*) FROM users GROUP BY department HAVING COUNT(*) > 5")
 
     // JOINs
-    verify("SELECT u.name, o.total FROM users u INNER JOIN orders o ON u.id = o.user_id", usersSchema, "users")
+    verify(
+      "SELECT u.name, o.total FROM users u INNER JOIN orders o ON u.id = o.user_id",
+      usersSchema,
+      "users"
+    )
 
     // Window functions
     verify("SELECT name, ROW_NUMBER() OVER (ORDER BY salary DESC) AS rank FROM users")
     verify("SELECT name, SUM(salary) OVER (PARTITION BY department ORDER BY hire_date) FROM users")
 
     // Set operations
-    verify("SELECT name FROM users WHERE active = true UNION SELECT name FROM users WHERE salary > 100000")
+    verify(
+      "SELECT name FROM users WHERE active = true UNION SELECT name FROM users WHERE salary > 100000"
+    )
 
     // CTEs
     verify("""
@@ -284,6 +319,8 @@ object SqlVerifier:
 
     // Error cases
     println("Testing error cases:")
-    verify("SELECT unknown_column FROM users")  // Unknown column
-    verify("SELECT * FROM")  // Syntax error
-    verify("WITH RECURSIVE cte AS (SELECT * FROM users) SELECT * FROM cte")  // Recursive CTE not supported
+    verify("SELECT unknown_column FROM users") // Unknown column
+    verify("SELECT * FROM") // Syntax error
+    verify(
+      "WITH RECURSIVE cte AS (SELECT * FROM users) SELECT * FROM cte"
+    ) // Recursive CTE not supported

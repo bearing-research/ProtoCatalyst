@@ -126,7 +126,8 @@ object functions:
   private[dsl] case class AggExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A]) extends Expr[A]:
     def toProtoExpr: ProtoExpr = proto
 
-  private[dsl] case class FunctionExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A]) extends Expr[A]:
+  private[dsl] case class FunctionExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A])
+      extends Expr[A]:
     def toProtoExpr: ProtoExpr = proto
 
 /** Implicit conversions for literal values in expressions. */

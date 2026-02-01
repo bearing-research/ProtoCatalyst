@@ -122,10 +122,12 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
 
   test("nested struct converts to MockRow"):
     val user = User("Alice", 30)
-    val structType = ProtoType.StructType(Vector(
-      ProtoStructField("name", ProtoType.StringType, false),
-      ProtoStructField("age", ProtoType.IntType, false)
-    ))
+    val structType = ProtoType.StructType(
+      Vector(
+        ProtoStructField("name", ProtoType.StringType, false),
+        ProtoStructField("age", ProtoType.IntType, false)
+      )
+    )
 
     val result = MockInternalTypeConverter.toInternal(user, structType)
 
@@ -450,7 +452,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     assertEquals(charBack, original)
 
     val varcharInternal = MockInternalTypeConverter.toInternal(original, ProtoType.VarcharType(100))
-    val varcharBack = MockInternalTypeConverter.fromInternal(varcharInternal, ProtoType.VarcharType(100))
+    val varcharBack =
+      MockInternalTypeConverter.fromInternal(varcharInternal, ProtoType.VarcharType(100))
     assertEquals(varcharBack, original)
 
   test("DayTimeIntervalType passes through Duration internal value"):

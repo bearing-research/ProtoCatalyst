@@ -10,8 +10,8 @@ import java.nio.charset.StandardCharsets
 
 /** Benchmarks for compile-time Arrow serialization.
   *
-  * Compares InlineArrowWriter/Reader (compile-time specialization)
-  * with a runtime type dispatch baseline (simulating Spark's approach).
+  * Compares InlineArrowWriter/Reader (compile-time specialization) with a runtime type dispatch
+  * baseline (simulating Spark's approach).
   *
   * Expected improvements:
   *   - Write: 2-5x faster (eliminates runtime type matching)
@@ -39,7 +39,8 @@ class ArrowBenchmarks:
   // Optimized writers with vector caching
   val optimizedSimpleWriter: OptimizedArrowWriter[Simple] = OptimizedArrowWriter.derived[Simple]
   val optimizedWideWriter: OptimizedArrowWriter[Wide] = OptimizedArrowWriter.derived[Wide]
-  val optimizedTemporalWriter: OptimizedArrowWriter[Temporal] = OptimizedArrowWriter.derived[Temporal]
+  val optimizedTemporalWriter: OptimizedArrowWriter[Temporal] =
+    OptimizedArrowWriter.derived[Temporal]
 
   // IndexedSeq versions for optimized writer
   var simpleDataIndexed: IndexedSeq[Simple] = uninitialized
@@ -73,9 +74,26 @@ class ArrowBenchmarks:
     simpleData = (1 to batchSize).map(i => Simple(s"name$i", i)).toSeq
     wideData = (1 to batchSize).map { i =>
       Wide(
-        i, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6, i + 7, i + 8, i + 9,
-        s"s$i", s"s${i + 1}", s"s${i + 2}", s"s${i + 3}", s"s${i + 4}",
-        i * 1.1, i * 1.2, i * 1.3, i * 1.4, i * 1.5
+        i,
+        i + 1,
+        i + 2,
+        i + 3,
+        i + 4,
+        i + 5,
+        i + 6,
+        i + 7,
+        i + 8,
+        i + 9,
+        s"s$i",
+        s"s${i + 1}",
+        s"s${i + 2}",
+        s"s${i + 3}",
+        s"s${i + 4}",
+        i * 1.1,
+        i * 1.2,
+        i * 1.3,
+        i * 1.4,
+        i * 1.5
       )
     }.toSeq
     temporalData = (1 to batchSize).map { i =>
@@ -204,11 +222,10 @@ class ArrowBenchmarks:
   def runtimeReadTemporal(): Seq[Temporal] =
     RuntimeArrowReader.readTemporal(preWrittenTemporalRoot)
 
-
 /** Runtime type dispatch Arrow writer - simulates Spark's approach.
   *
-  * This baseline uses runtime type matching for each field,
-  * similar to how Spark's ArrowWriter dispatches based on DataType.
+  * This baseline uses runtime type matching for each field, similar to how Spark's ArrowWriter
+  * dispatches based on DataType.
   */
 object RuntimeArrowWriter:
 
@@ -287,7 +304,6 @@ object RuntimeArrowWriter:
         val micros = instant.getEpochSecond * 1000000L + instant.getNano / 1000
         vec.asInstanceOf[TimeStampMicroTZVector].setSafe(idx, micros)
       case _ => ()
-
 
 /** Runtime type dispatch Arrow reader - simulates Spark's approach */
 object RuntimeArrowReader:

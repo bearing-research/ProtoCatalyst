@@ -5,13 +5,11 @@ import protocatalyst.schema.*
 import protocatalyst.expr.*
 import protocatalyst.types.*
 
-/**
- * Bidirectional converter between ProtoLogicalPlan and MockLogicalPlan.
- *
- * This enables testing the conversion layer before real Spark Scala 3 is available.
- * When Spark Scala 3 becomes available, this can be adapted to convert to real
- * Spark LogicalPlan types.
- */
+/** Bidirectional converter between ProtoLogicalPlan and MockLogicalPlan.
+  *
+  * This enables testing the conversion layer before real Spark Scala 3 is available. When Spark
+  * Scala 3 becomes available, this can be adapted to convert to real Spark LogicalPlan types.
+  */
 object PlanConverter:
 
   // ============================================
@@ -119,44 +117,44 @@ object PlanConverter:
     MockExpression.SortOrder(
       ExpressionConverter.toMock(so.child),
       so.direction match
-        case SortDirection.Ascending => MSD.Ascending
+        case SortDirection.Ascending  => MSD.Ascending
         case SortDirection.Descending => MSD.Descending,
       so.nullOrdering match
         case NullOrdering.NullsFirst => MNO.NullsFirst
-        case NullOrdering.NullsLast => MNO.NullsLast
+        case NullOrdering.NullsLast  => MNO.NullsLast
     )
 
   private def convertJoinType(jt: JoinType): MockLogicalPlan.JoinType =
     import MockLogicalPlan.JoinType as MJT
     jt match
-      case JoinType.Inner => MJT.Inner
-      case JoinType.LeftOuter => MJT.LeftOuter
+      case JoinType.Inner      => MJT.Inner
+      case JoinType.LeftOuter  => MJT.LeftOuter
       case JoinType.RightOuter => MJT.RightOuter
-      case JoinType.FullOuter => MJT.FullOuter
-      case JoinType.LeftSemi => MJT.LeftSemi
-      case JoinType.LeftAnti => MJT.LeftAnti
-      case JoinType.Cross => MJT.Cross
+      case JoinType.FullOuter  => MJT.FullOuter
+      case JoinType.LeftSemi   => MJT.LeftSemi
+      case JoinType.LeftAnti   => MJT.LeftAnti
+      case JoinType.Cross      => MJT.Cross
 
   private def evaluateLiteral(expr: ProtoExpr): Any =
     expr match
       case ProtoExpr.Literal(lit) =>
         import LiteralValue.*
         lit match
-          case BooleanValue(v) => v
-          case ByteValue(v) => v
-          case ShortValue(v) => v
-          case IntValue(v) => v
-          case LongValue(v) => v
-          case FloatValue(v) => v
-          case DoubleValue(v) => v
-          case StringValue(v) => v
-          case BinaryValue(v) => v
-          case DecimalValue(v) => v
-          case DateValue(v) => v
-          case TimestampValue(v) => v
-          case TimeValue(v) => v
+          case BooleanValue(v)                             => v
+          case ByteValue(v)                                => v
+          case ShortValue(v)                               => v
+          case IntValue(v)                                 => v
+          case LongValue(v)                                => v
+          case FloatValue(v)                               => v
+          case DoubleValue(v)                              => v
+          case StringValue(v)                              => v
+          case BinaryValue(v)                              => v
+          case DecimalValue(v)                             => v
+          case DateValue(v)                                => v
+          case TimestampValue(v)                           => v
+          case TimeValue(v)                                => v
           case CalendarIntervalValue(months, days, micros) => (months, days, micros)
-          case NullValue(_) => null
+          case NullValue(_)                                => null
       case _ => throw IllegalArgumentException(s"Expected literal in VALUES, got: $expr")
 
   // ============================================
@@ -170,13 +168,21 @@ object PlanConverter:
     plan match
       case MLP.UnresolvedRelation(tableName) =>
         val name = tableName.mkString(".")
-        PLP.RelationRef(name, None, SchemaContract(name, Vector.empty, SchemaFingerprint.fromLong(0L)))
+        PLP.RelationRef(
+          name,
+          None,
+          SchemaContract(name, Vector.empty, SchemaFingerprint.fromLong(0L))
+        )
 
       case MLP.LogicalRelation(tableName, output) =>
         val fields = output.zipWithIndex.map { case (attr, idx) =>
           FieldContract(attr.name, TypeConverter.fromMock(attr.dataType), attr.nullable, idx)
         }.toVector
-        PLP.RelationRef(tableName, None, SchemaContract(tableName, fields, SchemaFingerprint.fromLong(0L)))
+        PLP.RelationRef(
+          tableName,
+          None,
+          SchemaContract(tableName, fields, SchemaFingerprint.fromLong(0L))
+        )
 
       case MLP.LocalRelation(output, data) =>
         val schema = ProtoSchema(output.map { attr =>
@@ -268,36 +274,37 @@ object PlanConverter:
     SortOrder(
       ExpressionConverter.fromMock(so.child),
       so.direction match
-        case MSD.Ascending => SortDirection.Ascending
+        case MSD.Ascending  => SortDirection.Ascending
         case MSD.Descending => SortDirection.Descending,
       so.nullOrdering match
         case MNO.NullsFirst => NullOrdering.NullsFirst
-        case MNO.NullsLast => NullOrdering.NullsLast
+        case MNO.NullsLast  => NullOrdering.NullsLast
     )
 
   private def fromMockJoinType(jt: MockLogicalPlan.JoinType): JoinType =
     import MockLogicalPlan.JoinType as MJT
     jt match
-      case MJT.Inner => JoinType.Inner
-      case MJT.LeftOuter => JoinType.LeftOuter
+      case MJT.Inner      => JoinType.Inner
+      case MJT.LeftOuter  => JoinType.LeftOuter
       case MJT.RightOuter => JoinType.RightOuter
-      case MJT.FullOuter => JoinType.FullOuter
-      case MJT.LeftSemi => JoinType.LeftSemi
-      case MJT.LeftAnti => JoinType.LeftAnti
-      case MJT.Cross => JoinType.Cross
+      case MJT.FullOuter  => JoinType.FullOuter
+      case MJT.LeftSemi   => JoinType.LeftSemi
+      case MJT.LeftAnti   => JoinType.LeftAnti
+      case MJT.Cross      => JoinType.Cross
 
   private def extractLiteralInt(expr: MockExpression): Int =
     expr match
-      case MockExpression.Literal(v: Int, _) => v
+      case MockExpression.Literal(v: Int, _)  => v
       case MockExpression.Literal(v: Long, _) => v.toInt
       case _ => throw IllegalArgumentException(s"Expected integer literal, got: $expr")
 
   private def valueToLiteral(value: Any, hint: ProtoType): ProtoExpr =
     if value == null then ProtoExpr.litNull(hint)
-    else value match
-      case b: Boolean => ProtoExpr.lit(b)
-      case i: Int => ProtoExpr.lit(i)
-      case l: Long => ProtoExpr.lit(l)
-      case d: Double => ProtoExpr.lit(d)
-      case s: String => ProtoExpr.lit(s)
-      case _ => ProtoExpr.lit(value.toString)
+    else
+      value match
+        case b: Boolean => ProtoExpr.lit(b)
+        case i: Int     => ProtoExpr.lit(i)
+        case l: Long    => ProtoExpr.lit(l)
+        case d: Double  => ProtoExpr.lit(d)
+        case s: String  => ProtoExpr.lit(s)
+        case _          => ProtoExpr.lit(value.toString)

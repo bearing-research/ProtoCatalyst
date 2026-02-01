@@ -7,12 +7,11 @@ import protocatalyst.schema.*
 import protocatalyst.types.*
 import upickle.default.*
 
-/**
- * JSON serialization codec using uPickle.
- *
- * All ReadWriter instances are derived here to keep serialization
- * concerns separate from the domain types.
- */
+/** JSON serialization codec using uPickle.
+  *
+  * All ReadWriter instances are derived here to keep serialization concerns separate from the
+  * domain types.
+  */
 object JsonArtifactCodec extends ArtifactCodec:
 
   def format: String = "json"
@@ -21,10 +20,8 @@ object JsonArtifactCodec extends ArtifactCodec:
     write(artifact).getBytes("UTF-8")
 
   def deserialize(bytes: Array[Byte]): Either[String, CompiledArtifact] =
-    try
-      Right(read[CompiledArtifact](new String(bytes, "UTF-8")))
-    catch
-      case e: Exception => Left(s"JSON deserialization failed: ${e.getMessage}")
+    try Right(read[CompiledArtifact](new String(bytes, "UTF-8")))
+    catch case e: Exception => Left(s"JSON deserialization failed: ${e.getMessage}")
 
   // === Type ReadWriters ===
 

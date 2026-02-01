@@ -1,9 +1,8 @@
 package protocatalyst.mock
 
-/**
- * Mock Spark DataType hierarchy - mimics org.apache.spark.sql.types.DataType.
- * Used for validating ProtoType compatibility without Spark dependency.
- */
+/** Mock Spark DataType hierarchy - mimics org.apache.spark.sql.types.DataType. Used for validating
+  * ProtoType compatibility without Spark dependency.
+  */
 sealed trait MockDataType:
   def typeName: String
   def simpleString: String = typeName
@@ -72,7 +71,8 @@ object MockDataType:
   case class ArrayType(elementType: MockDataType, containsNull: Boolean) extends MockDataType:
     def typeName = s"array<${elementType.typeName}>"
 
-  case class MapType(keyType: MockDataType, valueType: MockDataType, valueContainsNull: Boolean) extends MockDataType:
+  case class MapType(keyType: MockDataType, valueType: MockDataType, valueContainsNull: Boolean)
+      extends MockDataType:
     def typeName = s"map<${keyType.typeName},${valueType.typeName}>"
 
   case class StructType(fields: Vector[MockStructField]) extends MockDataType:

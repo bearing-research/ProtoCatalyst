@@ -61,7 +61,7 @@ class RowSerializerSuite extends munit.FunSuite:
 
     assertEquals(serialized.length, 2)
     assertEquals(serialized(0), "test")
-    assertEquals(serialized(1), 100)  // Unwrapped from Option
+    assertEquals(serialized(1), 100) // Unwrapped from Option
 
   test("serialize with None value"):
     val serializer = RowSerializer.derived[RowWithOptional]
@@ -71,7 +71,7 @@ class RowSerializerSuite extends munit.FunSuite:
 
     assertEquals(serialized.length, 2)
     assertEquals(serialized(0), "test")
-    assertEquals(serialized(1), null)  // None becomes null
+    assertEquals(serialized(1), null) // None becomes null
 
   test("deserialize with non-null value to Option"):
     val serializer = RowSerializer.derived[RowWithOptional]
@@ -116,8 +116,8 @@ class RowSerializerSuite extends munit.FunSuite:
   test("schema nullable matches Option fields"):
     val serializer = RowSerializer.derived[RowWithOptional]
 
-    assertEquals(serializer.schema(0).nullable, false)  // required: String
-    assertEquals(serializer.schema(1).nullable, true)   // optional: Option[Int]
+    assertEquals(serializer.schema(0).nullable, false) // required: String
+    assertEquals(serializer.schema(1).nullable, true) // optional: Option[Int]
 
   // === RowNested struct tests ===
 

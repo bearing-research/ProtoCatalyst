@@ -4,12 +4,13 @@ import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.types.*
 
-/**
- * Type-safe column reference.
- *
- * @tparam A The row type this column belongs to (e.g., User)
- * @tparam T The column's value type (e.g., String for a name field)
- */
+/** Type-safe column reference.
+  *
+  * @tparam A
+  *   The row type this column belongs to (e.g., User)
+  * @tparam T
+  *   The column's value type (e.g., String for a name field)
+  */
 final class Column[A, T] private[dsl] (
     val name: String,
     val protoType: ProtoType,
@@ -43,12 +44,10 @@ object Column:
   ): Column[A, T] =
     new Column[A, T](name, protoType, nullable, enc, None)
 
-/**
- * Columns accessor for a record type A.
- * Generated at compile time from ProtoEncoder[A].
- *
- * This trait is implemented by the Table macro to provide typed field access.
- */
+/** Columns accessor for a record type A. Generated at compile time from ProtoEncoder[A].
+  *
+  * This trait is implemented by the Table macro to provide typed field access.
+  */
 trait Columns[A]:
   /** Get the schema fields */
   def allColumns: Vector[Column[A, ?]]
@@ -57,4 +56,4 @@ trait Columns[A]:
   def column[T](name: String)(using enc: ProtoEncoder[T]): Column[A, T] =
     allColumns.find(_.name == name) match
       case Some(col) => col.asInstanceOf[Column[A, T]]
-      case None => throw new IllegalArgumentException(s"Column $name not found")
+      case None      => throw new IllegalArgumentException(s"Column $name not found")

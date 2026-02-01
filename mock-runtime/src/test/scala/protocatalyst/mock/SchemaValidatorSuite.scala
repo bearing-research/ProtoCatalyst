@@ -17,7 +17,7 @@ class SchemaValidatorSuite extends munit.FunSuite:
     val compiled = users.compile
 
     SchemaValidator.validate(compiled, catalog) match
-      case SchemaValidator.Success(_) => () // ok
+      case SchemaValidator.Success(_)      => () // ok
       case SchemaValidator.Failure(errors) => fail(s"Expected success, got errors: $errors")
 
   test("detects missing table"):
@@ -28,15 +28,23 @@ class SchemaValidatorSuite extends munit.FunSuite:
     SchemaValidator.validate(compiled, catalog) match
       case SchemaValidator.Failure(errors) =>
         assert(errors.exists(_.isInstanceOf[SchemaValidator.RelationNotFound]))
-        assertEquals(errors.head.asInstanceOf[SchemaValidator.RelationNotFound].relationName, "users")
+        assertEquals(
+          errors.head.asInstanceOf[SchemaValidator.RelationNotFound].relationName,
+          "users"
+        )
       case _ => fail("Expected RelationNotFound error")
 
   test("detects missing field"):
     val catalog = InMemoryCatalog()
     // Schema with only 'name' field, missing 'age' and 'salary'
-    catalog.registerTable("users", MockDataType.StructType(Vector(
-      MockStructField("name", MockDataType.StringType, nullable = false)
-    )))
+    catalog.registerTable(
+      "users",
+      MockDataType.StructType(
+        Vector(
+          MockStructField("name", MockDataType.StringType, nullable = false)
+        )
+      )
+    )
 
     val users = Table[SimpleUser]("users")
     val compiled = users.compile
@@ -49,11 +57,16 @@ class SchemaValidatorSuite extends munit.FunSuite:
 
   test("detects type mismatch"):
     val catalog = InMemoryCatalog()
-    catalog.registerTable("users", MockDataType.StructType(Vector(
-      MockStructField("name", MockDataType.StringType, nullable = false),
-      MockStructField("age", MockDataType.StringType, nullable = false), // Wrong type
-      MockStructField("salary", MockDataType.DoubleType, nullable = false)
-    )))
+    catalog.registerTable(
+      "users",
+      MockDataType.StructType(
+        Vector(
+          MockStructField("name", MockDataType.StringType, nullable = false),
+          MockStructField("age", MockDataType.StringType, nullable = false), // Wrong type
+          MockStructField("salary", MockDataType.DoubleType, nullable = false)
+        )
+      )
+    )
 
     val users = Table[SimpleUser]("users")
     val compiled = users.compile
@@ -67,17 +80,22 @@ class SchemaValidatorSuite extends munit.FunSuite:
   test("allows safe type widening"):
     val catalog = InMemoryCatalog()
     // Short can be widened to Int
-    catalog.registerTable("users", MockDataType.StructType(Vector(
-      MockStructField("name", MockDataType.StringType, nullable = false),
-      MockStructField("age", MockDataType.ShortType, nullable = false), // Narrower type
-      MockStructField("salary", MockDataType.FloatType, nullable = false) // Narrower type
-    )))
+    catalog.registerTable(
+      "users",
+      MockDataType.StructType(
+        Vector(
+          MockStructField("name", MockDataType.StringType, nullable = false),
+          MockStructField("age", MockDataType.ShortType, nullable = false), // Narrower type
+          MockStructField("salary", MockDataType.FloatType, nullable = false) // Narrower type
+        )
+      )
+    )
 
     val users = Table[SimpleUser]("users")
     val compiled = users.compile
 
     SchemaValidator.validate(compiled, catalog) match
-      case SchemaValidator.Success(_) => () // ok - widening is allowed
+      case SchemaValidator.Success(_)      => () // ok - widening is allowed
       case SchemaValidator.Failure(errors) => fail(s"Widening should be allowed: $errors")
 
   test("type compatibility - exact match"):
@@ -98,22 +116,30 @@ class SchemaValidatorSuite extends munit.FunSuite:
     assert(!SchemaValidator.isTypeCompatible(MockDataType.IntegerType, MockDataType.LongType))
 
   test("type compatibility - array element types"):
-    assert(SchemaValidator.isTypeCompatible(
-      MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true),
-      MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true)
-    ))
+    assert(
+      SchemaValidator.isTypeCompatible(
+        MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true),
+        MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true)
+      )
+    )
     // Actual can be stricter (non-null elements)
-    assert(SchemaValidator.isTypeCompatible(
-      MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true),
-      MockDataType.ArrayType(MockDataType.IntegerType, containsNull = false)
-    ))
+    assert(
+      SchemaValidator.isTypeCompatible(
+        MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true),
+        MockDataType.ArrayType(MockDataType.IntegerType, containsNull = false)
+      )
+    )
 
   test("type compatibility - decimal precision"):
-    assert(SchemaValidator.isTypeCompatible(
-      MockDataType.DecimalType(18, 2),
-      MockDataType.DecimalType(10, 2) // Lower precision is ok
-    ))
-    assert(!SchemaValidator.isTypeCompatible(
-      MockDataType.DecimalType(10, 2),
-      MockDataType.DecimalType(18, 2) // Higher precision not allowed
-    ))
+    assert(
+      SchemaValidator.isTypeCompatible(
+        MockDataType.DecimalType(18, 2),
+        MockDataType.DecimalType(10, 2) // Lower precision is ok
+      )
+    )
+    assert(
+      !SchemaValidator.isTypeCompatible(
+        MockDataType.DecimalType(10, 2),
+        MockDataType.DecimalType(18, 2) // Higher precision not allowed
+      )
+    )

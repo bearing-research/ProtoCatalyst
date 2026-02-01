@@ -2,10 +2,9 @@ package protocatalyst.codec
 
 import protocatalyst.artifact.CompiledArtifact
 
-/**
- * Abstraction for artifact serialization.
- * Allows swapping between JSON, protobuf, or other formats.
- */
+/** Abstraction for artifact serialization. Allows swapping between JSON, protobuf, or other
+  * formats.
+  */
 trait ArtifactCodec:
   /** Unique identifier for this codec (e.g., "json", "protobuf") */
   def format: String
@@ -30,17 +29,16 @@ object ArtifactCodec:
   /** Serialize with format header */
   def serializeWithHeader(artifact: CompiledArtifact, codec: ArtifactCodec = default): Array[Byte] =
     val formatByte = codec.format match
-      case "json" => FormatJson
+      case "json"     => FormatJson
       case "protobuf" => FormatProtobuf
-      case other => throw new IllegalArgumentException(s"Unknown codec format: $other")
+      case other      => throw new IllegalArgumentException(s"Unknown codec format: $other")
 
     val payload = codec.serialize(artifact)
     MagicPrefix ++ Array(formatByte) ++ payload
 
   /** Deserialize, auto-detecting format from header */
   def deserializeWithHeader(bytes: Array[Byte]): Either[String, CompiledArtifact] =
-    if bytes.length < MagicPrefix.length + 1 then
-      Left("Invalid artifact: too short")
+    if bytes.length < MagicPrefix.length + 1 then Left("Invalid artifact: too short")
     else if !bytes.take(MagicPrefix.length).sameElements(MagicPrefix) then
       Left("Invalid magic header")
     else
@@ -48,6 +46,6 @@ object ArtifactCodec:
       val payload = bytes.drop(MagicPrefix.length + 1)
 
       formatByte match
-        case FormatJson => JsonArtifactCodec.deserialize(payload)
+        case FormatJson     => JsonArtifactCodec.deserialize(payload)
         case FormatProtobuf => Left("Protobuf codec not yet implemented")
-        case other => Left(s"Unknown format byte: $other")
+        case other          => Left(s"Unknown format byte: $other")

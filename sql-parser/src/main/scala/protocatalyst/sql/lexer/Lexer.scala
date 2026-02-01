@@ -36,8 +36,7 @@ class Lexer(input: String):
   def nextToken(): Either[LexerError, Token] =
     skipWhitespace()
 
-    if pos >= input.length then
-      Right(Token.EOF)
+    if pos >= input.length then Right(Token.EOF)
     else
       val c = current
       c match
@@ -48,10 +47,8 @@ class Lexer(input: String):
         case '+' => advance(); Right(Token.Plus)
         case '-' =>
           advance()
-          if pos < input.length && current.isDigit then
-            readNumber(negative = true)
-          else
-            Right(Token.Minus)
+          if pos < input.length && current.isDigit then readNumber(negative = true)
+          else Right(Token.Minus)
         case '*' => advance(); Right(Token.Star)
         case '/' => advance(); Right(Token.Slash)
         case '=' => advance(); Right(Token.Eq)
@@ -61,23 +58,20 @@ class Lexer(input: String):
             advance(); Right(Token.LtEq)
           else if pos < input.length && current == '>' then
             advance(); Right(Token.NotEq)
-          else
-            Right(Token.Lt)
+          else Right(Token.Lt)
         case '>' =>
           advance()
           if pos < input.length && current == '=' then
             advance(); Right(Token.GtEq)
-          else
-            Right(Token.Gt)
+          else Right(Token.Gt)
         case '!' =>
           advance()
           if pos < input.length && current == '=' then
             advance(); Right(Token.NotEq)
-          else
-            Left(LexerError(s"Expected '=' after '!'", line, col - 1))
-        case '\'' => readString()
-        case '"' => readQuotedIdentifier()
-        case c if c.isDigit => readNumber(negative = false)
+          else Left(LexerError(s"Expected '=' after '!'", line, col - 1))
+        case '\''                        => readString()
+        case '"'                         => readQuotedIdentifier()
+        case c if c.isDigit              => readNumber(negative = false)
         case c if c.isLetter || c == '_' => readIdentifierOrKeyword()
         case c => Left(LexerError(s"Unexpected character: '$c'", line, col))
 
@@ -88,13 +82,11 @@ class Lexer(input: String):
       if current == '\n' then
         line += 1
         col = 1
-      else
-        col += 1
+      else col += 1
       pos += 1
 
   private def skipWhitespace(): Unit =
-    while pos < input.length && current.isWhitespace do
-      advance()
+    while pos < input.length && current.isWhitespace do advance()
 
   private def readNumber(negative: Boolean): Either[LexerError, Token] =
     val startCol = col
@@ -115,8 +107,7 @@ class Lexer(input: String):
         sb.append(current)
         advance()
       Right(Token.DoubleLiteral(sb.toString.toDouble))
-    else
-      Right(Token.IntegerLiteral(sb.toString.toLong))
+    else Right(Token.IntegerLiteral(sb.toString.toLong))
 
   private def readString(): Either[LexerError, Token] =
     val startLine = line
@@ -130,18 +121,16 @@ class Lexer(input: String):
         if pos >= input.length then
           return Left(LexerError("Unterminated string", startLine, startCol))
         current match
-          case 'n' => sb.append('\n')
-          case 't' => sb.append('\t')
-          case 'r' => sb.append('\r')
+          case 'n'  => sb.append('\n')
+          case 't'  => sb.append('\t')
+          case 'r'  => sb.append('\r')
           case '\'' => sb.append('\'')
           case '\\' => sb.append('\\')
-          case c => sb.append(c)
-      else
-        sb.append(current)
+          case c    => sb.append(c)
+      else sb.append(current)
       advance()
 
-    if pos >= input.length then
-      Left(LexerError("Unterminated string", startLine, startCol))
+    if pos >= input.length then Left(LexerError("Unterminated string", startLine, startCol))
     else
       advance() // skip closing quote
       Right(Token.StringLiteral(sb.toString))
@@ -174,7 +163,7 @@ class Lexer(input: String):
 
     Token.keywords.get(upper) match
       case Some(keyword) => Right(keyword)
-      case None => Right(Token.Identifier(word))
+      case None          => Right(Token.Identifier(word))
 
 /** Lexer error with position information. */
 case class LexerError(message: String, line: Int, col: Int):

@@ -30,11 +30,15 @@ class ProtoSchemaSuite extends munit.FunSuite:
     assertEquals(schema1.fingerprint.toLong, schema2.fingerprint.toLong)
 
   test("different schemas have different fingerprints"):
-    val schema1 = ProtoSchema(Vector(
-      ProtoStructField("id", ProtoType.LongType, nullable = false)
-    ))
-    val schema2 = ProtoSchema(Vector(
-      ProtoStructField("id", ProtoType.IntType, nullable = false)
-    ))
+    val schema1 = ProtoSchema(
+      Vector(
+        ProtoStructField("id", ProtoType.LongType, nullable = false)
+      )
+    )
+    val schema2 = ProtoSchema(
+      Vector(
+        ProtoStructField("id", ProtoType.IntType, nullable = false)
+      )
+    )
 
     assertNotEquals(schema1.fingerprint.toLong, schema2.fingerprint.toLong)

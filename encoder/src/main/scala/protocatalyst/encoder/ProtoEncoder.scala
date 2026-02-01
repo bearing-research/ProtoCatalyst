@@ -72,7 +72,9 @@ object ProtoEncoder:
       makeSumEncoder[T](m, variantEncoders, ct)
 
   /** Derive variant encoders for each case of a sum type. */
-  private inline def deriveVariants[Types <: Tuple, Labels <: Tuple](ordinal: Int): Vector[VariantEncoder[?]] =
+  private inline def deriveVariants[Types <: Tuple, Labels <: Tuple](
+      ordinal: Int
+  ): Vector[VariantEncoder[?]] =
     inline (erasedValue[Types], erasedValue[Labels]) match
       case (_: EmptyTuple, _: EmptyTuple) =>
         Vector.empty
@@ -102,7 +104,7 @@ object ProtoEncoder:
   /** Factory method for simple enum encoders (all singletons). */
   def makeEnumEncoder[T](ct: ClassTag[T]): ProtoEncoder[T] = new ProtoEncoder[T]:
     def schema: ProtoSchema = ProtoSchema(Vector.empty)
-    val catalystType: ProtoType = ProtoType.StringType  // Enums stored as strings
+    val catalystType: ProtoType = ProtoType.StringType // Enums stored as strings
     val nullable: Boolean = false
     val clsTag: ClassTag[T] = ct
 
@@ -155,10 +157,10 @@ object ProtoEncoder:
 
   private inline def summonEncoder[T]: ProtoEncoder[T] =
     summonFrom {
-      case enc: ProtoEncoder[T] => enc
+      case enc: ProtoEncoder[T]   => enc
       case _: Mirror.ProductOf[T] => derived[T]
-      case _: Mirror.SumOf[T] => derived[T]  // Support enums as fields
-      case _ =>
+      case _: Mirror.SumOf[T]     => derived[T] // Support enums as fields
+      case _                      =>
         error(
           "Cannot find or derive ProtoEncoder for type.\n\n" +
             "Supported types:\n" +
@@ -182,7 +184,7 @@ object ProtoEncoder:
   private inline def isOption[T]: Boolean =
     inline erasedValue[T] match
       case _: Option[?] => true
-      case _ => false
+      case _            => false
 
   // Factory method for product encoders (must be accessible from inline expansion)
   def makeProductEncoder[T](
@@ -198,7 +200,8 @@ object ProtoEncoder:
 
   // === Primitive encoders ===
 
-  private class PrimitiveEncoder[T](val catalystType: ProtoType, val clsTag: ClassTag[T]) extends ProtoEncoder[T]:
+  private class PrimitiveEncoder[T](val catalystType: ProtoType, val clsTag: ClassTag[T])
+      extends ProtoEncoder[T]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val nullable: Boolean = false
 
@@ -211,43 +214,63 @@ object ProtoEncoder:
   given ProtoEncoder[Double] = PrimitiveEncoder(ProtoType.DoubleType, classTag[Double])
   given ProtoEncoder[String] = PrimitiveEncoder(ProtoType.StringType, classTag[String])
   given ProtoEncoder[Array[Byte]] = PrimitiveEncoder(ProtoType.BinaryType, classTag[Array[Byte]])
-  given ProtoEncoder[BigDecimal] = PrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[BigDecimal])
+  given ProtoEncoder[BigDecimal] =
+    PrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[BigDecimal])
 
   // java.time types
-  given ProtoEncoder[java.time.LocalDate] = PrimitiveEncoder(ProtoType.DateType, classTag[java.time.LocalDate])
-  given ProtoEncoder[java.time.Instant] = PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.Instant])
-  given ProtoEncoder[java.time.LocalDateTime] = PrimitiveEncoder(ProtoType.TimestampNTZType, classTag[java.time.LocalDateTime])
-  given ProtoEncoder[java.time.Duration] = PrimitiveEncoder(ProtoType.DayTimeIntervalType, classTag[java.time.Duration])
-  given ProtoEncoder[java.time.Period] = PrimitiveEncoder(ProtoType.YearMonthIntervalType, classTag[java.time.Period])
-  given ProtoEncoder[java.time.LocalTime] = PrimitiveEncoder(ProtoType.TimeType(6), classTag[java.time.LocalTime])
+  given ProtoEncoder[java.time.LocalDate] =
+    PrimitiveEncoder(ProtoType.DateType, classTag[java.time.LocalDate])
+  given ProtoEncoder[java.time.Instant] =
+    PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.Instant])
+  given ProtoEncoder[java.time.LocalDateTime] =
+    PrimitiveEncoder(ProtoType.TimestampNTZType, classTag[java.time.LocalDateTime])
+  given ProtoEncoder[java.time.Duration] =
+    PrimitiveEncoder(ProtoType.DayTimeIntervalType, classTag[java.time.Duration])
+  given ProtoEncoder[java.time.Period] =
+    PrimitiveEncoder(ProtoType.YearMonthIntervalType, classTag[java.time.Period])
+  given ProtoEncoder[java.time.LocalTime] =
+    PrimitiveEncoder(ProtoType.TimeType(6), classTag[java.time.LocalTime])
 
   // java.sql types (legacy compatibility)
-  given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] = PrimitiveEncoder(ProtoType.DateType, classTag[java.sql.Date])
-  given javaSqlTimestampEncoder: ProtoEncoder[java.sql.Timestamp] = PrimitiveEncoder(ProtoType.TimestampType, classTag[java.sql.Timestamp])
+  given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] =
+    PrimitiveEncoder(ProtoType.DateType, classTag[java.sql.Date])
+  given javaSqlTimestampEncoder: ProtoEncoder[java.sql.Timestamp] =
+    PrimitiveEncoder(ProtoType.TimestampType, classTag[java.sql.Timestamp])
 
   // === Boxed primitive encoders ===
   // Java wrapper classes - nullable since they can be null (unlike primitives)
   // Note: Scala 3 unifies scala.Int with java.lang.Integer, etc.
   // We use explicit names to avoid conflicts with primitive encoders.
 
-  private class BoxedPrimitiveEncoder[T](val catalystType: ProtoType, val clsTag: ClassTag[T]) extends ProtoEncoder[T]:
+  private class BoxedPrimitiveEncoder[T](val catalystType: ProtoType, val clsTag: ClassTag[T])
+      extends ProtoEncoder[T]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val nullable: Boolean = true // Boxed types can be null
 
   // Note: In Scala 3, java.lang.Integer IS scala.Int at the type level, but they differ at runtime
   // We provide boxed encoders with explicit names and lower priority to avoid ambiguity
-  given boxedBooleanEncoder: ProtoEncoder[java.lang.Boolean] = BoxedPrimitiveEncoder(ProtoType.BooleanType, classTag[java.lang.Boolean])
-  given boxedByteEncoder: ProtoEncoder[java.lang.Byte] = BoxedPrimitiveEncoder(ProtoType.ByteType, classTag[java.lang.Byte])
-  given boxedShortEncoder: ProtoEncoder[java.lang.Short] = BoxedPrimitiveEncoder(ProtoType.ShortType, classTag[java.lang.Short])
-  given boxedIntEncoder: ProtoEncoder[java.lang.Integer] = BoxedPrimitiveEncoder(ProtoType.IntType, classTag[java.lang.Integer])
-  given boxedLongEncoder: ProtoEncoder[java.lang.Long] = BoxedPrimitiveEncoder(ProtoType.LongType, classTag[java.lang.Long])
-  given boxedFloatEncoder: ProtoEncoder[java.lang.Float] = BoxedPrimitiveEncoder(ProtoType.FloatType, classTag[java.lang.Float])
-  given boxedDoubleEncoder: ProtoEncoder[java.lang.Double] = BoxedPrimitiveEncoder(ProtoType.DoubleType, classTag[java.lang.Double])
-  given boxedCharEncoder: ProtoEncoder[java.lang.Character] = BoxedPrimitiveEncoder(ProtoType.StringType, classTag[java.lang.Character])
+  given boxedBooleanEncoder: ProtoEncoder[java.lang.Boolean] =
+    BoxedPrimitiveEncoder(ProtoType.BooleanType, classTag[java.lang.Boolean])
+  given boxedByteEncoder: ProtoEncoder[java.lang.Byte] =
+    BoxedPrimitiveEncoder(ProtoType.ByteType, classTag[java.lang.Byte])
+  given boxedShortEncoder: ProtoEncoder[java.lang.Short] =
+    BoxedPrimitiveEncoder(ProtoType.ShortType, classTag[java.lang.Short])
+  given boxedIntEncoder: ProtoEncoder[java.lang.Integer] =
+    BoxedPrimitiveEncoder(ProtoType.IntType, classTag[java.lang.Integer])
+  given boxedLongEncoder: ProtoEncoder[java.lang.Long] =
+    BoxedPrimitiveEncoder(ProtoType.LongType, classTag[java.lang.Long])
+  given boxedFloatEncoder: ProtoEncoder[java.lang.Float] =
+    BoxedPrimitiveEncoder(ProtoType.FloatType, classTag[java.lang.Float])
+  given boxedDoubleEncoder: ProtoEncoder[java.lang.Double] =
+    BoxedPrimitiveEncoder(ProtoType.DoubleType, classTag[java.lang.Double])
+  given boxedCharEncoder: ProtoEncoder[java.lang.Character] =
+    BoxedPrimitiveEncoder(ProtoType.StringType, classTag[java.lang.Character])
 
   // Java BigDecimal and BigInteger
-  given javaBigDecimalEncoder: ProtoEncoder[java.math.BigDecimal] = BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[java.math.BigDecimal])
-  given javaBigIntegerEncoder: ProtoEncoder[java.math.BigInteger] = BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 0), classTag[java.math.BigInteger])
+  given javaBigDecimalEncoder: ProtoEncoder[java.math.BigDecimal] =
+    BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[java.math.BigDecimal])
+  given javaBigIntegerEncoder: ProtoEncoder[java.math.BigInteger] =
+    BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 0), classTag[java.math.BigInteger])
 
   // === Option encoder ===
 
@@ -324,7 +347,10 @@ object ProtoEncoder:
       ClassTag(classOf[Tuple5[?, ?, ?, ?, ?]])
     )
 
-  private def makeTupleEncoder[T](fieldEncoders: Vector[FieldEncoder[?]], ct: ClassTag[T]): ProtoEncoder[T] =
+  private def makeTupleEncoder[T](
+      fieldEncoders: Vector[FieldEncoder[?]],
+      ct: ClassTag[T]
+  ): ProtoEncoder[T] =
     val structFields = fieldEncoders.map { fe =>
       ProtoStructField(fe.name, fe.encoder.catalystType, fe.nullable)
     }
@@ -344,20 +370,29 @@ object ProtoEncoder:
   given setEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Set[T]] =
     CollectionEncoder(enc, ClassTag(classOf[Set[?]]))
 
-  given arrayEncoder[T](using enc: ProtoEncoder[T], ct: ClassTag[Array[T]]): ProtoEncoder[Array[T]] =
+  given arrayEncoder[T](using
+      enc: ProtoEncoder[T],
+      ct: ClassTag[Array[T]]
+  ): ProtoEncoder[Array[T]] =
     CollectionEncoder(enc, ct)
 
-  private class CollectionEncoder[C, T](enc: ProtoEncoder[T], val clsTag: ClassTag[C]) extends ProtoEncoder[C]:
+  private class CollectionEncoder[C, T](enc: ProtoEncoder[T], val clsTag: ClassTag[C])
+      extends ProtoEncoder[C]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.ArrayType(enc.catalystType, enc.nullable)
     val nullable: Boolean = false
 
-  given mapEncoder[K, V](using keyEnc: ProtoEncoder[K], valEnc: ProtoEncoder[V]): ProtoEncoder[Map[K, V]] =
+  given mapEncoder[K, V](using
+      keyEnc: ProtoEncoder[K],
+      valEnc: ProtoEncoder[V]
+  ): ProtoEncoder[Map[K, V]] =
     MapEncoder(keyEnc, valEnc)
 
-  private class MapEncoder[K, V](keyEnc: ProtoEncoder[K], valEnc: ProtoEncoder[V]) extends ProtoEncoder[Map[K, V]]:
+  private class MapEncoder[K, V](keyEnc: ProtoEncoder[K], valEnc: ProtoEncoder[V])
+      extends ProtoEncoder[Map[K, V]]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
-    val catalystType: ProtoType = ProtoType.MapType(keyEnc.catalystType, valEnc.catalystType, valEnc.nullable)
+    val catalystType: ProtoType =
+      ProtoType.MapType(keyEnc.catalystType, valEnc.catalystType, valEnc.nullable)
     val nullable: Boolean = false
     val clsTag: ClassTag[Map[K, V]] = ClassTag(classOf[Map[?, ?]])
 
@@ -366,45 +401,44 @@ object ProtoEncoder:
   given javaEnumEncoder[E <: java.lang.Enum[E]](using ct: ClassTag[E]): ProtoEncoder[E] =
     JavaEnumEncoder(ct)
 
-  private class JavaEnumEncoder[E <: java.lang.Enum[E]](val clsTag: ClassTag[E]) extends ProtoEncoder[E]:
+  private class JavaEnumEncoder[E <: java.lang.Enum[E]](val clsTag: ClassTag[E])
+      extends ProtoEncoder[E]:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.StringType // Java enums stored as strings
     val nullable: Boolean = false
 
   // === UDT (User-Defined Type) encoder ===
 
-  /**
-   * Create an encoder for a type with a ProtoUDT.
-   * The encoder wraps the UDT's sqlType with UDT metadata for proper serialization.
-   *
-   * Usage:
-   * {{{
-   * case class Point(x: Double, y: Double)
-   * object PointUDT extends ProtoUDT[Point] { ... }
-   *
-   * // Option 1: Explicit encoder creation
-   * given ProtoEncoder[Point] = ProtoEncoder.fromUDT(PointUDT)
-   *
-   * // Option 2: Use the udtEncoder given with implicit UDT
-   * given ProtoUDT[Point] = PointUDT
-   * val enc = summon[ProtoEncoder[Point]]  // Uses udtEncoder
-   * }}}
-   */
+  /** Create an encoder for a type with a ProtoUDT. The encoder wraps the UDT's sqlType with UDT
+    * metadata for proper serialization.
+    *
+    * Usage:
+    * {{{
+    * case class Point(x: Double, y: Double)
+    * object PointUDT extends ProtoUDT[Point] { ... }
+    *
+    * // Option 1: Explicit encoder creation
+    * given ProtoEncoder[Point] = ProtoEncoder.fromUDT(PointUDT)
+    *
+    * // Option 2: Use the udtEncoder given with implicit UDT
+    * given ProtoUDT[Point] = PointUDT
+    * val enc = summon[ProtoEncoder[Point]]  // Uses udtEncoder
+    * }}}
+    */
   def fromUDT[T >: Null](udt: ProtoUDT[T]): ProtoEncoder[T] =
     ProtoUDT.register(udt)
     UDTEncoder(udt)
 
-  /**
-   * Implicit encoder derivation for types with a ProtoUDT in scope.
-   * This allows automatic encoder creation when a UDT is available.
-   */
+  /** Implicit encoder derivation for types with a ProtoUDT in scope. This allows automatic encoder
+    * creation when a UDT is available.
+    */
   given udtEncoder[T >: Null](using udt: ProtoUDT[T]): ProtoEncoder[T] =
     fromUDT(udt)
 
   private class UDTEncoder[T >: Null](udt: ProtoUDT[T]) extends ProtoEncoder[T]:
     val schema: ProtoSchema = udt.sqlType match
       case ProtoType.StructType(fields) => ProtoSchema(fields)
-      case _ => ProtoSchema(Vector.empty)
+      case _                            => ProtoSchema(Vector.empty)
     val catalystType: ProtoType = udt.protoType
     val nullable: Boolean = udt.nullable
     val clsTag: ClassTag[T] = udt.classTag
@@ -415,4 +449,4 @@ object ProtoEncoder:
   /** Extract the UDT from an encoder if it's a UDT encoder. */
   def extractUDT[T >: Null](enc: ProtoEncoder[T]): Option[ProtoUDT[T]] = enc match
     case udtEnc: UDTEncoder[T @unchecked] => Some(udtEnc.protoUDT)
-    case _ => None
+    case _                                => None

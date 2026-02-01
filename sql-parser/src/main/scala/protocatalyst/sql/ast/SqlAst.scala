@@ -3,24 +3,24 @@ package protocatalyst.sql.ast
 /** SQL statement AST. */
 enum SqlStatement:
   case SelectStatement(
-    distinct: Boolean,
-    projections: Vector[Projection],
-    from: FromClause,
-    where: Option[SqlExpr],
-    groupBy: Vector[SqlExpr],
-    having: Option[SqlExpr],
-    orderBy: Vector[OrderSpec],
-    limit: Option[Long]
+      distinct: Boolean,
+      projections: Vector[Projection],
+      from: FromClause,
+      where: Option[SqlExpr],
+      groupBy: Vector[SqlExpr],
+      having: Option[SqlExpr],
+      orderBy: Vector[OrderSpec],
+      limit: Option[Long]
   )
   case CompoundStatement(
-    left: SqlStatement,
-    op: SetOperation,
-    right: SqlStatement
+      left: SqlStatement,
+      op: SetOperation,
+      right: SqlStatement
   )
   case WithStatement(
-    ctes: Vector[CteDefinition],
-    recursive: Boolean,
-    query: SqlStatement
+      ctes: Vector[CteDefinition],
+      recursive: Boolean,
+      query: SqlStatement
   )
 
 /** CTE (Common Table Expression) definition. */

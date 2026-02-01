@@ -60,31 +60,37 @@ class ConverterSuite extends munit.FunSuite:
       true
     )
     assertEquals(
-      ExpressionConverter.toMock(ProtoExpr.GtEq(left, right)).isInstanceOf[MockExpression.GreaterThanOrEqual],
+      ExpressionConverter
+        .toMock(ProtoExpr.GtEq(left, right))
+        .isInstanceOf[MockExpression.GreaterThanOrEqual],
       true
     )
 
   test("convert And expression"):
-    val proto = ProtoExpr.And(Vector(
-      ProtoExpr.lit(true),
-      ProtoExpr.lit(false)
-    ))
+    val proto = ProtoExpr.And(
+      Vector(
+        ProtoExpr.lit(true),
+        ProtoExpr.lit(false)
+      )
+    )
     val mock = ExpressionConverter.toMock(proto)
 
     mock match
       case MockExpression.And(_, _) => () // ok
-      case other => fail(s"Expected And, got $other")
+      case other                    => fail(s"Expected And, got $other")
 
   test("convert Or expression"):
-    val proto = ProtoExpr.Or(Vector(
-      ProtoExpr.lit(true),
-      ProtoExpr.lit(false)
-    ))
+    val proto = ProtoExpr.Or(
+      Vector(
+        ProtoExpr.lit(true),
+        ProtoExpr.lit(false)
+      )
+    )
     val mock = ExpressionConverter.toMock(proto)
 
     mock match
       case MockExpression.Or(_, _) => () // ok
-      case other => fail(s"Expected Or, got $other")
+      case other                   => fail(s"Expected Or, got $other")
 
   test("convert Not expression"):
     val proto = ProtoExpr.Not(ProtoExpr.lit(true))
@@ -92,7 +98,7 @@ class ConverterSuite extends munit.FunSuite:
 
     mock match
       case MockExpression.Not(_) => () // ok
-      case other => fail(s"Expected Not, got $other")
+      case other                 => fail(s"Expected Not, got $other")
 
   test("convert IsNull and IsNotNull"):
     val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, true)
@@ -108,14 +114,20 @@ class ConverterSuite extends munit.FunSuite:
     val b = ProtoExpr.lit(3)
 
     assert(ExpressionConverter.toMock(ProtoExpr.Add(a, b)).isInstanceOf[MockExpression.Add])
-    assert(ExpressionConverter.toMock(ProtoExpr.Subtract(a, b)).isInstanceOf[MockExpression.Subtract])
-    assert(ExpressionConverter.toMock(ProtoExpr.Multiply(a, b)).isInstanceOf[MockExpression.Multiply])
+    assert(
+      ExpressionConverter.toMock(ProtoExpr.Subtract(a, b)).isInstanceOf[MockExpression.Subtract]
+    )
+    assert(
+      ExpressionConverter.toMock(ProtoExpr.Multiply(a, b)).isInstanceOf[MockExpression.Multiply]
+    )
     assert(ExpressionConverter.toMock(ProtoExpr.Divide(a, b)).isInstanceOf[MockExpression.Divide])
 
   test("convert aggregate expressions"):
     val col = ProtoExpr.ColumnRef("amount", None, ProtoType.DoubleType, false)
 
-    assert(ExpressionConverter.toMock(ProtoExpr.Count(col, false)).isInstanceOf[MockExpression.Count])
+    assert(
+      ExpressionConverter.toMock(ProtoExpr.Count(col, false)).isInstanceOf[MockExpression.Count]
+    )
     assert(ExpressionConverter.toMock(ProtoExpr.Sum(col)).isInstanceOf[MockExpression.Sum])
     assert(ExpressionConverter.toMock(ProtoExpr.Avg(col)).isInstanceOf[MockExpression.Avg])
     assert(ExpressionConverter.toMock(ProtoExpr.Min(col)).isInstanceOf[MockExpression.Min])
@@ -159,16 +171,23 @@ class ConverterSuite extends munit.FunSuite:
     assert(ExpressionConverter.toMock(ProtoExpr.DenseRank()).isInstanceOf[MockExpression.DenseRank])
 
   test("expression roundtrip - complex expression"):
-    val proto = ProtoExpr.And(Vector(
-      ProtoExpr.Eq(
-        ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false),
-        ProtoExpr.lit(30)
-      ),
-      ProtoExpr.Or(Vector(
-        ProtoExpr.IsNotNull(ProtoExpr.ColumnRef("name", None, ProtoType.StringType, true)),
-        ProtoExpr.GtEq(ProtoExpr.ColumnRef("salary", None, ProtoType.DoubleType, false), ProtoExpr.lit(50000.0))
-      ))
-    ))
+    val proto = ProtoExpr.And(
+      Vector(
+        ProtoExpr.Eq(
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false),
+          ProtoExpr.lit(30)
+        ),
+        ProtoExpr.Or(
+          Vector(
+            ProtoExpr.IsNotNull(ProtoExpr.ColumnRef("name", None, ProtoType.StringType, true)),
+            ProtoExpr.GtEq(
+              ProtoExpr.ColumnRef("salary", None, ProtoType.DoubleType, false),
+              ProtoExpr.lit(50000.0)
+            )
+          )
+        )
+      )
+    )
 
     val mock = ExpressionConverter.toMock(proto)
     val back = ExpressionConverter.fromMock(mock)
@@ -250,10 +269,12 @@ class ConverterSuite extends munit.FunSuite:
       ProtoLogicalPlan.RelationRef("users", None, usersSchema),
       ProtoLogicalPlan.RelationRef("orders", None, ordersSchema),
       JoinType.Inner,
-      Some(ProtoExpr.Eq(
-        ProtoExpr.ColumnRef("id", Some("users"), ProtoType.IntType, false),
-        ProtoExpr.ColumnRef("user_id", Some("orders"), ProtoType.IntType, false)
-      ))
+      Some(
+        ProtoExpr.Eq(
+          ProtoExpr.ColumnRef("id", Some("users"), ProtoType.IntType, false),
+          ProtoExpr.ColumnRef("user_id", Some("orders"), ProtoType.IntType, false)
+        )
+      )
     )
 
     val mock = PlanConverter.toMock(proto)
@@ -268,11 +289,13 @@ class ConverterSuite extends munit.FunSuite:
   test("convert Sort"):
     val schema = SchemaContract("users", Vector.empty, SchemaFingerprint.fromLong(0L))
     val proto = ProtoLogicalPlan.Sort(
-      Vector(SortOrder(
-        ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false),
-        SortDirection.Descending,
-        NullOrdering.NullsLast
-      )),
+      Vector(
+        SortOrder(
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false),
+          SortDirection.Descending,
+          NullOrdering.NullsLast
+        )
+      ),
       true,
       ProtoLogicalPlan.RelationRef("users", None, schema)
     )
@@ -295,7 +318,7 @@ class ConverterSuite extends munit.FunSuite:
 
     mock match
       case MockLogicalPlan.GlobalLimit(MockExpression.Literal(100, _), _) => () // ok
-      case other =>
+      case other                                                          =>
         fail(s"Expected GlobalLimit, got $other")
 
   test("convert Union"):
@@ -330,7 +353,7 @@ class ConverterSuite extends munit.FunSuite:
 
     mock match
       case MockLogicalPlan.SubqueryAlias("u", _) => () // ok
-      case other =>
+      case other                                 =>
         fail(s"Expected SubqueryAlias with alias 'u', got $other")
 
   test("plan roundtrip - simple query"):
@@ -358,7 +381,7 @@ class ConverterSuite extends munit.FunSuite:
     // Structure should be preserved
     back match
       case ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, _)) => () // ok
-      case other =>
+      case other                                                      =>
         fail(s"Expected Project(Filter(...)), got $other")
 
   // ============================================

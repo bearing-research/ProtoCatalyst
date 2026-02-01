@@ -6,12 +6,11 @@ import org.apache.arrow.vector.types.*
 import org.apache.arrow.vector.types.pojo.*
 import scala.jdk.CollectionConverters.*
 
-/**
- * Bidirectional conversion between ProtoCatalyst schema types and Apache Arrow schema types.
- *
- * This converter handles the mapping between ProtoType (compile-time type representation)
- * and Arrow's type system for columnar data.
- */
+/** Bidirectional conversion between ProtoCatalyst schema types and Apache Arrow schema types.
+  *
+  * This converter handles the mapping between ProtoType (compile-time type representation) and
+  * Arrow's type system for columnar data.
+  */
 object ArrowSchemaConverter:
 
   // ============================================================
@@ -32,23 +31,23 @@ object ArrowSchemaConverter:
   /** Convert ProtoType to Arrow ArrowType */
   def toArrowType(pt: ProtoType): ArrowType = pt match
     // Primitives
-    case ProtoType.BooleanType      => ArrowType.Bool.INSTANCE
-    case ProtoType.ByteType         => new ArrowType.Int(8, true)
-    case ProtoType.ShortType        => new ArrowType.Int(16, true)
-    case ProtoType.IntType          => new ArrowType.Int(32, true)
-    case ProtoType.LongType         => new ArrowType.Int(64, true)
-    case ProtoType.FloatType        => new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE)
-    case ProtoType.DoubleType       => new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)
-    case ProtoType.StringType       => ArrowType.Utf8.INSTANCE
-    case ProtoType.BinaryType       => ArrowType.Binary.INSTANCE
+    case ProtoType.BooleanType => ArrowType.Bool.INSTANCE
+    case ProtoType.ByteType    => new ArrowType.Int(8, true)
+    case ProtoType.ShortType   => new ArrowType.Int(16, true)
+    case ProtoType.IntType     => new ArrowType.Int(32, true)
+    case ProtoType.LongType    => new ArrowType.Int(64, true)
+    case ProtoType.FloatType   => new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE)
+    case ProtoType.DoubleType  => new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)
+    case ProtoType.StringType  => ArrowType.Utf8.INSTANCE
+    case ProtoType.BinaryType  => ArrowType.Binary.INSTANCE
 
     // Temporal
-    case ProtoType.DateType         => new ArrowType.Date(DateUnit.DAY)
-    case ProtoType.TimestampType    => new ArrowType.Timestamp(TimeUnit.MICROSECOND, "UTC")
-    case ProtoType.TimestampNTZType => new ArrowType.Timestamp(TimeUnit.MICROSECOND, null)
-    case ProtoType.DayTimeIntervalType => new ArrowType.Duration(TimeUnit.MICROSECOND)
+    case ProtoType.DateType              => new ArrowType.Date(DateUnit.DAY)
+    case ProtoType.TimestampType         => new ArrowType.Timestamp(TimeUnit.MICROSECOND, "UTC")
+    case ProtoType.TimestampNTZType      => new ArrowType.Timestamp(TimeUnit.MICROSECOND, null)
+    case ProtoType.DayTimeIntervalType   => new ArrowType.Duration(TimeUnit.MICROSECOND)
     case ProtoType.YearMonthIntervalType => new ArrowType.Interval(IntervalUnit.YEAR_MONTH)
-    case ProtoType.TimeType(precision) =>
+    case ProtoType.TimeType(precision)   =>
       // TimeType stores microseconds since midnight
       new ArrowType.Time(TimeUnit.MICROSECOND, 64) // 64-bit time with microsecond precision
     case ProtoType.CalendarIntervalType =>
@@ -71,8 +70,8 @@ object ArrowSchemaConverter:
     case ProtoType.StructType(_)    => ArrowType.Struct.INSTANCE
 
     // Special types
-    case ProtoType.UDTType(_, sqlType) => toArrowType(sqlType)
-    case ProtoType.SumType(_, _)       => ArrowType.Struct.INSTANCE
+    case ProtoType.UDTType(_, sqlType)  => toArrowType(sqlType)
+    case ProtoType.SumType(_, _)        => ArrowType.Struct.INSTANCE
     case ProtoType.UnresolvedType(hint) =>
       throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")
 
@@ -157,23 +156,27 @@ object ArrowSchemaConverter:
         case (16, true) => ProtoType.ShortType
         case (32, true) => ProtoType.IntType
         case (64, true) => ProtoType.LongType
-        case _ => ProtoType.UnresolvedType(s"Unsupported int type: ${i.getBitWidth}-bit, signed=${i.getIsSigned}")
+        case _          =>
+          ProtoType.UnresolvedType(
+            s"Unsupported int type: ${i.getBitWidth}-bit, signed=${i.getIsSigned}"
+          )
 
     // Floating point
     case fp: ArrowType.FloatingPoint =>
       fp.getPrecision match
         case FloatingPointPrecision.SINGLE => ProtoType.FloatType
         case FloatingPointPrecision.DOUBLE => ProtoType.DoubleType
-        case _ => ProtoType.UnresolvedType(s"Unsupported floating point precision: ${fp.getPrecision}")
+        case _                             =>
+          ProtoType.UnresolvedType(s"Unsupported floating point precision: ${fp.getPrecision}")
 
     // String and Binary
-    case ArrowType.Utf8.INSTANCE      => ProtoType.StringType
-    case ArrowType.LargeUtf8.INSTANCE => ProtoType.StringType
-    case ArrowType.Binary.INSTANCE    => ProtoType.BinaryType
+    case ArrowType.Utf8.INSTANCE        => ProtoType.StringType
+    case ArrowType.LargeUtf8.INSTANCE   => ProtoType.StringType
+    case ArrowType.Binary.INSTANCE      => ProtoType.BinaryType
     case ArrowType.LargeBinary.INSTANCE => ProtoType.BinaryType
 
     // Date and Timestamp
-    case _: ArrowType.Date => ProtoType.DateType
+    case _: ArrowType.Date       => ProtoType.DateType
     case ts: ArrowType.Timestamp =>
       if ts.getTimezone != null then ProtoType.TimestampType
       else ProtoType.TimestampNTZType
@@ -183,7 +186,7 @@ object ArrowSchemaConverter:
     case i: ArrowType.Interval =>
       i.getUnit match
         case IntervalUnit.YEAR_MONTH => ProtoType.YearMonthIntervalType
-        case _ => ProtoType.DayTimeIntervalType
+        case _                       => ProtoType.DayTimeIntervalType
 
     // Decimal
     case d: ArrowType.Decimal =>

@@ -8,11 +8,11 @@ import protocatalyst.query.*
 import protocatalyst.schema.*
 import protocatalyst.types.*
 
-/**
- * Type-safe query builder.
- *
- * @tparam A The row type of this query's output
- */
+/** Type-safe query builder.
+  *
+  * @tparam A
+  *   The row type of this query's output
+  */
 class Query[A] private[dsl] (
     private[dsl] val plan: ProtoLogicalPlan,
     private[dsl] val outputEncoder: ProtoEncoder[A],
@@ -196,9 +196,8 @@ class Query[A] private[dsl] (
     val contractHash = contracts.map(_.fingerprint.toLong).sum
     planHash * 31 + contractHash
 
-/**
- * Grouped query for aggregation.
- */
+/** Grouped query for aggregation.
+  */
 final class GroupedQuery[A, K] private[dsl] (
     private val plan: ProtoLogicalPlan,
     private val inputEncoder: ProtoEncoder[A],
@@ -217,16 +216,17 @@ final class GroupedQuery[A, K] private[dsl] (
       schemaContracts
     )
 
-/**
- * Join builder for specifying join conditions.
- */
+/** Join builder for specifying join conditions.
+  */
 final class JoinBuilder[A, B] private[dsl] (
     private val left: Query[A],
     private val right: Query[B],
     private val joinType: JoinType
 ):
   /** Specify join condition */
-  def on(condition: Expr[Boolean])(using encA: ProtoEncoder[A], encB: ProtoEncoder[B]): Query[(A, B)] =
+  def on(
+      condition: Expr[Boolean]
+  )(using encA: ProtoEncoder[A], encB: ProtoEncoder[B]): Query[(A, B)] =
     given ProtoEncoder[(A, B)] = ProtoEncoder.tuple2Encoder(using encA, encB)
     new Query(
       ProtoLogicalPlan.Join(left.plan, right.plan, joinType, Some(condition.toProtoExpr)),
@@ -234,9 +234,8 @@ final class JoinBuilder[A, B] private[dsl] (
       left.schemaContracts ++ right.schemaContracts
     )
 
-/**
- * Sort expression with direction.
- */
+/** Sort expression with direction.
+  */
 final class SortExpr private[dsl] (
     private val expr: ProtoExpr,
     private val direction: SortDirection,
@@ -245,8 +244,10 @@ final class SortExpr private[dsl] (
   def toSortOrder: SortOrder = SortOrder(expr, direction, nullOrdering)
 
 extension [A](expr: Expr[A])
-  def asc: SortExpr = new SortExpr(expr.toProtoExpr, SortDirection.Ascending, NullOrdering.NullsLast)
-  def desc: SortExpr = new SortExpr(expr.toProtoExpr, SortDirection.Descending, NullOrdering.NullsFirst)
+  def asc: SortExpr =
+    new SortExpr(expr.toProtoExpr, SortDirection.Ascending, NullOrdering.NullsLast)
+  def desc: SortExpr =
+    new SortExpr(expr.toProtoExpr, SortDirection.Descending, NullOrdering.NullsFirst)
   def ascNullsFirst: SortExpr =
     new SortExpr(expr.toProtoExpr, SortDirection.Ascending, NullOrdering.NullsFirst)
   def descNullsLast: SortExpr =

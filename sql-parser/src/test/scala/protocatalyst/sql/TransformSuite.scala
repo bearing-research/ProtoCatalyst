@@ -15,11 +15,13 @@ class TransformSuite extends munit.FunSuite:
     case s: SqlStatement.SelectStatement => s
     case _ => fail("Expected SelectStatement").asInstanceOf[SqlStatement.SelectStatement]
 
-  val userSchema = ProtoSchema(Vector(
-    ProtoStructField("name", ProtoType.StringType, nullable = false),
-    ProtoStructField("age", ProtoType.IntType, nullable = false),
-    ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
-  ))
+  val userSchema = ProtoSchema(
+    Vector(
+      ProtoStructField("name", ProtoType.StringType, nullable = false),
+      ProtoStructField("age", ProtoType.IntType, nullable = false),
+      ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
+    )
+  )
 
   test("transforms simple SELECT"):
     val stmt = asSelect(SqlParser.parse("SELECT name FROM users").toOption.get)
@@ -48,12 +50,12 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight)
 
     def findFilter(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Filter] = plan match
-      case f @ ProtoLogicalPlan.Filter(_, _) => Some(f)
+      case f @ ProtoLogicalPlan.Filter(_, _)  => Some(f)
       case ProtoLogicalPlan.Project(_, child) => findFilter(child)
       case ProtoLogicalPlan.Sort(_, _, child) => findFilter(child)
-      case ProtoLogicalPlan.Limit(_, child) => findFilter(child)
-      case ProtoLogicalPlan.Distinct(child) => findFilter(child)
-      case _ => None
+      case ProtoLogicalPlan.Limit(_, child)   => findFilter(child)
+      case ProtoLogicalPlan.Distinct(child)   => findFilter(child)
+      case _                                  => None
 
     findFilter(result.toOption.get) match
       case Some(ProtoLogicalPlan.Filter(ProtoExpr.Gt(_, _), _)) => () // ok
@@ -67,8 +69,8 @@ class TransformSuite extends munit.FunSuite:
 
     def findSort(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Sort] = plan match
       case s @ ProtoLogicalPlan.Sort(_, _, _) => Some(s)
-      case ProtoLogicalPlan.Limit(_, child) => findSort(child)
-      case _ => None
+      case ProtoLogicalPlan.Limit(_, child)   => findSort(child)
+      case _                                  => None
 
     findSort(result.toOption.get) match
       case Some(ProtoLogicalPlan.Sort(orders, true, _)) =>
@@ -83,7 +85,7 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight)
     result.toOption.get match
       case ProtoLogicalPlan.Limit(10, _) => () // ok
-      case _ => fail("Expected Limit plan")
+      case _                             => fail("Expected Limit plan")
 
   test("transforms DISTINCT"):
     val stmt = asSelect(SqlParser.parse("SELECT DISTINCT name FROM users").toOption.get)
@@ -92,44 +94,47 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight)
 
     def hasDistinct(plan: ProtoLogicalPlan): Boolean = plan match
-      case ProtoLogicalPlan.Distinct(_) => true
+      case ProtoLogicalPlan.Distinct(_)       => true
       case ProtoLogicalPlan.Project(_, child) => hasDistinct(child)
-      case ProtoLogicalPlan.Filter(_, child) => hasDistinct(child)
+      case ProtoLogicalPlan.Filter(_, child)  => hasDistinct(child)
       case ProtoLogicalPlan.Sort(_, _, child) => hasDistinct(child)
-      case ProtoLogicalPlan.Limit(_, child) => hasDistinct(child)
-      case _ => false
+      case ProtoLogicalPlan.Limit(_, child)   => hasDistinct(child)
+      case _                                  => false
 
     assert(hasDistinct(result.toOption.get))
 
   test("transforms AND expression"):
-    val stmt = asSelect(SqlParser.parse("SELECT name FROM users WHERE age > 18 AND salary > 50000").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT name FROM users WHERE age > 18 AND salary > 50000").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
 
     def findFilter(plan: ProtoLogicalPlan): Option[ProtoExpr] = plan match
-      case ProtoLogicalPlan.Filter(cond, _) => Some(cond)
+      case ProtoLogicalPlan.Filter(cond, _)   => Some(cond)
       case ProtoLogicalPlan.Project(_, child) => findFilter(child)
-      case _ => None
+      case _                                  => None
 
     findFilter(result.toOption.get) match
       case Some(ProtoExpr.And(_)) => () // ok
-      case other => fail(s"Expected And expression, got $other")
+      case other                  => fail(s"Expected And expression, got $other")
 
   test("transforms OR expression"):
-    val stmt = asSelect(SqlParser.parse("SELECT name FROM users WHERE age < 18 OR age > 65").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT name FROM users WHERE age < 18 OR age > 65").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
 
     def findFilter(plan: ProtoLogicalPlan): Option[ProtoExpr] = plan match
-      case ProtoLogicalPlan.Filter(cond, _) => Some(cond)
+      case ProtoLogicalPlan.Filter(cond, _)   => Some(cond)
       case ProtoLogicalPlan.Project(_, child) => findFilter(child)
-      case _ => None
+      case _                                  => None
 
     findFilter(result.toOption.get) match
       case Some(ProtoExpr.Or(_)) => () // ok
-      case other => fail(s"Expected Or expression, got $other")
+      case other                 => fail(s"Expected Or expression, got $other")
 
   test("transforms comparison operators"):
     val operators = Vector(
@@ -147,11 +152,13 @@ class TransformSuite extends munit.FunSuite:
       assert(result.isRight, s"Failed for operator $op")
 
   test("transforms IS NULL"):
-    val schemaWithNullable = ProtoSchema(Vector(
-      ProtoStructField("name", ProtoType.StringType, nullable = true),
-      ProtoStructField("age", ProtoType.IntType, nullable = false),
-      ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
-    ))
+    val schemaWithNullable = ProtoSchema(
+      Vector(
+        ProtoStructField("name", ProtoType.StringType, nullable = true),
+        ProtoStructField("age", ProtoType.IntType, nullable = false),
+        ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
+      )
+    )
 
     val stmt = asSelect(SqlParser.parse("SELECT age FROM users WHERE name IS NULL").toOption.get)
     val result = AstToProtoTransform.transform(stmt, schemaWithNullable, "users")
@@ -159,13 +166,13 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight)
 
     def findFilter(plan: ProtoLogicalPlan): Option[ProtoExpr] = plan match
-      case ProtoLogicalPlan.Filter(cond, _) => Some(cond)
+      case ProtoLogicalPlan.Filter(cond, _)   => Some(cond)
       case ProtoLogicalPlan.Project(_, child) => findFilter(child)
-      case _ => None
+      case _                                  => None
 
     findFilter(result.toOption.get) match
       case Some(ProtoExpr.IsNull(_)) => () // ok
-      case other => fail(s"Expected IsNull expression, got $other")
+      case other                     => fail(s"Expected IsNull expression, got $other")
 
   test("fails on unknown column"):
     val stmt = asSelect(SqlParser.parse("SELECT unknown FROM users").toOption.get)
@@ -192,19 +199,20 @@ class TransformSuite extends munit.FunSuite:
   // Phase 4 - GROUP BY and HAVING tests
 
   test("transforms simple GROUP BY"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, COUNT(*) FROM users GROUP BY name").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT name, COUNT(*) FROM users GROUP BY name").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
 
     def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
       case a @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(a)
-      case ProtoLogicalPlan.Project(_, child) => findAggregate(child)
-      case ProtoLogicalPlan.Filter(_, child) => findAggregate(child)
-      case ProtoLogicalPlan.Sort(_, _, child) => findAggregate(child)
-      case ProtoLogicalPlan.Limit(_, child) => findAggregate(child)
-      case ProtoLogicalPlan.Distinct(child) => findAggregate(child)
-      case _ => None
+      case ProtoLogicalPlan.Project(_, child)      => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)       => findAggregate(child)
+      case ProtoLogicalPlan.Sort(_, _, child)      => findAggregate(child)
+      case ProtoLogicalPlan.Limit(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Distinct(child)        => findAggregate(child)
+      case _                                       => None
 
     findAggregate(result.toOption.get) match
       case Some(ProtoLogicalPlan.Aggregate(groupingExprs, aggregateExprs, _)) =>
@@ -213,19 +221,21 @@ class TransformSuite extends munit.FunSuite:
       case _ => fail("Expected Aggregate plan")
 
   test("transforms GROUP BY with multiple columns"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, age, COUNT(*) FROM users GROUP BY name, age").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT name, age, COUNT(*) FROM users GROUP BY name, age").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
 
     def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
       case a @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(a)
-      case ProtoLogicalPlan.Project(_, child) => findAggregate(child)
-      case ProtoLogicalPlan.Filter(_, child) => findAggregate(child)
-      case ProtoLogicalPlan.Sort(_, _, child) => findAggregate(child)
-      case ProtoLogicalPlan.Limit(_, child) => findAggregate(child)
-      case ProtoLogicalPlan.Distinct(child) => findAggregate(child)
-      case _ => None
+      case ProtoLogicalPlan.Project(_, child)      => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)       => findAggregate(child)
+      case ProtoLogicalPlan.Sort(_, _, child)      => findAggregate(child)
+      case ProtoLogicalPlan.Limit(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Distinct(child)        => findAggregate(child)
+      case _                                       => None
 
     findAggregate(result.toOption.get) match
       case Some(ProtoLogicalPlan.Aggregate(groupingExprs, _, _)) =>
@@ -233,7 +243,12 @@ class TransformSuite extends munit.FunSuite:
       case _ => fail("Expected Aggregate plan with 2 grouping expressions")
 
   test("transforms GROUP BY with HAVING"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, COUNT(*) FROM users GROUP BY name HAVING COUNT(*) > 5").toOption.get)
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, COUNT(*) FROM users GROUP BY name HAVING COUNT(*) > 5")
+        .toOption
+        .get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
@@ -242,14 +257,18 @@ class TransformSuite extends munit.FunSuite:
     def findFilterAfterAggregate(plan: ProtoLogicalPlan): Boolean = plan match
       case ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.Aggregate(_, _, _)) => true
       case ProtoLogicalPlan.Sort(_, _, child) => findFilterAfterAggregate(child)
-      case ProtoLogicalPlan.Limit(_, child) => findFilterAfterAggregate(child)
-      case ProtoLogicalPlan.Distinct(child) => findFilterAfterAggregate(child)
-      case _ => false
+      case ProtoLogicalPlan.Limit(_, child)   => findFilterAfterAggregate(child)
+      case ProtoLogicalPlan.Distinct(child)   => findFilterAfterAggregate(child)
+      case _                                  => false
 
-    assert(findFilterAfterAggregate(result.toOption.get), "Expected Filter (HAVING) after Aggregate")
+    assert(
+      findFilterAfterAggregate(result.toOption.get),
+      "Expected Filter (HAVING) after Aggregate"
+    )
 
   test("transforms SUM aggregate"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, SUM(salary) FROM users GROUP BY name").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT name, SUM(salary) FROM users GROUP BY name").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
@@ -258,18 +277,23 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Aggregate(_, aggregateExprs, _) =>
         aggregateExprs.exists {
           case ProtoExpr.Sum(_) => true
-          case _ => false
+          case _                => false
         }
       case ProtoLogicalPlan.Project(_, child) => findSum(child)
-      case ProtoLogicalPlan.Filter(_, child) => findSum(child)
+      case ProtoLogicalPlan.Filter(_, child)  => findSum(child)
       case ProtoLogicalPlan.Sort(_, _, child) => findSum(child)
-      case ProtoLogicalPlan.Limit(_, child) => findSum(child)
-      case _ => false
+      case ProtoLogicalPlan.Limit(_, child)   => findSum(child)
+      case _                                  => false
 
     assert(findSum(result.toOption.get), "Expected SUM aggregate")
 
   test("transforms AVG, MIN, MAX aggregates"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, AVG(age), MIN(age), MAX(age) FROM users GROUP BY name").toOption.get)
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, AVG(age), MIN(age), MAX(age) FROM users GROUP BY name")
+        .toOption
+        .get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
@@ -278,20 +302,25 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Aggregate(_, aggregateExprs, _) =>
         aggregateExprs.count {
           case ProtoExpr.Avg(_) | ProtoExpr.Min(_) | ProtoExpr.Max(_) => true
-          case _ => false
+          case _                                                      => false
         }
       case ProtoLogicalPlan.Project(_, child) => countAggregates(child)
-      case ProtoLogicalPlan.Filter(_, child) => countAggregates(child)
+      case ProtoLogicalPlan.Filter(_, child)  => countAggregates(child)
       case ProtoLogicalPlan.Sort(_, _, child) => countAggregates(child)
-      case ProtoLogicalPlan.Limit(_, child) => countAggregates(child)
-      case _ => 0
+      case ProtoLogicalPlan.Limit(_, child)   => countAggregates(child)
+      case _                                  => 0
 
     assertEquals(countAggregates(result.toOption.get), 3)
 
   // Phase 5 - CASE WHEN and CAST tests
 
   test("transforms CASE WHEN expression"):
-    val stmt = asSelect(SqlParser.parse("SELECT CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END FROM users")
+        .toOption
+        .get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
@@ -300,10 +329,10 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Project(exprs, _) =>
         exprs.exists {
           case ProtoExpr.CaseWhen(_, _) => true
-          case _ => false
+          case _                        => false
         }
       case ProtoLogicalPlan.Filter(_, child) => findCaseWhen(child)
-      case _ => false
+      case _                                 => false
 
     assert(findCaseWhen(result.toOption.get), "Expected CaseWhen in projection")
 
@@ -317,14 +346,16 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Project(exprs, _) =>
         exprs.exists {
           case ProtoExpr.Cast(_, ProtoType.DoubleType) => true
-          case _ => false
+          case _                                       => false
         }
       case _ => false
 
     assert(findCast(result.toOption.get), "Expected Cast to DoubleType in projection")
 
   test("transforms CAST to different types"):
-    val stmt = asSelect(SqlParser.parse("SELECT CAST(name AS STRING), CAST(age AS BIGINT) FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT CAST(name AS STRING), CAST(age AS BIGINT) FROM users").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight)
@@ -333,7 +364,7 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Project(exprs, _) =>
         exprs.count {
           case ProtoExpr.Cast(_, _) => true
-          case _ => false
+          case _                    => false
         }
       case _ => 0
 
@@ -353,7 +384,8 @@ class TransformSuite extends munit.FunSuite:
       case other => fail(s"Expected Union plan, got $other")
 
   test("transforms UNION ALL"):
-    val stmt = SqlParser.parse("SELECT name FROM users UNION ALL SELECT name FROM users").toOption.get
+    val stmt =
+      SqlParser.parse("SELECT name FROM users UNION ALL SELECT name FROM users").toOption.get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -364,7 +396,8 @@ class TransformSuite extends munit.FunSuite:
       case other => fail(s"Expected Union plan, got $other")
 
   test("transforms INTERSECT"):
-    val stmt = SqlParser.parse("SELECT name FROM users INTERSECT SELECT name FROM users").toOption.get
+    val stmt =
+      SqlParser.parse("SELECT name FROM users INTERSECT SELECT name FROM users").toOption.get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -375,7 +408,8 @@ class TransformSuite extends munit.FunSuite:
       case other => fail(s"Expected Intersect plan, got $other")
 
   test("transforms INTERSECT ALL"):
-    val stmt = SqlParser.parse("SELECT name FROM users INTERSECT ALL SELECT name FROM users").toOption.get
+    val stmt =
+      SqlParser.parse("SELECT name FROM users INTERSECT ALL SELECT name FROM users").toOption.get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -397,7 +431,8 @@ class TransformSuite extends munit.FunSuite:
       case other => fail(s"Expected Except plan, got $other")
 
   test("transforms EXCEPT ALL"):
-    val stmt = SqlParser.parse("SELECT name FROM users EXCEPT ALL SELECT name FROM users").toOption.get
+    val stmt =
+      SqlParser.parse("SELECT name FROM users EXCEPT ALL SELECT name FROM users").toOption.get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -408,7 +443,10 @@ class TransformSuite extends munit.FunSuite:
       case other => fail(s"Expected Except plan, got $other")
 
   test("transforms chained set operations"):
-    val stmt = SqlParser.parse("SELECT name FROM users UNION SELECT name FROM users UNION SELECT name FROM users").toOption.get
+    val stmt = SqlParser
+      .parse("SELECT name FROM users UNION SELECT name FROM users UNION SELECT name FROM users")
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -423,7 +461,12 @@ class TransformSuite extends munit.FunSuite:
     assertEquals(countUnions(result.toOption.get), 2)
 
   test("transforms set operation with WHERE clause"):
-    val stmt = SqlParser.parse("SELECT name FROM users WHERE age > 18 UNION SELECT name FROM users WHERE salary > 50000").toOption.get
+    val stmt = SqlParser
+      .parse(
+        "SELECT name FROM users WHERE age > 18 UNION SELECT name FROM users WHERE salary > 50000"
+      )
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -433,16 +476,17 @@ class TransformSuite extends munit.FunSuite:
         assertEquals(children.size, 2)
         // Both children should contain filters
         def hasFilter(plan: ProtoLogicalPlan): Boolean = plan match
-          case ProtoLogicalPlan.Filter(_, _) => true
+          case ProtoLogicalPlan.Filter(_, _)      => true
           case ProtoLogicalPlan.Project(_, child) => hasFilter(child)
-          case _ => false
+          case _                                  => false
         assert(children.forall(hasFilter), "Expected both sides to have filters")
       case other => fail(s"Expected Union plan, got $other")
 
   // Note: ORDER BY/LIMIT after set operations requires special handling
   // to apply to the compound result. Testing basic set operations for now.
   test("transforms UNION with multiple projections"):
-    val stmt = SqlParser.parse("SELECT name, age FROM users UNION SELECT name, age FROM users").toOption.get
+    val stmt =
+      SqlParser.parse("SELECT name, age FROM users UNION SELECT name, age FROM users").toOption.get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -455,7 +499,9 @@ class TransformSuite extends munit.FunSuite:
   // Phase 8 - Window Functions tests
 
   test("transforms ROW_NUMBER window function"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, ROW_NUMBER() OVER (ORDER BY age) FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT name, ROW_NUMBER() OVER (ORDER BY age) FROM users").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -464,14 +510,16 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Project(exprs, _) =>
         exprs.exists {
           case ProtoExpr.WindowExpr(ProtoExpr.RowNumber(), _, _, _) => true
-          case _ => false
+          case _                                                    => false
         }
       case _ => false
 
     assert(findWindowExpr(result.toOption.get), "Expected WindowExpr with RowNumber")
 
   test("transforms RANK window function"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, RANK() OVER (ORDER BY salary DESC) FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT name, RANK() OVER (ORDER BY salary DESC) FROM users").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -488,7 +536,9 @@ class TransformSuite extends munit.FunSuite:
     assert(findWindowExpr(result.toOption.get), "Expected WindowExpr with Rank and DESC order")
 
   test("transforms SUM window function with PARTITION BY"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, SUM(salary) OVER (PARTITION BY name) FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT name, SUM(salary) OVER (PARTITION BY name) FROM users").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -505,7 +555,9 @@ class TransformSuite extends munit.FunSuite:
     assert(findWindowExpr(result.toOption.get), "Expected WindowExpr with Sum and PARTITION BY")
 
   test("transforms LAG window function"):
-    val stmt = asSelect(SqlParser.parse("SELECT name, LAG(salary) OVER (ORDER BY age) FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser.parse("SELECT name, LAG(salary) OVER (ORDER BY age) FROM users").toOption.get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -514,14 +566,21 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Project(exprs, _) =>
         exprs.exists {
           case ProtoExpr.WindowExpr(ProtoExpr.Lag(_, _, _), _, _, _) => true
-          case _ => false
+          case _                                                     => false
         }
       case _ => false
 
     assert(findWindowExpr(result.toOption.get), "Expected WindowExpr with Lag")
 
   test("transforms window function with frame specification"):
-    val stmt = asSelect(SqlParser.parse("SELECT SUM(salary) OVER (ORDER BY age ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM users").toOption.get)
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT SUM(salary) OVER (ORDER BY age ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM users"
+        )
+        .toOption
+        .get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -542,12 +601,15 @@ class TransformSuite extends munit.FunSuite:
   // Phase 9 - CTE (Common Table Expression) tests
 
   test("transforms simple CTE"):
-    val stmt = SqlParser.parse("""
+    val stmt = SqlParser
+      .parse("""
       WITH active_users AS (
         SELECT name, age FROM users WHERE age > 18
       )
       SELECT * FROM active_users
-    """).toOption.get
+    """)
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -560,15 +622,16 @@ class TransformSuite extends munit.FunSuite:
         cteRelations.head._2 match
           case ProtoLogicalPlan.SubqueryAlias("active_users", inner) =>
             def hasFilter(p: ProtoLogicalPlan): Boolean = p match
-              case ProtoLogicalPlan.Filter(_, _) => true
+              case ProtoLogicalPlan.Filter(_, _)   => true
               case ProtoLogicalPlan.Project(_, ch) => hasFilter(ch)
-              case _ => false
+              case _                               => false
             assert(hasFilter(inner), "Expected filter in CTE")
           case other => fail(s"Expected SubqueryAlias, got $other")
       case other => fail(s"Expected With plan, got $other")
 
   test("transforms multiple CTEs"):
-    val stmt = SqlParser.parse("""
+    val stmt = SqlParser
+      .parse("""
       WITH
         young_users AS (
           SELECT name FROM users WHERE age < 30
@@ -577,7 +640,9 @@ class TransformSuite extends munit.FunSuite:
           SELECT name FROM users WHERE age >= 30
         )
       SELECT * FROM young_users
-    """).toOption.get
+    """)
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -590,14 +655,17 @@ class TransformSuite extends munit.FunSuite:
       case other => fail(s"Expected With plan, got $other")
 
   test("transforms CTE with aggregate in inner query"):
-    val stmt = SqlParser.parse("""
+    val stmt = SqlParser
+      .parse("""
       WITH salary_stats AS (
         SELECT name, AVG(salary) AS avg_salary
         FROM users
         GROUP BY name
       )
       SELECT * FROM salary_stats
-    """).toOption.get
+    """)
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -606,21 +674,24 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.With(cteRelations, _) =>
         // Verify CTE plan contains an aggregate
         def hasAggregate(p: ProtoLogicalPlan): Boolean = p match
-          case ProtoLogicalPlan.Aggregate(_, _, _) => true
+          case ProtoLogicalPlan.Aggregate(_, _, _)   => true
           case ProtoLogicalPlan.SubqueryAlias(_, ch) => hasAggregate(ch)
-          case _ => false
+          case _                                     => false
         assert(hasAggregate(cteRelations.head._2), "Expected Aggregate in CTE")
       case other => fail(s"Expected With plan, got $other")
 
   test("transforms CTE with UNION in main query"):
-    val stmt = SqlParser.parse("""
+    val stmt = SqlParser
+      .parse("""
       WITH high_earners AS (
         SELECT name FROM users WHERE salary > 100000
       )
       SELECT name FROM high_earners WHERE age > 30
       UNION
       SELECT name FROM high_earners WHERE age <= 30
-    """).toOption.get
+    """)
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
@@ -631,21 +702,27 @@ class TransformSuite extends munit.FunSuite:
         // Main query should be a Union
         child match
           case ProtoLogicalPlan.Union(_, _, _) => () // ok
-          case other => fail(s"Expected Union as main query, got $other")
+          case other                           => fail(s"Expected Union as main query, got $other")
       case other => fail(s"Expected With plan, got $other")
 
   test("recursive CTE returns error"):
-    val stmt = SqlParser.parse("""
+    val stmt = SqlParser
+      .parse("""
       WITH RECURSIVE cte AS (
         SELECT * FROM users WHERE id = 1
       )
       SELECT * FROM cte
-    """).toOption.get
+    """)
+      .toOption
+      .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
     // Recursive CTEs are not yet supported
     assert(result.isLeft, "Expected error for recursive CTE")
-    assert(result.left.toOption.get.message.contains("Recursive"), "Expected error message about recursive CTEs")
+    assert(
+      result.left.toOption.get.message.contains("Recursive"),
+      "Expected error message about recursive CTEs"
+    )
 
   // === Phase 10: String and Math Functions ===
 
@@ -710,17 +787,22 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight)
 
   test("transforms IF function"):
-    val stmt = asSelect(SqlParser.parse("SELECT IF(age > 18, 'adult', 'minor') FROM users").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT IF(age > 18, 'adult', 'minor') FROM users").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
 
   test("transforms complex expression with multiple functions"):
-    val stmt = asSelect(SqlParser.parse("""
+    val stmt = asSelect(
+      SqlParser
+        .parse("""
       SELECT
         UPPER(TRIM(name)) AS clean_name,
         ROUND(salary * 1.1, 2) AS new_salary,
         ABS(age - 30) AS age_diff
       FROM users
-    """).toOption.get)
+    """).toOption
+        .get
+    )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)

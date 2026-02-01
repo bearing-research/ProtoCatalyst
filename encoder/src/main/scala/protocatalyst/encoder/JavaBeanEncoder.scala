@@ -6,25 +6,25 @@ import scala.reflect.ClassTag
 import java.beans.{Introspector, PropertyDescriptor}
 import java.lang.reflect.Method
 
-/**
- * Runtime encoder for Java Beans.
- *
- * Unlike ProtoEncoder which uses compile-time Mirror derivation,
- * JavaBeanEncoder uses runtime reflection to introspect Java Bean classes.
- * This matches Spark's Encoders.bean(Class[T]) behavior.
- *
- * Java Bean conventions:
- * - Public no-arg constructor
- * - Properties with getter/setter pairs (getX/setX or isX/setX for booleans)
- */
+/** Runtime encoder for Java Beans.
+  *
+  * Unlike ProtoEncoder which uses compile-time Mirror derivation, JavaBeanEncoder uses runtime
+  * reflection to introspect Java Bean classes. This matches Spark's Encoders.bean(Class[T])
+  * behavior.
+  *
+  * Java Bean conventions:
+  *   - Public no-arg constructor
+  *   - Properties with getter/setter pairs (getX/setX or isX/setX for booleans)
+  */
 object JavaBeanEncoder:
 
-  /**
-   * Create an encoder for a Java Bean class at runtime.
-   *
-   * @param beanClass The Java Bean class to encode
-   * @return A ProtoEncoder for the bean type
-   */
+  /** Create an encoder for a Java Bean class at runtime.
+    *
+    * @param beanClass
+    *   The Java Bean class to encode
+    * @return
+    *   A ProtoEncoder for the bean type
+    */
   def apply[T](beanClass: Class[T]): ProtoEncoder[T] =
     val properties = discoverProperties(beanClass)
     val fieldEncoders = properties.map { prop =>
@@ -36,22 +36,22 @@ object JavaBeanEncoder:
     }
     BeanEncoder(fieldEncoders, ProtoSchema(structFields), ClassTag(beanClass))
 
-  /**
-   * Discover bean properties using Java Introspector.
-   * Filters out the "class" property which is inherited from Object.
-   */
+  /** Discover bean properties using Java Introspector. Filters out the "class" property which is
+    * inherited from Object.
+    */
   private def discoverProperties(beanClass: Class[?]): Vector[PropertyDescriptor] =
     val beanInfo = Introspector.getBeanInfo(beanClass)
     beanInfo.getPropertyDescriptors
       .filter(_.getName != "class") // Exclude Object.getClass()
-      .filter(p => p.getReadMethod != null && p.getWriteMethod != null) // Must have both getter and setter
+      .filter(p =>
+        p.getReadMethod != null && p.getWriteMethod != null
+      ) // Must have both getter and setter
       .toVector
       .sortBy(_.getName) // Consistent ordering
 
-  /**
-   * Get an encoder for a Java type at runtime.
-   * This maps Java types to ProtoType similar to Spark's type mapping.
-   */
+  /** Get an encoder for a Java type at runtime. This maps Java types to ProtoType similar to
+    * Spark's type mapping.
+    */
   private def encoderForType(javaType: Class[?]): ProtoEncoder[?] =
     javaType match
       // Primitives
@@ -70,7 +70,11 @@ object JavaBeanEncoder:
       case c if c == classOf[Double] || c == classOf[java.lang.Double] =>
         PrimitiveRuntimeEncoder(ProtoType.DoubleType, ClassTag(c), c == classOf[java.lang.Double])
       case c if c == classOf[Char] || c == classOf[java.lang.Character] =>
-        PrimitiveRuntimeEncoder(ProtoType.StringType, ClassTag(c), c == classOf[java.lang.Character])
+        PrimitiveRuntimeEncoder(
+          ProtoType.StringType,
+          ClassTag(c),
+          c == classOf[java.lang.Character]
+        )
 
       // String and Binary
       case c if c == classOf[String] =>
@@ -117,11 +121,9 @@ object JavaBeanEncoder:
             "Supported types: primitives, String, BigDecimal, temporal types, enums, and nested beans."
         )
 
-  /**
-   * Check if a class looks like a Java Bean.
-   * A class is considered a bean if it has a public no-arg constructor
-   * and at least one property with both getter and setter.
-   */
+  /** Check if a class looks like a Java Bean. A class is considered a bean if it has a public
+    * no-arg constructor and at least one property with both getter and setter.
+    */
   private def isJavaBean(clazz: Class[?]): Boolean =
     try
       // Must have public no-arg constructor
@@ -129,8 +131,7 @@ object JavaBeanEncoder:
       // Must have at least one property (other than "class")
       val properties = discoverProperties(clazz)
       properties.nonEmpty
-    catch
-      case _: NoSuchMethodException => false
+    catch case _: NoSuchMethodException => false
 
   /** Runtime encoder for primitive/leaf types */
   private class PrimitiveRuntimeEncoder[T](

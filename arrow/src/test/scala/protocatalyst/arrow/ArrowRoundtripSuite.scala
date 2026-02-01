@@ -57,8 +57,7 @@ class ArrowRoundtripSuite extends munit.FunSuite:
     try
       writer.write(data, root)
       reader.read(root)
-    finally
-      root.close()
+    finally root.close()
 
   // === Primitive Roundtrip Tests ===
 
@@ -66,14 +65,22 @@ class ArrowRoundtripSuite extends munit.FunSuite:
     val data = Seq(
       RoundtripAllPrimitives(true, 1, 2, 3, 4L, 5.5f, 6.6, "hello"),
       RoundtripAllPrimitives(false, -1, -2, -3, -4L, -5.5f, -6.6, "world"),
-      RoundtripAllPrimitives(true, Byte.MaxValue, Short.MaxValue, Int.MaxValue, Long.MaxValue, Float.MaxValue, Double.MaxValue, "")
+      RoundtripAllPrimitives(
+        true,
+        Byte.MaxValue,
+        Short.MaxValue,
+        Int.MaxValue,
+        Long.MaxValue,
+        Float.MaxValue,
+        Double.MaxValue,
+        ""
+      )
     )
 
     val result = roundtrip(data)
 
     assertEquals(result.size, data.size)
-    for (original, read) <- data.zip(result) do
-      assertEquals(read, original)
+    for (original, read) <- data.zip(result) do assertEquals(read, original)
 
   test("roundtrip with null string"):
     val data = Seq(
@@ -116,23 +123,27 @@ class ArrowRoundtripSuite extends munit.FunSuite:
     val result = roundtrip(data)
 
     assertEquals(result.size, 3)
-    for (original, read) <- data.zip(result) do
-      assertEquals(read, original)
+    for (original, read) <- data.zip(result) do assertEquals(read, original)
 
   // === Temporal Roundtrip Tests ===
 
   test("roundtrip LocalDate"):
     val data = Seq(
-      RoundtripTemporal(java.time.LocalDate.of(2024, 1, 15), java.time.Instant.parse("2024-01-15T10:30:00Z")),
+      RoundtripTemporal(
+        java.time.LocalDate.of(2024, 1, 15),
+        java.time.Instant.parse("2024-01-15T10:30:00Z")
+      ),
       RoundtripTemporal(java.time.LocalDate.of(1970, 1, 1), java.time.Instant.EPOCH),
-      RoundtripTemporal(java.time.LocalDate.of(2099, 12, 31), java.time.Instant.parse("2099-12-31T23:59:59Z"))
+      RoundtripTemporal(
+        java.time.LocalDate.of(2099, 12, 31),
+        java.time.Instant.parse("2099-12-31T23:59:59Z")
+      )
     )
 
     val result = roundtrip(data)
 
     assertEquals(result.size, 3)
-    for (original, read) <- data.zip(result) do
-      assertEquals(read.date, original.date)
+    for (original, read) <- data.zip(result) do assertEquals(read.date, original.date)
 
   test("roundtrip Instant with microsecond precision"):
     // Arrow timestamps are in microseconds, so we need to test that precision is preserved
@@ -145,7 +156,8 @@ class ArrowRoundtripSuite extends munit.FunSuite:
 
     // Check that microsecond precision is preserved (not nanosecond)
     val expectedMicros = instant.getEpochSecond * 1000000L + instant.getNano / 1000
-    val actualMicros = result(0).instant.getEpochSecond * 1000000L + result(0).instant.getNano / 1000
+    val actualMicros =
+      result(0).instant.getEpochSecond * 1000000L + result(0).instant.getNano / 1000
     assertEquals(actualMicros, expectedMicros)
 
   // === Mixed Type Roundtrip Tests ===
@@ -160,8 +172,7 @@ class ArrowRoundtripSuite extends munit.FunSuite:
     val result = roundtrip(data)
 
     assertEquals(result.size, 3)
-    for (original, read) <- data.zip(result) do
-      assertEquals(read, original)
+    for (original, read) <- data.zip(result) do assertEquals(read, original)
 
   // === Large Dataset Roundtrip Tests ===
 

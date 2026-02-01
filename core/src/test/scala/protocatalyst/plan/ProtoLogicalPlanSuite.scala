@@ -29,10 +29,12 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
   // === Values Tests ===
 
   test("Values with rows"):
-    val schema = ProtoSchema(Vector(
-      ProtoStructField("a", ProtoType.IntType, nullable = false),
-      ProtoStructField("b", ProtoType.StringType, nullable = true)
-    ))
+    val schema = ProtoSchema(
+      Vector(
+        ProtoStructField("a", ProtoType.IntType, nullable = false),
+        ProtoStructField("b", ProtoType.StringType, nullable = true)
+      )
+    )
     val rows = Vector(
       Vector(ProtoExpr.lit(1), ProtoExpr.lit("x")),
       Vector(ProtoExpr.lit(2), ProtoExpr.lit("y"))
@@ -92,11 +94,21 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
       case _ => fail(s"Expected Filter, got $plan")
 
   test("Filter with complex condition"):
-    val condition = ProtoExpr.And(Vector(
-      ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false), ProtoExpr.lit(18)),
-      ProtoExpr.Lt(ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false), ProtoExpr.lit(65)),
-      ProtoExpr.IsNotNull(ProtoExpr.ColumnRef("name", None, ProtoType.StringType, nullable = true))
-    ))
+    val condition = ProtoExpr.And(
+      Vector(
+        ProtoExpr.Gt(
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+          ProtoExpr.lit(18)
+        ),
+        ProtoExpr.Lt(
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+          ProtoExpr.lit(65)
+        ),
+        ProtoExpr.IsNotNull(
+          ProtoExpr.ColumnRef("name", None, ProtoType.StringType, nullable = true)
+        )
+      )
+    )
     val plan = ProtoLogicalPlan.Filter(condition, baseRelation)
     plan match
       case ProtoLogicalPlan.Filter(ProtoExpr.And(children), _) =>
@@ -110,7 +122,10 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
       ProtoExpr.ColumnRef("dept", None, ProtoType.StringType, nullable = false)
     )
     val aggs = Vector(
-      ProtoExpr.Count(ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false), distinct = false),
+      ProtoExpr.Count(
+        ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
+        distinct = false
+      ),
       ProtoExpr.Sum(ProtoExpr.ColumnRef("salary", None, ProtoType.DoubleType, nullable = false))
     )
     val plan = ProtoLogicalPlan.Aggregate(grouping, aggs, baseRelation)
@@ -195,7 +210,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     val plan = ProtoLogicalPlan.Limit(0, baseRelation)
     plan match
       case ProtoLogicalPlan.Limit(0, _) => ()
-      case _ => fail(s"Expected Limit(0), got $plan")
+      case _                            => fail(s"Expected Limit(0), got $plan")
 
   // === Distinct Tests ===
 
@@ -290,7 +305,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     val plan = ProtoLogicalPlan.Intersect(baseRelation, baseRelation, isAll = true)
     plan match
       case ProtoLogicalPlan.Intersect(_, _, true) => ()
-      case _ => fail(s"Expected Intersect all, got $plan")
+      case _                                      => fail(s"Expected Intersect all, got $plan")
 
   // === Except Tests ===
 
@@ -306,18 +321,21 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     val plan = ProtoLogicalPlan.Except(baseRelation, baseRelation, isAll = true)
     plan match
       case ProtoLogicalPlan.Except(_, _, true) => ()
-      case _ => fail(s"Expected Except all, got $plan")
+      case _                                   => fail(s"Expected Except all, got $plan")
 
   // === Window Tests ===
 
   test("Window construction"):
     val windowExprs = Vector(ProtoExpr.RowNumber())
-    val partition = Vector(ProtoExpr.ColumnRef("dept", None, ProtoType.StringType, nullable = false))
-    val order = Vector(SortOrder(
-      ProtoExpr.ColumnRef("date", None, ProtoType.DateType, nullable = false),
-      SortDirection.Ascending,
-      NullOrdering.NullsFirst
-    ))
+    val partition =
+      Vector(ProtoExpr.ColumnRef("dept", None, ProtoType.StringType, nullable = false))
+    val order = Vector(
+      SortOrder(
+        ProtoExpr.ColumnRef("date", None, ProtoType.DateType, nullable = false),
+        SortDirection.Ascending,
+        NullOrdering.NullsFirst
+      )
+    )
     val plan = ProtoLogicalPlan.Window(windowExprs, partition, order, baseRelation)
     plan match
       case ProtoLogicalPlan.Window(we, ps, os, child) =>
@@ -329,11 +347,13 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
 
   test("Window without partition"):
     val windowExprs = Vector(ProtoExpr.RowNumber())
-    val order = Vector(SortOrder(
-      ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
-      SortDirection.Ascending,
-      NullOrdering.NullsFirst
-    ))
+    val order = Vector(
+      SortOrder(
+        ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
+        SortDirection.Ascending,
+        NullOrdering.NullsFirst
+      )
+    )
     val plan = ProtoLogicalPlan.Window(windowExprs, Vector.empty, order, baseRelation)
     plan match
       case ProtoLogicalPlan.Window(_, ps, _, _) =>
@@ -380,7 +400,10 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
       baseRelation
     )
     val filter = ProtoLogicalPlan.Filter(
-      ProtoExpr.Gt(ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false), ProtoExpr.lit(0)),
+      ProtoExpr.Gt(
+        ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
+        ProtoExpr.lit(0)
+      ),
       project
     )
     filter match
@@ -401,18 +424,24 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
       filtered
     )
     val sorted = ProtoLogicalPlan.Sort(
-      Vector(SortOrder(
-        ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
-        SortDirection.Ascending,
-        NullOrdering.NullsFirst
-      )),
+      Vector(
+        SortOrder(
+          ProtoExpr.ColumnRef("id", None, ProtoType.LongType, nullable = false),
+          SortDirection.Ascending,
+          NullOrdering.NullsFirst
+        )
+      ),
       global = true,
       projected
     )
     val limited = ProtoLogicalPlan.Limit(10, sorted)
 
     limited match
-      case ProtoLogicalPlan.Limit(10, ProtoLogicalPlan.Sort(_, _, ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, _)))) => ()
+      case ProtoLogicalPlan.Limit(
+            10,
+            ProtoLogicalPlan.Sort(_, _, ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, _)))
+          ) =>
+        ()
       case _ => fail(s"Expected complex nested plan, got $limited")
 
   // === Plan Equality Tests ===

@@ -15,12 +15,11 @@ import net.sf.jsqlparser.statement.Statement as JStatement
 import scala.jdk.CollectionConverters.*
 import scala.util.{Try, Success, Failure}
 
-/**
- * Comparison test suite that validates our SQL parser against JSQLParser.
- *
- * This ensures our parser correctly handles SQL syntax by comparing
- * structural elements (tables, columns, operators) between both parsers.
- */
+/** Comparison test suite that validates our SQL parser against JSQLParser.
+  *
+  * This ensures our parser correctly handles SQL syntax by comparing structural elements (tables,
+  * columns, operators) between both parsers.
+  */
 class ParserComparisonSuite extends FunSuite:
 
   // ============================================
@@ -35,7 +34,7 @@ class ParserComparisonSuite extends FunSuite:
   def parseJSql(sql: String): Either[String, JStatement] =
     Try(CCJSqlParserUtil.parse(sql)) match
       case Success(stmt) => Right(stmt)
-      case Failure(e) => Left(e.getMessage)
+      case Failure(e)    => Left(e.getMessage)
 
   /** Check if both parsers agree on parseability. */
   def bothParseOrBothFail(sql: String): Unit =
@@ -44,8 +43,8 @@ class ParserComparisonSuite extends FunSuite:
 
     (ours, jsql) match
       case (Right(_), Right(_)) => () // Both succeed - good
-      case (Left(_), Left(_)) => () // Both fail - acceptable
-      case (Right(_), Left(e)) =>
+      case (Left(_), Left(_))   => () // Both fail - acceptable
+      case (Right(_), Left(e))  =>
         // We parsed but JSQLParser didn't - may be acceptable if we're more lenient
         // Log but don't fail (JSQLParser may be stricter)
         ()
@@ -63,7 +62,7 @@ class ParserComparisonSuite extends FunSuite:
         ctes.flatMap(c => extractTablesOurs(c.query)).toSet ++ extractTablesOurs(query)
 
   private def extractTablesFromClause(from: FromClause): Set[String] = from match
-    case FromClause.Table(ref) => Set(ref.name)
+    case FromClause.Table(ref)              => Set(ref.name)
     case FromClause.Join(left, right, _, _) =>
       extractTablesFromClause(left) ++ extractTablesFromClause(right)
     case FromClause.Subquery(stmt, _) =>
@@ -81,14 +80,14 @@ class ParserComparisonSuite extends FunSuite:
     // Try the newer API first, fall back to deprecated if needed
     val plainSelect: PlainSelect | Null = select match
       case ps: PlainSelect => ps
-      case _ =>
-        try select.getSelectBody match
-          case ps: PlainSelect => ps
-          case _ => null
+      case _               =>
+        try
+          select.getSelectBody match
+            case ps: PlainSelect => ps
+            case _               => null
         catch case _: Exception => null
 
-    if plainSelect != null then
-      extractTablesFromPlainSelect(plainSelect.nn)
+    if plainSelect != null then extractTablesFromPlainSelect(plainSelect.nn)
     else
       // Handle set operations
       try
@@ -101,58 +100,68 @@ class ParserComparisonSuite extends FunSuite:
       catch case _: Exception => Set.empty
 
   private def extractTablesFromPlainSelect(plain: PlainSelect): Set[String] =
-    Option(plain.getFromItem).map {
-      case t: Table => Set(t.getName)
-      case _ => Set.empty[String]
-    }.getOrElse(Set.empty) ++
-    Option(plain.getJoins).map(_.asScala.flatMap { join =>
-      join.getRightItem match
-        case t: Table => Some(t.getName)
-        case _ => None
-    }.toSet).getOrElse(Set.empty)
+    Option(plain.getFromItem)
+      .map {
+        case t: Table => Set(t.getName)
+        case _        => Set.empty[String]
+      }
+      .getOrElse(Set.empty) ++
+      Option(plain.getJoins)
+        .map(
+          _.asScala
+            .flatMap { join =>
+              join.getRightItem match
+                case t: Table => Some(t.getName)
+                case _        => None
+            }
+            .toSet
+        )
+        .getOrElse(Set.empty)
 
   /** Extract column names from our AST expressions. */
   def extractColumnsOurs(stmt: SqlStatement): Set[String] =
     stmt match
       case SqlStatement.SelectStatement(_, projs, _, where, groupBy, having, orderBy, _) =>
         projs.flatMap(p => extractColumnsFromExpr(p.expr)).toSet ++
-        where.toVector.flatMap(extractColumnsFromExpr).toSet ++
-        groupBy.flatMap(extractColumnsFromExpr).toSet ++
-        having.toVector.flatMap(extractColumnsFromExpr).toSet ++
-        orderBy.flatMap(o => extractColumnsFromExpr(o.expr)).toSet
+          where.toVector.flatMap(extractColumnsFromExpr).toSet ++
+          groupBy.flatMap(extractColumnsFromExpr).toSet ++
+          having.toVector.flatMap(extractColumnsFromExpr).toSet ++
+          orderBy.flatMap(o => extractColumnsFromExpr(o.expr)).toSet
       case SqlStatement.CompoundStatement(left, _, right) =>
         extractColumnsOurs(left) ++ extractColumnsOurs(right)
       case SqlStatement.WithStatement(ctes, _, query) =>
         ctes.flatMap(c => extractColumnsOurs(c.query)).toSet ++ extractColumnsOurs(query)
 
   private def extractColumnsFromExpr(expr: SqlExpr): Set[String] = expr match
-    case SqlExpr.ColumnRef(name, _) => Set(name)
-    case SqlExpr.Star(_) => Set("*")
-    case SqlExpr.Compare(l, _, r) => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
-    case SqlExpr.Arithmetic(l, _, r) => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
-    case SqlExpr.And(l, r) => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
-    case SqlExpr.Or(l, r) => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
-    case SqlExpr.Not(c) => extractColumnsFromExpr(c)
-    case SqlExpr.IsNull(c) => extractColumnsFromExpr(c)
-    case SqlExpr.IsNotNull(c) => extractColumnsFromExpr(c)
+    case SqlExpr.ColumnRef(name, _)       => Set(name)
+    case SqlExpr.Star(_)                  => Set("*")
+    case SqlExpr.Compare(l, _, r)         => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
+    case SqlExpr.Arithmetic(l, _, r)      => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
+    case SqlExpr.And(l, r)                => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
+    case SqlExpr.Or(l, r)                 => extractColumnsFromExpr(l) ++ extractColumnsFromExpr(r)
+    case SqlExpr.Not(c)                   => extractColumnsFromExpr(c)
+    case SqlExpr.IsNull(c)                => extractColumnsFromExpr(c)
+    case SqlExpr.IsNotNull(c)             => extractColumnsFromExpr(c)
     case SqlExpr.FunctionCall(_, args, _) => args.flatMap(extractColumnsFromExpr).toSet
     case SqlExpr.CaseWhen(branches, elseVal) =>
       branches.flatMap((c, v) => extractColumnsFromExpr(c) ++ extractColumnsFromExpr(v)).toSet ++
-      elseVal.toVector.flatMap(extractColumnsFromExpr).toSet
-    case SqlExpr.Cast(c, _) => extractColumnsFromExpr(c)
+        elseVal.toVector.flatMap(extractColumnsFromExpr).toSet
+    case SqlExpr.Cast(c, _)            => extractColumnsFromExpr(c)
     case SqlExpr.Between(v, low, high) =>
       extractColumnsFromExpr(v) ++ extractColumnsFromExpr(low) ++ extractColumnsFromExpr(high)
     case SqlExpr.Like(v, pattern, escape) =>
-      extractColumnsFromExpr(v) ++ extractColumnsFromExpr(pattern) ++ escape.toVector.flatMap(extractColumnsFromExpr).toSet
+      extractColumnsFromExpr(v) ++ extractColumnsFromExpr(pattern) ++ escape.toVector
+        .flatMap(extractColumnsFromExpr)
+        .toSet
     case SqlExpr.In(v, vals) =>
       extractColumnsFromExpr(v) ++ vals.flatMap(extractColumnsFromExpr).toSet
-    case SqlExpr.InSubquery(v, _) => extractColumnsFromExpr(v)
-    case SqlExpr.Exists(_) => Set.empty
-    case SqlExpr.ScalarSubquery(_) => Set.empty
+    case SqlExpr.InSubquery(v, _)           => extractColumnsFromExpr(v)
+    case SqlExpr.Exists(_)                  => Set.empty
+    case SqlExpr.ScalarSubquery(_)          => Set.empty
     case SqlExpr.WindowFunction(func, spec) =>
       extractColumnsFromExpr(func) ++
-      spec.partitionBy.flatMap(extractColumnsFromExpr).toSet ++
-      spec.orderBy.flatMap(o => extractColumnsFromExpr(o.expr)).toSet
+        spec.partitionBy.flatMap(extractColumnsFromExpr).toSet ++
+        spec.orderBy.flatMap(o => extractColumnsFromExpr(o.expr)).toSet
     case _ => Set.empty
 
   /** Compare parsed structures. */
@@ -560,19 +569,22 @@ class ParserComparisonSuite extends FunSuite:
   // ============================================
 
   test("subquery in WHERE") {
-    val sql = "SELECT name FROM users WHERE department IN (SELECT name FROM departments WHERE active = true)"
+    val sql =
+      "SELECT name FROM users WHERE department IN (SELECT name FROM departments WHERE active = true)"
     bothParseOrBothFail(sql)
     compareStructures(sql)
   }
 
   test("EXISTS subquery") {
-    val sql = "SELECT name FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)"
+    val sql =
+      "SELECT name FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)"
     bothParseOrBothFail(sql)
     compareStructures(sql)
   }
 
   test("scalar subquery") {
-    val sql = "SELECT name, (SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count FROM users"
+    val sql =
+      "SELECT name, (SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count FROM users"
     bothParseOrBothFail(sql)
     compareStructures(sql)
   }

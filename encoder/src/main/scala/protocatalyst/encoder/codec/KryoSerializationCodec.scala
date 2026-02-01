@@ -5,14 +5,13 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.util.DefaultInstantiatorStrategy
 import org.objenesis.strategy.StdInstantiatorStrategy
 
-/**
- * A codec that uses Kryo for serialization.
- * ~10x faster than Java serialization.
- *
- * Thread-safe via ThreadLocal Kryo instances.
- *
- * @param configure Optional configuration function for Kryo instance
- */
+/** A codec that uses Kryo for serialization. ~10x faster than Java serialization.
+  *
+  * Thread-safe via ThreadLocal Kryo instances.
+  *
+  * @param configure
+  *   Optional configuration function for Kryo instance
+  */
 class KryoCodecImpl(configure: Kryo => Unit = _ => ()) extends BinaryCodec[Any]:
   // Thread-local Kryo instances for thread safety
   private val kryoPool = new ThreadLocal[Kryo]:
@@ -31,8 +30,7 @@ class KryoCodecImpl(configure: Kryo => Unit = _ => ()) extends BinaryCodec[Any]:
     try
       kryoPool.get().writeClassAndObject(output, in)
       output.toBytes
-    finally
-      output.close()
+    finally output.close()
 
   def decode(out: Array[Byte]): Any =
     if out == null then return null
@@ -47,9 +45,8 @@ object KryoCodecImpl:
   def withConfig(configure: Kryo => Unit): KryoCodecImpl =
     new KryoCodecImpl(configure)
 
-/**
- * Factory for Kryo serialization codec.
- * Implements the factory pattern `() => Codec` for lazy instantiation.
- */
+/** Factory for Kryo serialization codec. Implements the factory pattern `() => Codec` for lazy
+  * instantiation.
+  */
 object KryoSerializationCodec extends (() => BinaryCodec[Any]):
   def apply(): BinaryCodec[Any] = new KryoCodecImpl()

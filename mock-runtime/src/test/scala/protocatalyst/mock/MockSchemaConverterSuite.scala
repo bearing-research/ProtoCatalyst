@@ -15,8 +15,14 @@ class MockSchemaConverterSuite extends munit.FunSuite:
     assertEquals(MockSchemaConverter.toMockType(ProtoType.StringType), MockDataType.StringType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.BinaryType), MockDataType.BinaryType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.DateType), MockDataType.DateType)
-    assertEquals(MockSchemaConverter.toMockType(ProtoType.TimestampType), MockDataType.TimestampType)
-    assertEquals(MockSchemaConverter.toMockType(ProtoType.TimestampNTZType), MockDataType.TimestampNTZType)
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.TimestampType),
+      MockDataType.TimestampType
+    )
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.TimestampNTZType),
+      MockDataType.TimestampNTZType
+    )
 
   test("converts decimal type"):
     assertEquals(
@@ -32,15 +38,23 @@ class MockSchemaConverterSuite extends munit.FunSuite:
 
   test("converts map type"):
     assertEquals(
-      MockSchemaConverter.toMockType(ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, valueContainsNull = false)),
-      MockDataType.MapType(MockDataType.StringType, MockDataType.IntegerType, valueContainsNull = false)
+      MockSchemaConverter.toMockType(
+        ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, valueContainsNull = false)
+      ),
+      MockDataType.MapType(
+        MockDataType.StringType,
+        MockDataType.IntegerType,
+        valueContainsNull = false
+      )
     )
 
   test("converts struct type"):
-    val protoStruct = ProtoType.StructType(Vector(
-      ProtoStructField("name", ProtoType.StringType, nullable = false),
-      ProtoStructField("age", ProtoType.IntType, nullable = true)
-    ))
+    val protoStruct = ProtoType.StructType(
+      Vector(
+        ProtoStructField("name", ProtoType.StringType, nullable = false),
+        ProtoStructField("age", ProtoType.IntType, nullable = true)
+      )
+    )
     val mockStruct = MockSchemaConverter.toMockType(protoStruct)
 
     mockStruct match

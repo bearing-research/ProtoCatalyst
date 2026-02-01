@@ -4,21 +4,21 @@ import protocatalyst.encoder.*
 import protocatalyst.types.*
 import scala.quoted.*
 
-/**
- * Macro-based typed operations for field access.
- *
- * Provides compile-time type checking for field selectors while
- * allowing the ergonomic `_.fieldName` syntax.
- */
+/** Macro-based typed operations for field access.
+  *
+  * Provides compile-time type checking for field selectors while allowing the ergonomic
+  * `_.fieldName` syntax.
+  */
 object TypedOps:
 
-  /**
-   * Type-safe field extraction macro.
-   *
-   * Extracts a typed column from a field selector lambda.
-   * Verifies at compile time that the field exists and infers its type.
-   */
-  inline def field[A, T](inline selector: FieldSelector[A] => Column[A, T])(using enc: ProtoEncoder[A]): Column[A, T] =
+  /** Type-safe field extraction macro.
+    *
+    * Extracts a typed column from a field selector lambda. Verifies at compile time that the field
+    * exists and infers its type.
+    */
+  inline def field[A, T](inline selector: FieldSelector[A] => Column[A, T])(using
+      enc: ProtoEncoder[A]
+  ): Column[A, T] =
     ${ fieldImpl[A, T]('selector, 'enc) }
 
   private def fieldImpl[A: Type, T: Type](
@@ -58,9 +58,8 @@ object TypedOps:
       case _ =>
         None
 
-  /**
-   * Compile-time field existence check.
-   */
+  /** Compile-time field existence check.
+    */
   inline def checkField[A](inline fieldName: String)(using enc: ProtoEncoder[A]): Unit =
     ${ checkFieldImpl[A]('fieldName, 'enc) }
 

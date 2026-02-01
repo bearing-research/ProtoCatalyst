@@ -11,28 +11,27 @@ import scala.deriving.Mirror
 import scala.compiletime.*
 import java.nio.charset.StandardCharsets
 
-/**
- * Compile-time specialized Arrow column writer.
- *
- * Uses the same `inline erasedValue[Types]` pattern as InlineRowSerializer
- * to generate type-specialized code for writing to Arrow vectors at compile time.
- * This eliminates runtime type dispatch that Spark's ArrowWriter performs.
- *
- * Benefits:
- *   - Zero runtime type matching for known field types
- *   - Direct vector writes with type-specialized code paths
- *   - Compile-time unrolling of field iteration
- *   - JIT-friendly specialized code
- *
- * Usage:
- * {{{
- * case class Person(name: String, age: Int) derives ProtoEncoder
- *
- * val writer = InlineArrowWriter.derived[Person]
- * val root = VectorSchemaRoot.create(writer.schema, allocator)
- * writer.write(Seq(Person("Alice", 30), Person("Bob", 25)), root)
- * }}}
- */
+/** Compile-time specialized Arrow column writer.
+  *
+  * Uses the same `inline erasedValue[Types]` pattern as InlineRowSerializer to generate
+  * type-specialized code for writing to Arrow vectors at compile time. This eliminates runtime type
+  * dispatch that Spark's ArrowWriter performs.
+  *
+  * Benefits:
+  *   - Zero runtime type matching for known field types
+  *   - Direct vector writes with type-specialized code paths
+  *   - Compile-time unrolling of field iteration
+  *   - JIT-friendly specialized code
+  *
+  * Usage:
+  * {{{
+  * case class Person(name: String, age: Int) derives ProtoEncoder
+  *
+  * val writer = InlineArrowWriter.derived[Person]
+  * val root = VectorSchemaRoot.create(writer.schema, allocator)
+  * writer.write(Seq(Person("Alice", 30), Person("Bob", 25)), root)
+  * }}}
+  */
 trait InlineArrowWriter[T]:
   /** Arrow schema for this type */
   def schema: Schema
@@ -48,10 +47,8 @@ trait InlineArrowWriter[T]:
 
 object InlineArrowWriter:
 
-  /**
-   * Derive an InlineArrowWriter at compile time.
-   * Generates type-specialized code for each field.
-   */
+  /** Derive an InlineArrowWriter at compile time. Generates type-specialized code for each field.
+    */
   inline def derived[T](using m: Mirror.ProductOf[T], enc: ProtoEncoder[T]): InlineArrowWriter[T] =
     val count = constValue[Tuple.Size[m.MirroredElemTypes]]
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(enc.schema)
@@ -144,18 +141,15 @@ object InlineArrowWriter:
         if value != null then
           val bytes = value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
           vec.setSafe(rowIndex, bytes)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       // === Binary ===
       case _: (Array[Byte] *: ts) =>
         val vec = root.getVector(fieldIndex).asInstanceOf[VarBinaryVector]
         val value = product.productElement(fieldIndex)
-        if value != null then
-          vec.setSafe(rowIndex, value.asInstanceOf[Array[Byte]])
-        else
-          vec.setNull(rowIndex)
+        if value != null then vec.setSafe(rowIndex, value.asInstanceOf[Array[Byte]])
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       // === BigDecimal ===
@@ -167,8 +161,7 @@ object InlineArrowWriter:
           val bd = value.asInstanceOf[BigDecimal].bigDecimal
           val scaled = bd.setScale(vec.getScale, java.math.RoundingMode.HALF_UP)
           vec.setSafe(rowIndex, scaled)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       case _: (java.math.BigDecimal *: ts) =>
@@ -179,8 +172,7 @@ object InlineArrowWriter:
           val bd = value.asInstanceOf[java.math.BigDecimal]
           val scaled = bd.setScale(vec.getScale, java.math.RoundingMode.HALF_UP)
           vec.setSafe(rowIndex, scaled)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       // === Temporal types ===
@@ -189,8 +181,7 @@ object InlineArrowWriter:
         val value = product.productElement(fieldIndex)
         if value != null then
           vec.setSafe(rowIndex, value.asInstanceOf[java.time.LocalDate].toEpochDay.toInt)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       case _: (java.time.Instant *: ts) =>
@@ -201,8 +192,7 @@ object InlineArrowWriter:
           // Convert to microseconds since epoch
           val micros = instant.getEpochSecond * 1000000L + instant.getNano / 1000
           vec.setSafe(rowIndex, micros)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       case _: (java.time.LocalDateTime *: ts) =>
@@ -213,8 +203,7 @@ object InlineArrowWriter:
           val epochSecond = ldt.toEpochSecond(java.time.ZoneOffset.UTC)
           val micros = epochSecond * 1000000L + ldt.getNano / 1000
           vec.setSafe(rowIndex, micros)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       case _: (java.time.Duration *: ts) =>
@@ -225,8 +214,7 @@ object InlineArrowWriter:
           // Convert to microseconds
           val micros = duration.getSeconds * 1000000L + duration.getNano / 1000
           vec.setSafe(rowIndex, micros)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       // === List types ===
@@ -235,8 +223,7 @@ object InlineArrowWriter:
         val listValue = product.productElement(fieldIndex)
         if listValue != null then
           writeListValue[t](listVec, rowIndex, listValue.asInstanceOf[List[t]])
-        else
-          listVec.setNull(rowIndex)
+        else listVec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
 
       // === Option types ===
@@ -264,25 +251,39 @@ object InlineArrowWriter:
   ): Unit =
     inline erasedValue[T] match
       case _: Boolean =>
-        root.getVector(fieldIndex).asInstanceOf[BitVector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[BitVector]
           .setSafe(rowIndex, if value.asInstanceOf[Boolean] then 1 else 0)
       case _: Byte =>
-        root.getVector(fieldIndex).asInstanceOf[TinyIntVector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[TinyIntVector]
           .setSafe(rowIndex, value.asInstanceOf[Byte])
       case _: Short =>
-        root.getVector(fieldIndex).asInstanceOf[SmallIntVector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[SmallIntVector]
           .setSafe(rowIndex, value.asInstanceOf[Short])
       case _: Int =>
-        root.getVector(fieldIndex).asInstanceOf[IntVector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[IntVector]
           .setSafe(rowIndex, value.asInstanceOf[Int])
       case _: Long =>
-        root.getVector(fieldIndex).asInstanceOf[BigIntVector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[BigIntVector]
           .setSafe(rowIndex, value.asInstanceOf[Long])
       case _: Float =>
-        root.getVector(fieldIndex).asInstanceOf[Float4Vector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[Float4Vector]
           .setSafe(rowIndex, value.asInstanceOf[Float])
       case _: Double =>
-        root.getVector(fieldIndex).asInstanceOf[Float8Vector]
+        root
+          .getVector(fieldIndex)
+          .asInstanceOf[Float8Vector]
           .setSafe(rowIndex, value.asInstanceOf[Double])
       case _: String =>
         val bytes = value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
@@ -326,8 +327,7 @@ object InlineArrowWriter:
         val str = value.asInstanceOf[String]
         if str != null then
           dataVec.asInstanceOf[VarCharVector].setSafe(index, str.getBytes(StandardCharsets.UTF_8))
-        else
-          dataVec.asInstanceOf[VarCharVector].setNull(index)
+        else dataVec.asInstanceOf[VarCharVector].setNull(index)
       case _: List[t] =>
         // Nested list - the data vector is itself a ListVector
         val innerListVec = dataVec.asInstanceOf[ListVector]
@@ -345,18 +345,18 @@ object InlineArrowWriter:
   ): Unit =
     if value == null then
       dataVec match
-        case v: IntVector => v.setNull(index)
-        case v: BigIntVector => v.setNull(index)
-        case v: Float8Vector => v.setNull(index)
+        case v: IntVector     => v.setNull(index)
+        case v: BigIntVector  => v.setNull(index)
+        case v: Float8Vector  => v.setNull(index)
         case v: VarCharVector => v.setNull(index)
-        case v: StructVector => v.setNull(index)
-        case _ => ()
+        case v: StructVector  => v.setNull(index)
+        case _                => ()
     else
       dataVec match
-        case v: IntVector => v.setSafe(index, value.asInstanceOf[Int])
-        case v: BigIntVector => v.setSafe(index, value.asInstanceOf[Long])
-        case v: Float8Vector => v.setSafe(index, value.asInstanceOf[Double])
-        case v: Float4Vector => v.setSafe(index, value.asInstanceOf[Float])
+        case v: IntVector     => v.setSafe(index, value.asInstanceOf[Int])
+        case v: BigIntVector  => v.setSafe(index, value.asInstanceOf[Long])
+        case v: Float8Vector  => v.setSafe(index, value.asInstanceOf[Double])
+        case v: Float4Vector  => v.setSafe(index, value.asInstanceOf[Float])
         case v: VarCharVector =>
           v.setSafe(index, value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8))
         case v: StructVector =>
@@ -374,10 +374,10 @@ object InlineArrowWriter:
       value: Any
   ): Unit =
     root.getVector(fieldIndex) match
-      case v: IntVector => v.setSafe(rowIndex, value.asInstanceOf[Int])
-      case v: BigIntVector => v.setSafe(rowIndex, value.asInstanceOf[Long])
-      case v: Float8Vector => v.setSafe(rowIndex, value.asInstanceOf[Double])
-      case v: Float4Vector => v.setSafe(rowIndex, value.asInstanceOf[Float])
+      case v: IntVector     => v.setSafe(rowIndex, value.asInstanceOf[Int])
+      case v: BigIntVector  => v.setSafe(rowIndex, value.asInstanceOf[Long])
+      case v: Float8Vector  => v.setSafe(rowIndex, value.asInstanceOf[Double])
+      case v: Float4Vector  => v.setSafe(rowIndex, value.asInstanceOf[Float])
       case v: VarCharVector =>
         val bytes = value.toString.getBytes(StandardCharsets.UTF_8)
         v.setSafe(rowIndex, bytes)
@@ -402,10 +402,10 @@ object InlineArrowWriter:
       val childVec = structVec.getChildByOrdinal(i)
       if value != null then
         childVec match
-          case v: IntVector => v.setSafe(rowIndex, value.asInstanceOf[Int])
-          case v: BigIntVector => v.setSafe(rowIndex, value.asInstanceOf[Long])
-          case v: Float8Vector => v.setSafe(rowIndex, value.asInstanceOf[Double])
-          case v: Float4Vector => v.setSafe(rowIndex, value.asInstanceOf[Float])
+          case v: IntVector     => v.setSafe(rowIndex, value.asInstanceOf[Int])
+          case v: BigIntVector  => v.setSafe(rowIndex, value.asInstanceOf[Long])
+          case v: Float8Vector  => v.setSafe(rowIndex, value.asInstanceOf[Double])
+          case v: Float4Vector  => v.setSafe(rowIndex, value.asInstanceOf[Float])
           case v: VarCharVector =>
             val bytes = value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
             v.setSafe(rowIndex, bytes)
@@ -420,35 +420,35 @@ object InlineArrowWriter:
       else
         childVec match
           case v: VarCharVector => v.setNull(rowIndex)
-          case v: IntVector => v.setNull(rowIndex)
-          case v: BigIntVector => v.setNull(rowIndex)
-          case v: Float8Vector => v.setNull(rowIndex)
-          case v: Float4Vector => v.setNull(rowIndex)
-          case v: BitVector => v.setNull(rowIndex)
-          case v: StructVector => v.setNull(rowIndex)
-          case _ => ()
+          case v: IntVector     => v.setNull(rowIndex)
+          case v: BigIntVector  => v.setNull(rowIndex)
+          case v: Float8Vector  => v.setNull(rowIndex)
+          case v: Float4Vector  => v.setNull(rowIndex)
+          case v: BitVector     => v.setNull(rowIndex)
+          case v: StructVector  => v.setNull(rowIndex)
+          case _                => ()
       i += 1
 
   /** Set null at field position */
   private def setNullAt(root: VectorSchemaRoot, fieldIndex: Int, rowIndex: Int): Unit =
     root.getVector(fieldIndex) match
-      case v: BitVector => v.setNull(rowIndex)
-      case v: TinyIntVector => v.setNull(rowIndex)
-      case v: SmallIntVector => v.setNull(rowIndex)
-      case v: IntVector => v.setNull(rowIndex)
-      case v: BigIntVector => v.setNull(rowIndex)
-      case v: Float4Vector => v.setNull(rowIndex)
-      case v: Float8Vector => v.setNull(rowIndex)
-      case v: VarCharVector => v.setNull(rowIndex)
-      case v: VarBinaryVector => v.setNull(rowIndex)
-      case v: DecimalVector => v.setNull(rowIndex)
-      case v: DateDayVector => v.setNull(rowIndex)
+      case v: BitVector              => v.setNull(rowIndex)
+      case v: TinyIntVector          => v.setNull(rowIndex)
+      case v: SmallIntVector         => v.setNull(rowIndex)
+      case v: IntVector              => v.setNull(rowIndex)
+      case v: BigIntVector           => v.setNull(rowIndex)
+      case v: Float4Vector           => v.setNull(rowIndex)
+      case v: Float8Vector           => v.setNull(rowIndex)
+      case v: VarCharVector          => v.setNull(rowIndex)
+      case v: VarBinaryVector        => v.setNull(rowIndex)
+      case v: DecimalVector          => v.setNull(rowIndex)
+      case v: DateDayVector          => v.setNull(rowIndex)
       case v: TimeStampMicroTZVector => v.setNull(rowIndex)
-      case v: TimeStampMicroVector => v.setNull(rowIndex)
-      case v: DurationVector => v.setNull(rowIndex)
-      case v: StructVector => v.setNull(rowIndex)
-      case v: ListVector => v.setNull(rowIndex)
-      case _ => ()
+      case v: TimeStampMicroVector   => v.setNull(rowIndex)
+      case v: DurationVector         => v.setNull(rowIndex)
+      case v: StructVector           => v.setNull(rowIndex)
+      case v: ListVector             => v.setNull(rowIndex)
+      case _                         => ()
 
   /** Fallback for nested structs and unknown types */
   private inline def writeAnyField[T](
@@ -458,8 +458,7 @@ object InlineArrowWriter:
       fieldIndex: Int
   ): Unit =
     val fieldValue = product.productElement(fieldIndex)
-    if fieldValue == null then
-      setNullAt(root, fieldIndex, rowIndex)
+    if fieldValue == null then setNullAt(root, fieldIndex, rowIndex)
     else
       summonFrom {
         case m: Mirror.ProductOf[T] =>
@@ -514,8 +513,7 @@ object InlineArrowWriter:
         if value != null then
           val bytes = value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
           vec.setSafe(rowIndex, bytes)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeStructFields[ts](product, structVec, rowIndex, fieldIndex + 1)
 
       case _: (t *: ts) =>
@@ -530,10 +528,10 @@ object InlineArrowWriter:
       value: Any
   ): Unit =
     root.getVector(fieldIndex) match
-      case v: IntVector => v.setSafe(rowIndex, value.asInstanceOf[Int])
-      case v: BigIntVector => v.setSafe(rowIndex, value.asInstanceOf[Long])
-      case v: Float8Vector => v.setSafe(rowIndex, value.asInstanceOf[Double])
-      case v: Float4Vector => v.setSafe(rowIndex, value.asInstanceOf[Float])
+      case v: IntVector     => v.setSafe(rowIndex, value.asInstanceOf[Int])
+      case v: BigIntVector  => v.setSafe(rowIndex, value.asInstanceOf[Long])
+      case v: Float8Vector  => v.setSafe(rowIndex, value.asInstanceOf[Double])
+      case v: Float4Vector  => v.setSafe(rowIndex, value.asInstanceOf[Float])
       case v: VarCharVector =>
         val bytes = value.toString.getBytes(StandardCharsets.UTF_8)
         v.setSafe(rowIndex, bytes)

@@ -12,10 +12,16 @@ trait Expr[A]:
 
   // Comparison operators - return Expr[Boolean]
   def ===[B](other: Expr[B])(using ev: A =:= B): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Eq(this.toProtoExpr, other.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Eq(this.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def =!=[B](other: Expr[B])(using ev: A =:= B): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.NotEq(this.toProtoExpr, other.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.NotEq(this.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   // Alias
   def as(name: String): Expr[A] =
@@ -52,22 +58,33 @@ extension [A](expr: Expr[A])(using num: Numeric[A], enc: ProtoEncoder[A])
   def /(other: Expr[A]): Expr[A] =
     BinaryExpr(ProtoExpr.Divide(expr.toProtoExpr, other.toProtoExpr), enc)
 
-/**
- * Ordered expression operations (comparisons) for typed expressions.
- * These work with typed columns like users.col[Int]("age").
- */
+/** Ordered expression operations (comparisons) for typed expressions. These work with typed columns
+  * like users.col[Int]("age").
+  */
 extension [A <: Int | Long | Double | Float | String](expr: Expr[A])(using ord: Ordering[A])
   def <(other: Expr[A]): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Lt(expr.toProtoExpr, other.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Lt(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <=(other: Expr[A]): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.LtEq(expr.toProtoExpr, other.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.LtEq(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >(other: Expr[A]): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Gt(expr.toProtoExpr, other.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Gt(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >=(other: Expr[A]): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.GtEq(expr.toProtoExpr, other.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.GtEq(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
 /** Boolean expression operations */
 extension (expr: Expr[Boolean])
@@ -108,73 +125,131 @@ extension [A](expr: Expr[A])
   def isNotNull: Expr[Boolean] =
     UnaryExpr(ProtoExpr.IsNotNull(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
 
-/**
- * Unchecked comparison operators for dynamic field access.
- * When using lambda-style field selectors (_.fieldName), the type is erased to Any.
- * These operators enable comparisons without compile-time type checking - runtime
- * Spark/Catalyst will validate types instead.
- */
+/** Unchecked comparison operators for dynamic field access. When using lambda-style field selectors
+  * (_.fieldName), the type is erased to Any. These operators enable comparisons without
+  * compile-time type checking - runtime Spark/Catalyst will validate types instead.
+  */
 extension (expr: Expr[Any])
   // Direct comparisons with primitives (Spark-compatible syntax)
   def >(value: Int): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >(value: Long): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >(value: Double): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >=(value: Int): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.GtEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.GtEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >=(value: Long): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.GtEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.GtEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def >=(value: Double): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.GtEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.GtEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <(value: Int): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Lt(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Lt(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <(value: Long): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Lt(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Lt(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <(value: Double): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Lt(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Lt(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <=(value: Int): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.LtEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.LtEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <=(value: Long): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.LtEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.LtEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def <=(value: Double): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.LtEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.LtEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def ===(value: Int): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def ===(value: Long): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def ===(value: Double): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def ===(value: String): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.Eq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def =!=(value: Int): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def =!=(value: Long): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def =!=(value: Double): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
   def =!=(value: String): Expr[Boolean] =
-    BinaryExpr(ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)), ProtoEncoder.given_ProtoEncoder_Boolean)
+    BinaryExpr(
+      ProtoExpr.NotEq(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
 // Internal expression implementations
 

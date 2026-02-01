@@ -10,23 +10,22 @@ import scala.deriving.Mirror
 import scala.compiletime.*
 import java.nio.charset.StandardCharsets
 
-/**
- * Optimized Arrow writer with vector caching.
- *
- * Key optimizations over InlineArrowWriter:
- *   1. Vectors are cached once per write batch, not looked up per row
- *   2. Uses indexed iteration instead of for-each
- *   3. Minimizes virtual method calls in hot path
- *
- * Usage:
- * {{{
- * case class Person(name: String, age: Int) derives ProtoEncoder
- *
- * val writer = OptimizedArrowWriter.derived[Person]
- * val root = VectorSchemaRoot.create(writer.schema, allocator)
- * writer.write(data, root)
- * }}}
- */
+/** Optimized Arrow writer with vector caching.
+  *
+  * Key optimizations over InlineArrowWriter:
+  *   1. Vectors are cached once per write batch, not looked up per row
+  *   2. Uses indexed iteration instead of for-each
+  *   3. Minimizes virtual method calls in hot path
+  *
+  * Usage:
+  * {{{
+  * case class Person(name: String, age: Int) derives ProtoEncoder
+  *
+  * val writer = OptimizedArrowWriter.derived[Person]
+  * val root = VectorSchemaRoot.create(writer.schema, allocator)
+  * writer.write(data, root)
+  * }}}
+  */
 trait OptimizedArrowWriter[T]:
   def schema: Schema
   def fieldCount: Int
@@ -35,7 +34,10 @@ trait OptimizedArrowWriter[T]:
 
 object OptimizedArrowWriter:
 
-  inline def derived[T](using m: Mirror.ProductOf[T], enc: ProtoEncoder[T]): OptimizedArrowWriter[T] =
+  inline def derived[T](using
+      m: Mirror.ProductOf[T],
+      enc: ProtoEncoder[T]
+  ): OptimizedArrowWriter[T] =
     val count = constValue[Tuple.Size[m.MirroredElemTypes]]
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(enc.schema)
 
@@ -84,37 +86,47 @@ object OptimizedArrowWriter:
       case _: EmptyTuple => ()
 
       case _: (Boolean *: ts) =>
-        vectors(fieldIndex).asInstanceOf[BitVector]
-          .setSafe(rowIndex, if product.productElement(fieldIndex).asInstanceOf[Boolean] then 1 else 0)
+        vectors(fieldIndex)
+          .asInstanceOf[BitVector]
+          .setSafe(
+            rowIndex,
+            if product.productElement(fieldIndex).asInstanceOf[Boolean] then 1 else 0
+          )
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (Byte *: ts) =>
-        vectors(fieldIndex).asInstanceOf[TinyIntVector]
+        vectors(fieldIndex)
+          .asInstanceOf[TinyIntVector]
           .setSafe(rowIndex, product.productElement(fieldIndex).asInstanceOf[Byte])
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (Short *: ts) =>
-        vectors(fieldIndex).asInstanceOf[SmallIntVector]
+        vectors(fieldIndex)
+          .asInstanceOf[SmallIntVector]
           .setSafe(rowIndex, product.productElement(fieldIndex).asInstanceOf[Short])
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (Int *: ts) =>
-        vectors(fieldIndex).asInstanceOf[IntVector]
+        vectors(fieldIndex)
+          .asInstanceOf[IntVector]
           .setSafe(rowIndex, product.productElement(fieldIndex).asInstanceOf[Int])
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (Long *: ts) =>
-        vectors(fieldIndex).asInstanceOf[BigIntVector]
+        vectors(fieldIndex)
+          .asInstanceOf[BigIntVector]
           .setSafe(rowIndex, product.productElement(fieldIndex).asInstanceOf[Long])
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (Float *: ts) =>
-        vectors(fieldIndex).asInstanceOf[Float4Vector]
+        vectors(fieldIndex)
+          .asInstanceOf[Float4Vector]
           .setSafe(rowIndex, product.productElement(fieldIndex).asInstanceOf[Float])
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (Double *: ts) =>
-        vectors(fieldIndex).asInstanceOf[Float8Vector]
+        vectors(fieldIndex)
+          .asInstanceOf[Float8Vector]
           .setSafe(rowIndex, product.productElement(fieldIndex).asInstanceOf[Double])
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
@@ -123,8 +135,7 @@ object OptimizedArrowWriter:
         val value = product.productElement(fieldIndex)
         if value != null then
           vec.setSafe(rowIndex, value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8))
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (java.time.LocalDate *: ts) =>
@@ -132,8 +143,7 @@ object OptimizedArrowWriter:
         val value = product.productElement(fieldIndex)
         if value != null then
           vec.setSafe(rowIndex, value.asInstanceOf[java.time.LocalDate].toEpochDay.toInt)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       case _: (java.time.Instant *: ts) =>
@@ -143,8 +153,7 @@ object OptimizedArrowWriter:
           val instant = value.asInstanceOf[java.time.Instant]
           val micros = instant.getEpochSecond * 1000000L + instant.getNano / 1000
           vec.setSafe(rowIndex, micros)
-        else
-          vec.setNull(rowIndex)
+        else vec.setNull(rowIndex)
         writeFieldsCached[ts](product, vectors, rowIndex, fieldIndex + 1)
 
       // Fallback for other types

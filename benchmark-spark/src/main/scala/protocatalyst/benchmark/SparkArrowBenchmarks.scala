@@ -17,8 +17,8 @@ import scala.jdk.CollectionConverters._
 
 /** Benchmarks for Spark's Arrow serialization.
   *
-  * Measures Spark's ArrowWriter performance for comparison with
-  * ProtoCatalyst's compile-time InlineArrowWriter.
+  * Measures Spark's ArrowWriter performance for comparison with ProtoCatalyst's compile-time
+  * InlineArrowWriter.
   *
   * Spark's approach:
   *   - Uses runtime type dispatch via DataType pattern matching
@@ -42,38 +42,44 @@ class SparkArrowBenchmarks {
   var allocator: RootAllocator = _
 
   // Schemas
-  val simpleSchema: StructType = StructType(Seq(
-    StructField("name", StringType, nullable = false),
-    StructField("age", IntegerType, nullable = false)
-  ))
+  val simpleSchema: StructType = StructType(
+    Seq(
+      StructField("name", StringType, nullable = false),
+      StructField("age", IntegerType, nullable = false)
+    )
+  )
 
-  val wideSchema: StructType = StructType(Seq(
-    StructField("f1", IntegerType, nullable = false),
-    StructField("f2", IntegerType, nullable = false),
-    StructField("f3", IntegerType, nullable = false),
-    StructField("f4", IntegerType, nullable = false),
-    StructField("f5", IntegerType, nullable = false),
-    StructField("f6", IntegerType, nullable = false),
-    StructField("f7", IntegerType, nullable = false),
-    StructField("f8", IntegerType, nullable = false),
-    StructField("f9", IntegerType, nullable = false),
-    StructField("f10", IntegerType, nullable = false),
-    StructField("f11", StringType, nullable = false),
-    StructField("f12", StringType, nullable = false),
-    StructField("f13", StringType, nullable = false),
-    StructField("f14", StringType, nullable = false),
-    StructField("f15", StringType, nullable = false),
-    StructField("f16", DoubleType, nullable = false),
-    StructField("f17", DoubleType, nullable = false),
-    StructField("f18", DoubleType, nullable = false),
-    StructField("f19", DoubleType, nullable = false),
-    StructField("f20", DoubleType, nullable = false)
-  ))
+  val wideSchema: StructType = StructType(
+    Seq(
+      StructField("f1", IntegerType, nullable = false),
+      StructField("f2", IntegerType, nullable = false),
+      StructField("f3", IntegerType, nullable = false),
+      StructField("f4", IntegerType, nullable = false),
+      StructField("f5", IntegerType, nullable = false),
+      StructField("f6", IntegerType, nullable = false),
+      StructField("f7", IntegerType, nullable = false),
+      StructField("f8", IntegerType, nullable = false),
+      StructField("f9", IntegerType, nullable = false),
+      StructField("f10", IntegerType, nullable = false),
+      StructField("f11", StringType, nullable = false),
+      StructField("f12", StringType, nullable = false),
+      StructField("f13", StringType, nullable = false),
+      StructField("f14", StringType, nullable = false),
+      StructField("f15", StringType, nullable = false),
+      StructField("f16", DoubleType, nullable = false),
+      StructField("f17", DoubleType, nullable = false),
+      StructField("f18", DoubleType, nullable = false),
+      StructField("f19", DoubleType, nullable = false),
+      StructField("f20", DoubleType, nullable = false)
+    )
+  )
 
-  val temporalSchema: StructType = StructType(Seq(
-    StructField("date", DateType, nullable = false),
-    StructField("time", TimestampType, nullable = false)
-  ))
+  val temporalSchema: StructType = StructType(
+    Seq(
+      StructField("date", DateType, nullable = false),
+      StructField("time", TimestampType, nullable = false)
+    )
+  )
 
   // Test data as InternalRows
   var simpleRows: Array[InternalRow] = _
@@ -109,18 +115,39 @@ class SparkArrowBenchmarks {
     }.toArray
 
     wideRows = (1 to batchSize).map { i =>
-      wideSerializer(Wide(
-        i, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6, i + 7, i + 8, i + 9,
-        s"s$i", s"s${i + 1}", s"s${i + 2}", s"s${i + 3}", s"s${i + 4}",
-        i * 1.1, i * 1.2, i * 1.3, i * 1.4, i * 1.5
-      )).copy()
+      wideSerializer(
+        Wide(
+          i,
+          i + 1,
+          i + 2,
+          i + 3,
+          i + 4,
+          i + 5,
+          i + 6,
+          i + 7,
+          i + 8,
+          i + 9,
+          s"s$i",
+          s"s${i + 1}",
+          s"s${i + 2}",
+          s"s${i + 3}",
+          s"s${i + 4}",
+          i * 1.1,
+          i * 1.2,
+          i * 1.3,
+          i * 1.4,
+          i * 1.5
+        )
+      ).copy()
     }.toArray
 
     temporalRows = (1 to batchSize).map { i =>
-      temporalSerializer(Temporal(
-        java.time.LocalDate.ofEpochDay(i.toLong),
-        java.time.Instant.ofEpochSecond(i.toLong * 86400)
-      )).copy()
+      temporalSerializer(
+        Temporal(
+          java.time.LocalDate.ofEpochDay(i.toLong),
+          java.time.Instant.ofEpochSecond(i.toLong * 86400)
+        )
+      ).copy()
     }.toArray
 
     // Create Arrow roots using Spark's ArrowUtils
@@ -158,20 +185,28 @@ class SparkArrowBenchmarks {
   private def toArrowSchema(schema: StructType): Schema = {
     val fields = schema.fields.map { f =>
       val arrowType = f.dataType match {
-        case IntegerType => new ArrowType.Int(32, true)
-        case LongType => new ArrowType.Int(64, true)
-        case DoubleType => new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)
-        case StringType => ArrowType.Utf8.INSTANCE
-        case DateType => new ArrowType.Date(DateUnit.DAY)
+        case IntegerType   => new ArrowType.Int(32, true)
+        case LongType      => new ArrowType.Int(64, true)
+        case DoubleType    => new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)
+        case StringType    => ArrowType.Utf8.INSTANCE
+        case DateType      => new ArrowType.Date(DateUnit.DAY)
         case TimestampType => new ArrowType.Timestamp(ArrowTimeUnit.MICROSECOND, "UTC")
-        case _ => ArrowType.Utf8.INSTANCE
+        case _             => ArrowType.Utf8.INSTANCE
       }
-      new Field(f.name, new FieldType(f.nullable, arrowType, null), java.util.Collections.emptyList())
+      new Field(
+        f.name,
+        new FieldType(f.nullable, arrowType, null),
+        java.util.Collections.emptyList()
+      )
     }
     new Schema(fields.toList.asJava)
   }
 
-  private def writeWithSpark(rows: Array[InternalRow], root: VectorSchemaRoot, schema: StructType): Unit = {
+  private def writeWithSpark(
+      rows: Array[InternalRow],
+      root: VectorSchemaRoot,
+      schema: StructType
+  ): Unit = {
     val writer = ArrowWriter.create(root)
     rows.foreach(writer.write)
     writer.finish()
@@ -231,11 +266,26 @@ class SparkArrowBenchmarks {
     var i = 0
     while (i < batchSize) {
       result(i) = Wide(
-        vecs(0).getInt(i), vecs(1).getInt(i), vecs(2).getInt(i), vecs(3).getInt(i), vecs(4).getInt(i),
-        vecs(5).getInt(i), vecs(6).getInt(i), vecs(7).getInt(i), vecs(8).getInt(i), vecs(9).getInt(i),
-        vecs(10).getUTF8String(i).toString, vecs(11).getUTF8String(i).toString,
-        vecs(12).getUTF8String(i).toString, vecs(13).getUTF8String(i).toString, vecs(14).getUTF8String(i).toString,
-        vecs(15).getDouble(i), vecs(16).getDouble(i), vecs(17).getDouble(i), vecs(18).getDouble(i), vecs(19).getDouble(i)
+        vecs(0).getInt(i),
+        vecs(1).getInt(i),
+        vecs(2).getInt(i),
+        vecs(3).getInt(i),
+        vecs(4).getInt(i),
+        vecs(5).getInt(i),
+        vecs(6).getInt(i),
+        vecs(7).getInt(i),
+        vecs(8).getInt(i),
+        vecs(9).getInt(i),
+        vecs(10).getUTF8String(i).toString,
+        vecs(11).getUTF8String(i).toString,
+        vecs(12).getUTF8String(i).toString,
+        vecs(13).getUTF8String(i).toString,
+        vecs(14).getUTF8String(i).toString,
+        vecs(15).getDouble(i),
+        vecs(16).getDouble(i),
+        vecs(17).getDouble(i),
+        vecs(18).getDouble(i),
+        vecs(19).getDouble(i)
       )
       i += 1
     }
@@ -280,10 +330,26 @@ class SparkArrowBenchmarks {
 
 // Wide case class for Spark benchmarks (Scala 2.13 syntax)
 case class Wide(
-    f1: Int, f2: Int, f3: Int, f4: Int, f5: Int,
-    f6: Int, f7: Int, f8: Int, f9: Int, f10: Int,
-    f11: String, f12: String, f13: String, f14: String, f15: String,
-    f16: Double, f17: Double, f18: Double, f19: Double, f20: Double
+    f1: Int,
+    f2: Int,
+    f3: Int,
+    f4: Int,
+    f5: Int,
+    f6: Int,
+    f7: Int,
+    f8: Int,
+    f9: Int,
+    f10: Int,
+    f11: String,
+    f12: String,
+    f13: String,
+    f14: String,
+    f15: String,
+    f16: Double,
+    f17: Double,
+    f18: Double,
+    f19: Double,
+    f20: Double
 )
 
 // Temporal case class for Spark benchmarks

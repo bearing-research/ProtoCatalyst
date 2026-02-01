@@ -2,12 +2,11 @@ package protocatalyst.mock
 
 import protocatalyst.mock.MockExpression.*
 
-/**
- * Mock Spark LogicalPlan hierarchy.
- *
- * Mirrors org.apache.spark.sql.catalyst.plans.logical.LogicalPlan for testing
- * the conversion layer before real Spark Scala 3 is available.
- */
+/** Mock Spark LogicalPlan hierarchy.
+  *
+  * Mirrors org.apache.spark.sql.catalyst.plans.logical.LogicalPlan for testing the conversion layer
+  * before real Spark Scala 3 is available.
+  */
 sealed trait MockLogicalPlan:
   def output: Seq[AttributeReference]
   def children: Seq[MockLogicalPlan]
@@ -44,8 +43,8 @@ object MockLogicalPlan:
   ) extends MockLogicalPlan:
     def output: Seq[AttributeReference] = projectList.map {
       case a: AttributeReference => a
-      case Alias(_, name) => AttributeReference(name, MockDataType.StringType, true)
-      case e => AttributeReference("col", e.dataType, e.nullable)
+      case Alias(_, name)        => AttributeReference(name, MockDataType.StringType, true)
+      case e                     => AttributeReference("col", e.dataType, e.nullable)
     }
     def children: Seq[MockLogicalPlan] = Seq(child)
 
@@ -65,8 +64,8 @@ object MockLogicalPlan:
   ) extends MockLogicalPlan:
     def output: Seq[AttributeReference] = aggregateExpressions.map {
       case a: AttributeReference => a
-      case Alias(_, name) => AttributeReference(name, MockDataType.StringType, true)
-      case e => AttributeReference("col", e.dataType, e.nullable)
+      case Alias(_, name)        => AttributeReference(name, MockDataType.StringType, true)
+      case e                     => AttributeReference("col", e.dataType, e.nullable)
     }
     def children: Seq[MockLogicalPlan] = Seq(child)
 
@@ -116,7 +115,7 @@ object MockLogicalPlan:
   ) extends MockLogicalPlan:
     def output: Seq[AttributeReference] = child.output ++ windowExpressions.map {
       case Alias(_, name) => AttributeReference(name, MockDataType.IntegerType, true)
-      case e => AttributeReference("window", e.dataType, e.nullable)
+      case e              => AttributeReference("window", e.dataType, e.nullable)
     }
     def children: Seq[MockLogicalPlan] = Seq(child)
 
@@ -131,7 +130,7 @@ object MockLogicalPlan:
   ) extends MockLogicalPlan:
     def output: Seq[AttributeReference] = joinType match
       case JoinType.LeftSemi | JoinType.LeftAnti => left.output
-      case _ => left.output ++ right.output
+      case _                                     => left.output ++ right.output
     def children: Seq[MockLogicalPlan] = Seq(left, right)
 
   enum JoinType:

@@ -77,7 +77,7 @@ class DslSuite extends munit.FunSuite:
 
     doubled.toProtoExpr match
       case ProtoExpr.Multiply(_, _) => () // ok
-      case other => fail(s"Expected Multiply, got $other")
+      case other                    => fail(s"Expected Multiply, got $other")
 
   test("boolean expressions"):
     val users = Table[User]("users")
@@ -100,7 +100,7 @@ class DslSuite extends munit.FunSuite:
 
     upper.toProtoExpr match
       case ProtoExpr.Upper(_) => () // ok
-      case other => fail(s"Expected Upper, got $other")
+      case other              => fail(s"Expected Upper, got $other")
 
   // === Query Builder Tests ===
 
@@ -158,7 +158,7 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Limit(10, _) => () // ok
-      case other => fail(s"Expected Limit(10), got $other")
+      case other                         => fail(s"Expected Limit(10), got $other")
 
   test("distinct query"):
     val users = Table[User]("users")
@@ -167,7 +167,7 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Distinct(_) => () // ok
-      case other => fail(s"Expected Distinct, got $other")
+      case other                        => fail(s"Expected Distinct, got $other")
 
   // === Aggregate Tests ===
 
@@ -198,11 +198,11 @@ class DslSuite extends munit.FunSuite:
 
     cnt.toProtoExpr match
       case ProtoExpr.Count(_, false) => () // ok
-      case other => fail(s"Expected Count, got $other")
+      case other                     => fail(s"Expected Count, got $other")
 
     av.toProtoExpr match
       case ProtoExpr.Avg(_) => () // ok
-      case other => fail(s"Expected Avg, got $other")
+      case other            => fail(s"Expected Avg, got $other")
 
   // === Join Tests ===
 
@@ -266,7 +266,7 @@ class DslSuite extends munit.FunSuite:
 
     restored match
       case Left(err) => fail(s"Deserialization failed: $err")
-      case Right(q) => assertEquals(q.contentHash, compiled.contentHash)
+      case Right(q)  => assertEquals(q.contentHash, compiled.contentHash)
 
   // === Complex Query Tests ===
 
@@ -287,11 +287,15 @@ class DslSuite extends munit.FunSuite:
 
     // Verify structure
     query.plan match
-      case ProtoLogicalPlan.Limit(100,
-            ProtoLogicalPlan.Sort(_,_,
-              ProtoLogicalPlan.Project(_,
-                ProtoLogicalPlan.Filter(_,
-                  ProtoLogicalPlan.Filter(_, _))))) => () // ok
+      case ProtoLogicalPlan.Limit(
+            100,
+            ProtoLogicalPlan.Sort(
+              _,
+              _,
+              ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.Filter(_, _)))
+            )
+          ) =>
+        () // ok
       case other => fail(s"Unexpected plan structure: $other")
 
   // === Lambda-Style Field Access Tests ===
@@ -303,9 +307,13 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Filter(
-            ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), ProtoExpr.Literal(LiteralValue.IntValue(18))),
+            ProtoExpr.Gt(
+              ProtoExpr.ColumnRef("age", _, _, _),
+              ProtoExpr.Literal(LiteralValue.IntValue(18))
+            ),
             ProtoLogicalPlan.RelationRef(_, _, _)
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected Filter with age > 18, got $other")
 
   test("lambda filter with where alias"):
@@ -317,7 +325,8 @@ class DslSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Filter(
             ProtoExpr.GtEq(ProtoExpr.ColumnRef("salary", _, _, _), _),
             _
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected Filter with salary >= 50000, got $other")
 
   test("lambda filter on query"):
@@ -334,7 +343,8 @@ class DslSuite extends munit.FunSuite:
               ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _),
               _
             )
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected nested Filter, got $other")
 
   test("lambda filter combined with boolean ops"):
@@ -384,7 +394,8 @@ class DslSuite extends munit.FunSuite:
       case (
             ProtoLogicalPlan.Filter(ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _), _),
             ProtoLogicalPlan.Filter(ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _), _)
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Plans should be equivalent: $other")
 
   // === Spark-Compatible Syntax Tests ===
@@ -397,9 +408,13 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Filter(
-            ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), ProtoExpr.Literal(LiteralValue.IntValue(18))),
+            ProtoExpr.Gt(
+              ProtoExpr.ColumnRef("age", _, _, _),
+              ProtoExpr.Literal(LiteralValue.IntValue(18))
+            ),
             _
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected Filter with age > 18, got $other")
 
   test("lambda filter with double literal"):
@@ -409,9 +424,13 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Filter(
-            ProtoExpr.GtEq(ProtoExpr.ColumnRef("salary", _, _, _), ProtoExpr.Literal(LiteralValue.DoubleValue(50000.0))),
+            ProtoExpr.GtEq(
+              ProtoExpr.ColumnRef("salary", _, _, _),
+              ProtoExpr.Literal(LiteralValue.DoubleValue(50000.0))
+            ),
             _
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected Filter with salary >= 50000.0, got $other")
 
   test("$ string interpolator for column access"):
@@ -432,9 +451,13 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Filter(
-            ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), ProtoExpr.Literal(LiteralValue.IntValue(18))),
+            ProtoExpr.Gt(
+              ProtoExpr.ColumnRef("age", _, _, _),
+              ProtoExpr.Literal(LiteralValue.IntValue(18))
+            ),
             _
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected Filter with $$age > 18, got $other")
 
   test("SparkSyntax.col function"):
@@ -456,11 +479,11 @@ class DslSuite extends munit.FunSuite:
     // Verify both produce Filter plans
     lambdaQuery.plan match
       case ProtoLogicalPlan.Filter(_, _) => () // ok
-      case _ => fail("Lambda query should produce Filter")
+      case _                             => fail("Lambda query should produce Filter")
 
     dollarQuery.plan match
       case ProtoLogicalPlan.Filter(_, _) => () // ok
-      case _ => fail("Dollar query should produce Filter")
+      case _                             => fail("Dollar query should produce Filter")
 
   test("equality comparison with string literal"):
     val users = Table[User]("users")
@@ -469,9 +492,13 @@ class DslSuite extends munit.FunSuite:
 
     query.plan match
       case ProtoLogicalPlan.Filter(
-            ProtoExpr.Eq(ProtoExpr.ColumnRef("name", _, _, _), ProtoExpr.Literal(LiteralValue.StringValue("Alice"))),
+            ProtoExpr.Eq(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              ProtoExpr.Literal(LiteralValue.StringValue("Alice"))
+            ),
             _
-          ) => () // ok
+          ) =>
+        () // ok
       case other => fail(s"Expected Filter with name === Alice, got $other")
 
   test("combined boolean conditions with direct literals"):

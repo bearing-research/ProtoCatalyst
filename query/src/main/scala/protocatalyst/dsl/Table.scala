@@ -7,19 +7,18 @@ import protocatalyst.types.*
 import scala.deriving.Mirror
 import scala.compiletime.*
 
-/**
- * Entry point for building type-safe queries.
- *
- * Usage:
- * {{{
- * case class User(name: String, age: Int) derives ProtoEncoder
- *
- * val users = Table[User]("users")
- * val query = users
- *   .filter(users.col[Int]("age") > Expr.lit(18))
- *   .select(users.col[String]("name"), users.col[Int]("age"))
- * }}}
- */
+/** Entry point for building type-safe queries.
+  *
+  * Usage:
+  * {{{
+  * case class User(name: String, age: Int) derives ProtoEncoder
+  *
+  * val users = Table[User]("users")
+  * val query = users
+  *   .filter(users.col[Int]("age") > Expr.lit(18))
+  *   .select(users.col[String]("name"), users.col[Int]("age"))
+  * }}}
+  */
 final class Table[A] private (
     val tableName: String,
     val encoder: ProtoEncoder[A],
@@ -44,7 +43,12 @@ final class Table[A] private (
   /** Get all columns */
   def columns: Vector[Column[A, ?]] =
     encoder.fields.map { field =>
-      Column[A, Any](field.name, field.encoder.catalystType, field.nullable, field.encoder.asInstanceOf[ProtoEncoder[Any]])
+      Column[A, Any](
+        field.name,
+        field.encoder.catalystType,
+        field.nullable,
+        field.encoder.asInstanceOf[ProtoEncoder[Any]]
+      )
     }
 
   /** Get a field selector for lambda-style access */
@@ -141,11 +145,11 @@ final class Table[A] private (
   def toQuery: Query[A] = baseQuery
 
 object Table:
-  /**
-   * Create a table reference with compile-time schema derivation.
-   *
-   * @param tableName The table name as it appears in the catalog
-   */
+  /** Create a table reference with compile-time schema derivation.
+    *
+    * @param tableName
+    *   The table name as it appears in the catalog
+    */
   def apply[A](tableName: String)(using enc: ProtoEncoder[A]): Table[A] =
     val fields = enc.schema.fields
     val fingerprint = SchemaFingerprint.compute(fields)
@@ -155,21 +159,21 @@ object Table:
     val contract = SchemaContract(tableName, fieldContracts, fingerprint)
     new Table[A](tableName, enc, contract)
 
-  /**
-   * Create a table with an explicit schema contract.
-   * Use this when you want to specify a pre-computed schema fingerprint.
-   */
-  def withContract[A](tableName: String, contract: SchemaContract)(using enc: ProtoEncoder[A]): Table[A] =
+  /** Create a table with an explicit schema contract. Use this when you want to specify a
+    * pre-computed schema fingerprint.
+    */
+  def withContract[A](tableName: String, contract: SchemaContract)(using
+      enc: ProtoEncoder[A]
+  ): Table[A] =
     new Table[A](tableName, enc, contract)
 
-/**
- * Typed column selector for lambda-style access.
- *
- * This enables syntax like:
- * {{{
- * users.filter(u => u("age") > 18)
- * }}}
- */
+/** Typed column selector for lambda-style access.
+  *
+  * This enables syntax like:
+  * {{{
+  * users.filter(u => u("age") > 18)
+  * }}}
+  */
 final class ColumnSelector[A](table: Table[A]):
   /** Select column by name with type */
   def apply[T](name: String)(using enc: ProtoEncoder[T]): Column[A, T] =

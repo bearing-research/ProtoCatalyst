@@ -18,7 +18,7 @@ class IntegrationSuite extends munit.FunSuite:
     val restored = CompiledQuery.fromBytes[IntegrationUser](bytes)
 
     restored match
-      case Right(q) => assertEquals(q.contentHash, compiled.contentHash)
+      case Right(q)  => assertEquals(q.contentHash, compiled.contentHash)
       case Left(err) => fail(s"Deserialization failed: $err")
 
   test("validates then binds compiled query"):
@@ -35,7 +35,7 @@ class IntegrationSuite extends munit.FunSuite:
     // Step 2: Bind
     val binding = MockQueryBinder.bind(compiled.artifact.plan, catalog)
     binding match
-      case MockQueryBinder.BoundPlan(_) => () // ok
+      case MockQueryBinder.BoundPlan(_)         => () // ok
       case MockQueryBinder.BindingError(msg, _) => fail(s"Binding failed: $msg")
 
   test("full workflow - compile, validate, bind"):
@@ -65,17 +65,22 @@ class IntegrationSuite extends munit.FunSuite:
     // Bind
     val binding = MockQueryBinder.bind(compiled.artifact.plan, catalog)
     binding match
-      case MockQueryBinder.BoundPlan(_) => () // ok
+      case MockQueryBinder.BoundPlan(_)         => () // ok
       case MockQueryBinder.BindingError(msg, _) => fail(s"Binding failed: $msg")
 
   test("validation fails on schema mismatch"):
     val catalog = InMemoryCatalog()
     // Register schema with wrong type for 'age'
-    catalog.registerTable("users", MockDataType.StructType(Vector(
-      MockStructField("name", MockDataType.StringType, nullable = false),
-      MockStructField("age", MockDataType.StringType, nullable = false), // Wrong type!
-      MockStructField("salary", MockDataType.DoubleType, nullable = false)
-    )))
+    catalog.registerTable(
+      "users",
+      MockDataType.StructType(
+        Vector(
+          MockStructField("name", MockDataType.StringType, nullable = false),
+          MockStructField("age", MockDataType.StringType, nullable = false), // Wrong type!
+          MockStructField("salary", MockDataType.DoubleType, nullable = false)
+        )
+      )
+    )
 
     val users = Table[IntegrationUser]("users")
     val compiled = users.filter(_.age > 18).compile
@@ -101,7 +106,10 @@ class IntegrationSuite extends munit.FunSuite:
             val aliceRow = MockRow("Alice", 30, 75000.0) // age 30 > 18
             val bobRow = MockRow("Bob", 16, 0.0) // age 16 <= 18
 
-            assertEquals(ExpressionEvaluator.eval(cond, aliceRow), ExpressionEvaluator.Success(true))
+            assertEquals(
+              ExpressionEvaluator.eval(cond, aliceRow),
+              ExpressionEvaluator.Success(true)
+            )
             assertEquals(ExpressionEvaluator.eval(cond, bobRow), ExpressionEvaluator.Success(false))
           case _ => fail("Expected Filter plan")
       case MockQueryBinder.BindingError(msg, _) =>

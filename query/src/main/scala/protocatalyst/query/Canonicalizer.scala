@@ -24,14 +24,14 @@ object Canonicalizer:
     case ProtoExpr.And(children) =>
       val flattened = children.flatMap {
         case ProtoExpr.And(inner) => inner.map(flattenAndOr)
-        case other => Vector(flattenAndOr(other))
+        case other                => Vector(flattenAndOr(other))
       }
       ProtoExpr.And(flattened)
 
     case ProtoExpr.Or(children) =>
       val flattened = children.flatMap {
         case ProtoExpr.Or(inner) => inner.map(flattenAndOr)
-        case other => Vector(flattenAndOr(other))
+        case other               => Vector(flattenAndOr(other))
       }
       ProtoExpr.Or(flattened)
 
@@ -61,12 +61,13 @@ object Canonicalizer:
         ) =>
       ProtoExpr.Literal(LiteralValue.LongValue(a + b))
 
-    case ProtoExpr.Concat(children)
-        if children.forall {
+    case ProtoExpr.Concat(children) if children.forall {
           case ProtoExpr.Literal(LiteralValue.StringValue(_)) => true
-          case _ => false
+          case _                                              => false
         } =>
-      val str = children.collect { case ProtoExpr.Literal(LiteralValue.StringValue(s)) => s }.mkString
+      val str = children.collect { case ProtoExpr.Literal(LiteralValue.StringValue(s)) =>
+        s
+      }.mkString
       ProtoExpr.Literal(LiteralValue.StringValue(str))
 
     case other => other
@@ -82,12 +83,12 @@ object Canonicalizer:
     case ProtoExpr.And(children) =>
       val filtered = children.filterNot {
         case ProtoExpr.Literal(LiteralValue.BooleanValue(true)) => true
-        case _ => false
+        case _                                                  => false
       }
       if filtered.exists {
-            case ProtoExpr.Literal(LiteralValue.BooleanValue(false)) => true
-            case _ => false
-          }
+          case ProtoExpr.Literal(LiteralValue.BooleanValue(false)) => true
+          case _                                                   => false
+        }
       then ProtoExpr.Literal(LiteralValue.BooleanValue(false))
       else if filtered.isEmpty then ProtoExpr.Literal(LiteralValue.BooleanValue(true))
       else if filtered.size == 1 then filtered.head
@@ -99,12 +100,12 @@ object Canonicalizer:
     case ProtoExpr.Or(children) =>
       val filtered = children.filterNot {
         case ProtoExpr.Literal(LiteralValue.BooleanValue(false)) => true
-        case _ => false
+        case _                                                   => false
       }
       if filtered.exists {
-            case ProtoExpr.Literal(LiteralValue.BooleanValue(true)) => true
-            case _ => false
-          }
+          case ProtoExpr.Literal(LiteralValue.BooleanValue(true)) => true
+          case _                                                  => false
+        }
       then ProtoExpr.Literal(LiteralValue.BooleanValue(true))
       else if filtered.isEmpty then ProtoExpr.Literal(LiteralValue.BooleanValue(false))
       else if filtered.size == 1 then filtered.head
@@ -114,10 +115,10 @@ object Canonicalizer:
   }
 
   private def exprSortKey(e: ProtoExpr): String = e match
-    case ProtoExpr.ColumnRef(name, qual, _, _) => qual.getOrElse("") + "." + name
+    case ProtoExpr.ColumnRef(name, qual, _, _)          => qual.getOrElse("") + "." + name
     case ProtoExpr.Literal(LiteralValue.StringValue(s)) => s"lit:$s"
-    case ProtoExpr.Literal(LiteralValue.IntValue(i)) => s"lit:$i"
-    case _ => e.hashCode.toString
+    case ProtoExpr.Literal(LiteralValue.IntValue(i))    => s"lit:$i"
+    case _                                              => e.hashCode.toString
 
   private def transformPlan(
       plan: ProtoLogicalPlan,
@@ -204,27 +205,28 @@ object Canonicalizer:
   ): ProtoExpr =
     import ProtoExpr.*
     val transformed = expr match
-      case And(children) => And(children.map(c => transformExpr(c, transform)))
-      case Or(children) => Or(children.map(c => transformExpr(c, transform)))
-      case Not(child) => Not(transformExpr(child, transform))
-      case Eq(l, r) => Eq(transformExpr(l, transform), transformExpr(r, transform))
-      case NotEq(l, r) => NotEq(transformExpr(l, transform), transformExpr(r, transform))
-      case Lt(l, r) => Lt(transformExpr(l, transform), transformExpr(r, transform))
-      case LtEq(l, r) => LtEq(transformExpr(l, transform), transformExpr(r, transform))
-      case Gt(l, r) => Gt(transformExpr(l, transform), transformExpr(r, transform))
-      case GtEq(l, r) => GtEq(transformExpr(l, transform), transformExpr(r, transform))
-      case Add(l, r) => Add(transformExpr(l, transform), transformExpr(r, transform))
+      case And(children)  => And(children.map(c => transformExpr(c, transform)))
+      case Or(children)   => Or(children.map(c => transformExpr(c, transform)))
+      case Not(child)     => Not(transformExpr(child, transform))
+      case Eq(l, r)       => Eq(transformExpr(l, transform), transformExpr(r, transform))
+      case NotEq(l, r)    => NotEq(transformExpr(l, transform), transformExpr(r, transform))
+      case Lt(l, r)       => Lt(transformExpr(l, transform), transformExpr(r, transform))
+      case LtEq(l, r)     => LtEq(transformExpr(l, transform), transformExpr(r, transform))
+      case Gt(l, r)       => Gt(transformExpr(l, transform), transformExpr(r, transform))
+      case GtEq(l, r)     => GtEq(transformExpr(l, transform), transformExpr(r, transform))
+      case Add(l, r)      => Add(transformExpr(l, transform), transformExpr(r, transform))
       case Subtract(l, r) => Subtract(transformExpr(l, transform), transformExpr(r, transform))
       case Multiply(l, r) => Multiply(transformExpr(l, transform), transformExpr(r, transform))
-      case Divide(l, r) => Divide(transformExpr(l, transform), transformExpr(r, transform))
-      case Coalesce(cs) => Coalesce(cs.map(c => transformExpr(c, transform)))
-      case Concat(cs) => Concat(cs.map(c => transformExpr(c, transform)))
-      case In(v, list) => In(transformExpr(v, transform), list.map(e => transformExpr(e, transform)))
-      case IsNull(c) => IsNull(transformExpr(c, transform))
+      case Divide(l, r)   => Divide(transformExpr(l, transform), transformExpr(r, transform))
+      case Coalesce(cs)   => Coalesce(cs.map(c => transformExpr(c, transform)))
+      case Concat(cs)     => Concat(cs.map(c => transformExpr(c, transform)))
+      case In(v, list)    =>
+        In(transformExpr(v, transform), list.map(e => transformExpr(e, transform)))
+      case IsNull(c)    => IsNull(transformExpr(c, transform))
       case IsNotNull(c) => IsNotNull(transformExpr(c, transform))
-      case Cast(c, t) => Cast(transformExpr(c, transform), t)
-      case Alias(c, n) => Alias(transformExpr(c, transform), n)
-      case If(p, t, f) =>
+      case Cast(c, t)   => Cast(transformExpr(c, transform), t)
+      case Alias(c, n)  => Alias(transformExpr(c, transform), n)
+      case If(p, t, f)  =>
         If(transformExpr(p, transform), transformExpr(t, transform), transformExpr(f, transform))
       case CaseWhen(branches, elseVal) =>
         CaseWhen(

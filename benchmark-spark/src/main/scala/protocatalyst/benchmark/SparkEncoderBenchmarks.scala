@@ -7,8 +7,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 
 /** Benchmarks for Spark's ExpressionEncoder.
   *
-  * These benchmarks measure Spark's runtime reflection-based encoder performance
-  * for comparison with ProtoCatalyst's compile-time derived encoders.
+  * These benchmarks measure Spark's runtime reflection-based encoder performance for comparison
+  * with ProtoCatalyst's compile-time derived encoders.
   *
   * Run alongside ProtoEncoderBenchmarks to compare results.
   */

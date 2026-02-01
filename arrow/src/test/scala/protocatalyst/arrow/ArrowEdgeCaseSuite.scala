@@ -12,11 +12,31 @@ case class SingleField(value: Int) derives ProtoEncoder
 
 // Wide struct with 20+ fields
 case class WideStruct(
-    f1: Int, f2: Int, f3: Int, f4: Int, f5: Int,
-    f6: Int, f7: Int, f8: Int, f9: Int, f10: Int,
-    f11: String, f12: String, f13: String, f14: String, f15: String,
-    f16: Long, f17: Long, f18: Long, f19: Long, f20: Long,
-    f21: Double, f22: Double, f23: Boolean, f24: Boolean, f25: Float
+    f1: Int,
+    f2: Int,
+    f3: Int,
+    f4: Int,
+    f5: Int,
+    f6: Int,
+    f7: Int,
+    f8: Int,
+    f9: Int,
+    f10: Int,
+    f11: String,
+    f12: String,
+    f13: String,
+    f14: String,
+    f15: String,
+    f16: Long,
+    f17: Long,
+    f18: Long,
+    f19: Long,
+    f20: Long,
+    f21: Double,
+    f22: Double,
+    f23: Boolean,
+    f24: Boolean,
+    f25: Float
 ) derives ProtoEncoder
 
 // Floating point special values
@@ -38,7 +58,7 @@ case class Homogeneous(a: Int, b: Int, c: Int, d: Int, e: Int) derives ProtoEnco
 case class MixedNullability(
     required: String,
     optional: Option[String],
-    nullableRequired: String  // Can be null at runtime
+    nullableRequired: String // Can be null at runtime
 ) derives ProtoEncoder
 
 // Deeply nested structure (3 levels)
@@ -84,8 +104,7 @@ class ArrowEdgeCaseSuite extends munit.FunSuite:
     try
       writer.write(data, root)
       reader.read(root)
-    finally
-      root.close()
+    finally root.close()
 
   // ========== Single Field Tests ==========
 
@@ -105,16 +124,58 @@ class ArrowEdgeCaseSuite extends munit.FunSuite:
   test("roundtrip wide struct with 25 fields"):
     val data = Seq(
       WideStruct(
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-        "a", "b", "c", "d", "e",
-        100L, 200L, 300L, 400L, 500L,
-        1.1, 2.2, true, false, 3.3f
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        100L,
+        200L,
+        300L,
+        400L,
+        500L,
+        1.1,
+        2.2,
+        true,
+        false,
+        3.3f
       ),
       WideStruct(
-        -1, -2, -3, -4, -5, -6, -7, -8, -9, -10,
-        "x", "y", "z", "", null,
-        -100L, -200L, -300L, -400L, -500L,
-        -1.1, -2.2, false, true, -3.3f
+        -1,
+        -2,
+        -3,
+        -4,
+        -5,
+        -6,
+        -7,
+        -8,
+        -9,
+        -10,
+        "x",
+        "y",
+        "z",
+        "",
+        null,
+        -100L,
+        -200L,
+        -300L,
+        -400L,
+        -500L,
+        -1.1,
+        -2.2,
+        false,
+        true,
+        -3.3f
       )
     )
     val result = roundtrip(data)
@@ -237,7 +298,7 @@ class ArrowEdgeCaseSuite extends munit.FunSuite:
   // ========== Long String Tests ==========
 
   test("roundtrip very long strings"):
-    val longString = "x" * 100000  // 100KB string
+    val longString = "x" * 100000 // 100KB string
     val data = Seq(LongStrings(1, longString))
     val result = roundtrip(data)
     assertEquals(result(0).id, 1)

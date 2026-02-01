@@ -3,49 +3,58 @@ package protocatalyst.mock
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.types.*
 
-/**
- * Pre-built test fixtures for common testing scenarios.
- */
+/** Pre-built test fixtures for common testing scenarios.
+  */
 object TestFixtures:
 
   // === Standard Schema Definitions ===
 
-  val userSchema: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("id", MockDataType.LongType, nullable = false),
-    MockStructField("name", MockDataType.StringType, nullable = false),
-    MockStructField("age", MockDataType.IntegerType, nullable = true),
-    MockStructField("salary", MockDataType.DoubleType, nullable = true),
-    MockStructField("department_id", MockDataType.IntegerType, nullable = true)
-  ))
+  val userSchema: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("id", MockDataType.LongType, nullable = false),
+      MockStructField("name", MockDataType.StringType, nullable = false),
+      MockStructField("age", MockDataType.IntegerType, nullable = true),
+      MockStructField("salary", MockDataType.DoubleType, nullable = true),
+      MockStructField("department_id", MockDataType.IntegerType, nullable = true)
+    )
+  )
 
-  val departmentSchema: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("id", MockDataType.IntegerType, nullable = false),
-    MockStructField("name", MockDataType.StringType, nullable = false),
-    MockStructField("budget", MockDataType.DecimalType(18, 2), nullable = true)
-  ))
+  val departmentSchema: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("id", MockDataType.IntegerType, nullable = false),
+      MockStructField("name", MockDataType.StringType, nullable = false),
+      MockStructField("budget", MockDataType.DecimalType(18, 2), nullable = true)
+    )
+  )
 
-  val orderSchema: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("order_id", MockDataType.LongType, nullable = false),
-    MockStructField("user_id", MockDataType.LongType, nullable = false),
-    MockStructField("amount", MockDataType.DecimalType(18, 2), nullable = false),
-    MockStructField("created_at", MockDataType.TimestampType, nullable = false)
-  ))
+  val orderSchema: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("order_id", MockDataType.LongType, nullable = false),
+      MockStructField("user_id", MockDataType.LongType, nullable = false),
+      MockStructField("amount", MockDataType.DecimalType(18, 2), nullable = false),
+      MockStructField("created_at", MockDataType.TimestampType, nullable = false)
+    )
+  )
 
   // === ProtoSchema Equivalents ===
 
-  val userProtoSchema: ProtoSchema = ProtoSchema(Vector(
-    ProtoStructField("id", ProtoType.LongType, nullable = false),
-    ProtoStructField("name", ProtoType.StringType, nullable = false),
-    ProtoStructField("age", ProtoType.IntType, nullable = true),
-    ProtoStructField("salary", ProtoType.DoubleType, nullable = true),
-    ProtoStructField("department_id", ProtoType.IntType, nullable = true)
-  ))
+  val userProtoSchema: ProtoSchema = ProtoSchema(
+    Vector(
+      ProtoStructField("id", ProtoType.LongType, nullable = false),
+      ProtoStructField("name", ProtoType.StringType, nullable = false),
+      ProtoStructField("age", ProtoType.IntType, nullable = true),
+      ProtoStructField("salary", ProtoType.DoubleType, nullable = true),
+      ProtoStructField("department_id", ProtoType.IntType, nullable = true)
+    )
+  )
 
-  val departmentProtoSchema: ProtoSchema = ProtoSchema(Vector(
-    ProtoStructField("id", ProtoType.IntType, nullable = false),
-    ProtoStructField("name", ProtoType.StringType, nullable = false),
-    ProtoStructField("budget", ProtoType.DecimalType(18, 2), nullable = true)
-  ))
+  val departmentProtoSchema: ProtoSchema = ProtoSchema(
+    Vector(
+      ProtoStructField("id", ProtoType.IntType, nullable = false),
+      ProtoStructField("name", ProtoType.StringType, nullable = false),
+      ProtoStructField("budget", ProtoType.DecimalType(18, 2), nullable = true)
+    )
+  )
 
   // === Catalog Fixtures ===
 
@@ -59,38 +68,58 @@ object TestFixtures:
   // === Schema Mismatch Scenarios ===
 
   /** Schema with missing fields */
-  val userSchemaMissingField: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("id", MockDataType.LongType, nullable = false),
-    MockStructField("name", MockDataType.StringType, nullable = false)
-    // Missing: age, salary, department_id
-  ))
+  val userSchemaMissingField: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("id", MockDataType.LongType, nullable = false),
+      MockStructField("name", MockDataType.StringType, nullable = false)
+      // Missing: age, salary, department_id
+    )
+  )
 
   /** Schema with type mismatch */
-  val userSchemaTypeMismatch: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("id", MockDataType.LongType, nullable = false),
-    MockStructField("name", MockDataType.StringType, nullable = false),
-    MockStructField("age", MockDataType.StringType, nullable = true), // Wrong type: String instead of Int
-    MockStructField("salary", MockDataType.DoubleType, nullable = true),
-    MockStructField("department_id", MockDataType.IntegerType, nullable = true)
-  ))
+  val userSchemaTypeMismatch: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("id", MockDataType.LongType, nullable = false),
+      MockStructField("name", MockDataType.StringType, nullable = false),
+      MockStructField(
+        "age",
+        MockDataType.StringType,
+        nullable = true
+      ), // Wrong type: String instead of Int
+      MockStructField("salary", MockDataType.DoubleType, nullable = true),
+      MockStructField("department_id", MockDataType.IntegerType, nullable = true)
+    )
+  )
 
   /** Schema with nullability mismatch */
-  val userSchemaNullabilityMismatch: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("id", MockDataType.LongType, nullable = false),
-    MockStructField("name", MockDataType.StringType, nullable = true), // Was non-nullable
-    MockStructField("age", MockDataType.IntegerType, nullable = false), // Was nullable
-    MockStructField("salary", MockDataType.DoubleType, nullable = true),
-    MockStructField("department_id", MockDataType.IntegerType, nullable = true)
-  ))
+  val userSchemaNullabilityMismatch: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("id", MockDataType.LongType, nullable = false),
+      MockStructField("name", MockDataType.StringType, nullable = true), // Was non-nullable
+      MockStructField("age", MockDataType.IntegerType, nullable = false), // Was nullable
+      MockStructField("salary", MockDataType.DoubleType, nullable = true),
+      MockStructField("department_id", MockDataType.IntegerType, nullable = true)
+    )
+  )
 
   /** Schema with compatible widening (narrower types that can be widened) */
-  val userSchemaWidened: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("id", MockDataType.LongType, nullable = false),
-    MockStructField("name", MockDataType.StringType, nullable = false),
-    MockStructField("age", MockDataType.ShortType, nullable = true), // Narrower: Short instead of Int (compatible)
-    MockStructField("salary", MockDataType.FloatType, nullable = true), // Narrower: Float instead of Double (compatible)
-    MockStructField("department_id", MockDataType.IntegerType, nullable = true)
-  ))
+  val userSchemaWidened: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("id", MockDataType.LongType, nullable = false),
+      MockStructField("name", MockDataType.StringType, nullable = false),
+      MockStructField(
+        "age",
+        MockDataType.ShortType,
+        nullable = true
+      ), // Narrower: Short instead of Int (compatible)
+      MockStructField(
+        "salary",
+        MockDataType.FloatType,
+        nullable = true
+      ), // Narrower: Float instead of Double (compatible)
+      MockStructField("department_id", MockDataType.IntegerType, nullable = true)
+    )
+  )
 
   // === Sample Data ===
 
@@ -108,17 +137,21 @@ object TestFixtures:
 
   // === Simple Schema for Basic Testing ===
 
-  val simpleUserSchema: MockDataType.StructType = MockDataType.StructType(Vector(
-    MockStructField("name", MockDataType.StringType, nullable = false),
-    MockStructField("age", MockDataType.IntegerType, nullable = false),
-    MockStructField("salary", MockDataType.DoubleType, nullable = false)
-  ))
+  val simpleUserSchema: MockDataType.StructType = MockDataType.StructType(
+    Vector(
+      MockStructField("name", MockDataType.StringType, nullable = false),
+      MockStructField("age", MockDataType.IntegerType, nullable = false),
+      MockStructField("salary", MockDataType.DoubleType, nullable = false)
+    )
+  )
 
-  val simpleUserProtoSchema: ProtoSchema = ProtoSchema(Vector(
-    ProtoStructField("name", ProtoType.StringType, nullable = false),
-    ProtoStructField("age", ProtoType.IntType, nullable = false),
-    ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
-  ))
+  val simpleUserProtoSchema: ProtoSchema = ProtoSchema(
+    Vector(
+      ProtoStructField("name", ProtoType.StringType, nullable = false),
+      ProtoStructField("age", ProtoType.IntType, nullable = false),
+      ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
+    )
+  )
 
   val simpleUserRows: Vector[MockRow] = Vector(
     MockRow("Alice", 30, 75000.0),

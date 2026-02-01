@@ -3,10 +3,9 @@ package protocatalyst.mock
 import protocatalyst.expr.*
 import protocatalyst.types.*
 
-/**
- * Evaluates ProtoExpr against MockRow data.
- * Used for testing canonicalization and constant folding.
- */
+/** Evaluates ProtoExpr against MockRow data. Used for testing canonicalization and constant
+  * folding.
+  */
 object ExpressionEvaluator:
 
   sealed trait EvalResult
@@ -21,21 +20,21 @@ object ExpressionEvaluator:
     import ProtoExpr.*
     expr match
       // Literals
-      case Literal(LiteralValue.BooleanValue(v))   => v
-      case Literal(LiteralValue.ByteValue(v))      => v
-      case Literal(LiteralValue.ShortValue(v))     => v
-      case Literal(LiteralValue.IntValue(v))       => v
-      case Literal(LiteralValue.LongValue(v))      => v
-      case Literal(LiteralValue.FloatValue(v))     => v
-      case Literal(LiteralValue.DoubleValue(v))    => v
-      case Literal(LiteralValue.StringValue(v))    => v
-      case Literal(LiteralValue.BinaryValue(v))    => v
-      case Literal(LiteralValue.DecimalValue(v))   => v
-      case Literal(LiteralValue.DateValue(v))      => v
-      case Literal(LiteralValue.TimestampValue(v)) => v
-      case Literal(LiteralValue.TimeValue(v))      => v
+      case Literal(LiteralValue.BooleanValue(v))                => v
+      case Literal(LiteralValue.ByteValue(v))                   => v
+      case Literal(LiteralValue.ShortValue(v))                  => v
+      case Literal(LiteralValue.IntValue(v))                    => v
+      case Literal(LiteralValue.LongValue(v))                   => v
+      case Literal(LiteralValue.FloatValue(v))                  => v
+      case Literal(LiteralValue.DoubleValue(v))                 => v
+      case Literal(LiteralValue.StringValue(v))                 => v
+      case Literal(LiteralValue.BinaryValue(v))                 => v
+      case Literal(LiteralValue.DecimalValue(v))                => v
+      case Literal(LiteralValue.DateValue(v))                   => v
+      case Literal(LiteralValue.TimestampValue(v))              => v
+      case Literal(LiteralValue.TimeValue(v))                   => v
       case Literal(LiteralValue.CalendarIntervalValue(m, d, u)) => (m, d, u)
-      case Literal(LiteralValue.NullValue(_))      => null
+      case Literal(LiteralValue.NullValue(_))                   => null
 
       // Bound references
       case BoundRef(ordinal, _, _) => row.get(ordinal)
@@ -71,9 +70,9 @@ object ExpressionEvaluator:
 
       case Not(child) =>
         evalInternal(child, row) match
-          case null      => null
+          case null       => null
           case b: Boolean => !b
-          case other     => throw IllegalArgumentException(s"NOT requires boolean, got $other")
+          case other      => throw IllegalArgumentException(s"NOT requires boolean, got $other")
 
       // Null handling
       case IsNull(child)    => evalInternal(child, row) == null
@@ -91,7 +90,7 @@ object ExpressionEvaluator:
       case Add(l, r)      => numericOp(l, r, row, _ + _, _ + _, _ + _)
       case Subtract(l, r) => numericOp(l, r, row, _ - _, _ - _, _ - _)
       case Multiply(l, r) => numericOp(l, r, row, _ * _, _ * _, _ * _)
-      case Divide(l, r) =>
+      case Divide(l, r)   =>
         val rv = evalInternal(r, row)
         if rv == 0 || rv == 0.0 || rv == 0L then null
         else numericOp(l, r, row, _ / _, _ / _, _ / _)
@@ -99,26 +98,26 @@ object ExpressionEvaluator:
       // Math functions
       case Abs(child) =>
         evalInternal(child, row) match
-          case null => null
-          case i: Int => math.abs(i)
-          case l: Long => math.abs(l)
-          case f: Float => math.abs(f)
-          case d: Double => math.abs(d)
+          case null           => null
+          case i: Int         => math.abs(i)
+          case l: Long        => math.abs(l)
+          case f: Float       => math.abs(f)
+          case d: Double      => math.abs(d)
           case bd: BigDecimal => bd.abs
-          case n: Number => math.abs(n.doubleValue)
+          case n: Number      => math.abs(n.doubleValue)
 
       case Ceil(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case d: Double => math.ceil(d).toLong
-          case f: Float => math.ceil(f.toDouble).toLong
+          case f: Float  => math.ceil(f.toDouble).toLong
           case n: Number => math.ceil(n.doubleValue).toLong
 
       case Floor(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case d: Double => math.floor(d).toLong
-          case f: Float => math.floor(f.toDouble).toLong
+          case f: Float  => math.floor(f.toDouble).toLong
           case n: Number => math.floor(n.doubleValue).toLong
 
       case Round(child, scale) =>
@@ -141,12 +140,12 @@ object ExpressionEvaluator:
 
       case Sqrt(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case n: Number => math.sqrt(n.doubleValue)
 
       case Cbrt(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case n: Number => math.cbrt(n.doubleValue)
 
       case Pow(l, r) =>
@@ -165,10 +164,10 @@ object ExpressionEvaluator:
 
       case Sign(child) =>
         evalInternal(child, row) match
-          case null => null
-          case i: Int => math.signum(i)
-          case l: Long => math.signum(l)
-          case f: Float => math.signum(f)
+          case null      => null
+          case i: Int    => math.signum(i)
+          case l: Long   => math.signum(l)
+          case f: Float  => math.signum(f)
           case d: Double => math.signum(d)
           case n: Number => math.signum(n.doubleValue)
 
@@ -186,7 +185,7 @@ object ExpressionEvaluator:
 
       case Exp(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case n: Number => math.exp(n.doubleValue)
 
       // String operations
@@ -229,15 +228,15 @@ object ExpressionEvaluator:
           val str = s.toString
           val chars = trimStr.map(e => evalInternal(e, row)).getOrElse(" ").toString
           trimType match
-            case TrimType.Both => str.stripPrefix(chars).stripSuffix(chars)
-            case TrimType.Leading => str.stripPrefix(chars)
+            case TrimType.Both     => str.stripPrefix(chars).stripSuffix(chars)
+            case TrimType.Leading  => str.stripPrefix(chars)
             case TrimType.Trailing => str.stripSuffix(chars)
 
       case Length(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case s: String => s.length
-          case other => other.toString.length
+          case other     => other.toString.length
 
       case Replace(str, search, replace) =>
         val s = evalInternal(str, row)
@@ -289,9 +288,9 @@ object ExpressionEvaluator:
 
       case Reverse(child) =>
         evalInternal(child, row) match
-          case null => null
+          case null      => null
           case s: String => s.reverse
-          case other => other.toString.reverse
+          case other     => other.toString.reverse
 
       case StringRepeat(str, times) =>
         val s = evalInternal(str, row)
@@ -346,7 +345,9 @@ object ExpressionEvaluator:
         else
           val patternStr = p.toString
           // Convert SQL LIKE pattern to regex
-          val escapeChar = escape.map(e => evalInternal(e, row).toString.headOption.getOrElse('\\')).getOrElse('\\')
+          val escapeChar = escape
+            .map(e => evalInternal(e, row).toString.headOption.getOrElse('\\'))
+            .getOrElse('\\')
           val regex = likePatternToRegex(patternStr, escapeChar)
           v.toString.matches(regex)
 
@@ -365,7 +366,7 @@ object ExpressionEvaluator:
 
       // Window functions require aggregate computation over partitions
       case RowNumber() | Rank() | DenseRank() | Ntile(_) | Lead(_, _, _) | Lag(_, _, _) |
-           FirstValue(_, _) | LastValue(_, _) | NthValue(_, _) | WindowExpr(_, _, _, _) =>
+          FirstValue(_, _) | LastValue(_, _) | NthValue(_, _) | WindowExpr(_, _, _, _) =>
         throw IllegalStateException("Window functions cannot be evaluated row-by-row")
 
   private def compareNumeric(
@@ -390,32 +391,33 @@ object ExpressionEvaluator:
     val lv = evalInternal(l, row)
     val rv = evalInternal(r, row)
     if lv == null || rv == null then null
-    else (lv, rv) match
-      case (a: Int, b: Int)   => intOp(a, b)
-      case (a: Long, b: Long) => longOp(a, b)
-      case (a: Long, b: Int)  => longOp(a, b.toLong)
-      case (a: Int, b: Long)  => longOp(a.toLong, b)
-      case _                  => doubleOp(toDouble(lv), toDouble(rv))
+    else
+      (lv, rv) match
+        case (a: Int, b: Int)   => intOp(a, b)
+        case (a: Long, b: Long) => longOp(a, b)
+        case (a: Long, b: Int)  => longOp(a, b.toLong)
+        case (a: Int, b: Long)  => longOp(a.toLong, b)
+        case _                  => doubleOp(toDouble(lv), toDouble(rv))
 
   private def toDouble(v: Any): Double = v match
-    case i: Int        => i.toDouble
-    case l: Long       => l.toDouble
-    case f: Float      => f.toDouble
-    case d: Double     => d
+    case i: Int         => i.toDouble
+    case l: Long        => l.toDouble
+    case f: Float       => f.toDouble
+    case d: Double      => d
     case bd: BigDecimal => bd.toDouble
-    case s: Short      => s.toDouble
-    case b: Byte       => b.toDouble
-    case other         => other.toString.toDouble
+    case s: Short       => s.toDouble
+    case b: Byte        => b.toDouble
+    case other          => other.toString.toDouble
 
   private def toInt(v: Any): Int = v match
-    case i: Int   => i
-    case l: Long  => l.toInt
-    case s: Short => s.toInt
-    case b: Byte  => b.toInt
+    case i: Int    => i
+    case l: Long   => l.toInt
+    case s: Short  => s.toInt
+    case b: Byte   => b.toInt
     case d: Double => d.toInt
-    case f: Float => f.toInt
+    case f: Float  => f.toInt
     case n: Number => n.intValue
-    case other    => other.toString.toInt
+    case other     => other.toString.toInt
 
   private def castValue(v: Any, targetType: ProtoType): Any =
     targetType match
@@ -432,7 +434,7 @@ object ExpressionEvaluator:
           case _          => throw IllegalArgumentException(s"Cannot cast $v to Boolean")
       case ProtoType.ShortType => v.asInstanceOf[Number].shortValue
       case ProtoType.ByteType  => v.asInstanceOf[Number].byteValue
-      case _ => v // Passthrough for unsupported casts
+      case _                   => v // Passthrough for unsupported casts
 
   /** Convert SQL LIKE pattern to regex. */
   private def likePatternToRegex(pattern: String, escapeChar: Char): String =

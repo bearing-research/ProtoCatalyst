@@ -20,8 +20,8 @@ object CompiledQuery:
 
   /** Compile a SQL string at compile time.
     *
-    * The SQL is parsed at compile time, with parse errors reported as compilation errors.
-    * Column validation happens at runtime against the schema from ProtoEncoder[A].
+    * The SQL is parsed at compile time, with parse errors reported as compilation errors. Column
+    * validation happens at runtime against the schema from ProtoEncoder[A].
     *
     * Example:
     * {{{
@@ -32,14 +32,18 @@ object CompiledQuery:
   inline def sql[A](inline query: String)(using enc: ProtoEncoder[A]): CompiledQuery[A] =
     SqlMacro.compileSQL[A](query) match
       case Right(artifact) => fromArtifact(artifact, enc)
-      case Left(err) => throw new IllegalArgumentException(err)
+      case Left(err)       => throw new IllegalArgumentException(err)
 
   /** Compile SQL and return Either for error handling. */
-  inline def sqlEither[A](inline query: String)(using enc: ProtoEncoder[A]): Either[String, CompiledQuery[A]] =
+  inline def sqlEither[A](inline query: String)(using
+      enc: ProtoEncoder[A]
+  ): Either[String, CompiledQuery[A]] =
     SqlMacro.compileSQL[A](query).map(artifact => fromArtifact(artifact, enc))
 
   /** Load a pre-compiled artifact. */
-  def fromBytes[A](bytes: Array[Byte])(using enc: ProtoEncoder[A]): Either[String, CompiledQuery[A]] =
+  def fromBytes[A](bytes: Array[Byte])(using
+      enc: ProtoEncoder[A]
+  ): Either[String, CompiledQuery[A]] =
     ArtifactCodec.deserialize(bytes).map(art => fromArtifact(art, enc))
 
   /** Create from artifact - used by DSL and SQL macro. */

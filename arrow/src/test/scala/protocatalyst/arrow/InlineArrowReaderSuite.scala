@@ -35,8 +35,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       assertEquals(result.size, 2)
       assertEquals(result(0), ArrowSimple("Alice", 30))
       assertEquals(result(1), ArrowSimple("Bob", 25))
-    finally
-      root.close()
+    finally root.close()
 
   test("read all primitive types"):
     val writer = InlineArrowWriter.derived[ArrowPrimitives]
@@ -52,8 +51,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
 
       assertEquals(result.size, 1)
       assertEquals(result(0), ArrowPrimitives(true, 1.toByte, 2.toShort, 3, 4L, 5.0f, 6.0))
-    finally
-      root.close()
+    finally root.close()
 
   // === String Tests ===
 
@@ -73,8 +71,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       assertEquals(result.size, 2)
       assertEquals(result(0), ArrowWithStrings(1L, "John", "Doe"))
       assertEquals(result(1), ArrowWithStrings(2L, "Jane", "Smith"))
-    finally
-      root.close()
+    finally root.close()
 
   test("read null strings"):
     val writer = InlineArrowWriter.derived[ArrowWithStrings]
@@ -92,8 +89,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       assertEquals(result(0).id, 1L)
       assertEquals(result(0).firstName, "Hello")
       assertEquals(result(0).lastName, null)
-    finally
-      root.close()
+    finally root.close()
 
   // === Option Tests ===
 
@@ -115,8 +111,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       assertEquals(result(0), ArrowWithOption(1, Some("present"), Some(1.5)))
       assertEquals(result(1), ArrowWithOption(2, None, None))
       assertEquals(result(2), ArrowWithOption(3, Some("also present"), None))
-    finally
-      root.close()
+    finally root.close()
 
   // === Large Dataset Tests ===
 
@@ -133,8 +128,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       assertEquals(result.size, 10000)
       assertEquals(result(0), ArrowSimple("User1", 1))
       assertEquals(result(9999), ArrowSimple("User10000", 10000))
-    finally
-      root.close()
+    finally root.close()
 
   // === Single Row Read Tests ===
 
@@ -154,8 +148,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       assertEquals(reader.readRow(root, 0), ArrowSimple("Alice", 30))
       assertEquals(reader.readRow(root, 1), ArrowSimple("Bob", 25))
       assertEquals(reader.readRow(root, 2), ArrowSimple("Charlie", 35))
-    finally
-      root.close()
+    finally root.close()
 
   // === Schema Tests ===
 
@@ -185,8 +178,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
       writer.write(data, root)
       val result = reader.read(root)
       assertEquals(result.size, 0)
-    finally
-      root.close()
+    finally root.close()
 
   // === Temporal Type Tests ===
 
@@ -203,8 +195,7 @@ class InlineArrowReaderSuite extends munit.FunSuite:
 
       assertEquals(result.size, 1)
       assertEquals(result(0), ArrowWithDate(1, date))
-    finally
-      root.close()
+    finally root.close()
 
   test("read Instant field"):
     val writer = InlineArrowWriter.derived[ArrowWithTimestamp]
@@ -219,5 +210,4 @@ class InlineArrowReaderSuite extends munit.FunSuite:
 
       assertEquals(result.size, 1)
       assertEquals(result(0), ArrowWithTimestamp(1, instant))
-    finally
-      root.close()
+    finally root.close()

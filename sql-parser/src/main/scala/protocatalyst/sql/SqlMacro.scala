@@ -13,12 +13,14 @@ import scala.quoted.*
 object SqlMacro:
 
   /** Compile a SQL string at compile time. Returns Either for error handling. */
-  inline def compileSQL[A](inline sql: String)(using enc: ProtoEncoder[A]): Either[String, CompiledArtifact] =
+  inline def compileSQL[A](inline sql: String)(using
+      enc: ProtoEncoder[A]
+  ): Either[String, CompiledArtifact] =
     ${ compileSQLImpl[A]('sql, 'enc) }
 
   def compileSQLImpl[A: Type](
-    sqlExpr: Expr[String],
-    encExpr: Expr[ProtoEncoder[A]]
+      sqlExpr: Expr[String],
+      encExpr: Expr[ProtoEncoder[A]]
   )(using Quotes): Expr[Either[String, CompiledArtifact]] =
     import quotes.reflect.*
 
@@ -47,8 +49,7 @@ object SqlMacro:
 
           // Validate columns
           val errors = SqlMacro.validateColumnsStmt(${ sqlStmtToExpr(stmt) }, schema)
-          if errors.nonEmpty then
-            Left(s"Schema validation failed: ${errors.mkString("; ")}")
+          if errors.nonEmpty then Left(s"Schema validation failed: ${errors.mkString("; ")}")
           else
             // Transform to Proto
             AstToProtoTransform.transformStmt(${ sqlStmtToExpr(stmt) }, schema, table) match
@@ -89,21 +90,21 @@ object SqlMacro:
   /** Extract the primary table name from a FROM clause. */
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref) => ref.name
+      case FromClause.Table(ref)          => ref.name
       case FromClause.Join(left, _, _, _) => extractTableName(left)
-      case FromClause.Subquery(_, alias) => alias
+      case FromClause.Subquery(_, alias)  => alias
 
   /** Convert SqlStatement to Expr for runtime use. */
   private def sqlStmtToExpr(stmt: SqlStatement)(using Quotes): Expr[SqlStatement] =
     stmt match
-      case s: SqlStatement.SelectStatement => stmtToExpr(s)
+      case s: SqlStatement.SelectStatement                 => stmtToExpr(s)
       case SqlStatement.CompoundStatement(left, op, right) =>
         val leftExpr = sqlStmtToExpr(left)
         val rightExpr = sqlStmtToExpr(right)
         val opExpr = op match
-          case SetOperation.Union(all) => '{ SetOperation.Union(${ Expr(all) }) }
+          case SetOperation.Union(all)     => '{ SetOperation.Union(${ Expr(all) }) }
           case SetOperation.Intersect(all) => '{ SetOperation.Intersect(${ Expr(all) }) }
-          case SetOperation.Except(all) => '{ SetOperation.Except(${ Expr(all) }) }
+          case SetOperation.Except(all)    => '{ SetOperation.Except(${ Expr(all) }) }
         '{ SqlStatement.CompoundStatement($leftExpr, $opExpr, $rightExpr) }
       case SqlStatement.WithStatement(ctes, recursive, query) =>
         val ctesExpr = Expr.ofSeq(ctes.map(cteDefinitionToExpr))
@@ -121,16 +122,18 @@ object SqlMacro:
     '{ CteDefinition(${ Expr(cte.name) }, $columnAliasesExpr, $queryExpr) }
 
   /** Convert statement to Expr for runtime use. */
-  private def stmtToExpr(stmt: SqlStatement.SelectStatement)(using Quotes): Expr[SqlStatement.SelectStatement] =
+  private def stmtToExpr(stmt: SqlStatement.SelectStatement)(using
+      Quotes
+  ): Expr[SqlStatement.SelectStatement] =
     val projectionsExpr = Expr.ofSeq(stmt.projections.map(projectionToExpr))
     val fromExpr = fromClauseToExpr(stmt.from)
     val whereExpr = stmt.where match
       case Some(w) => '{ Some(${ sqlExprToExpr(w) }) }
-      case None => '{ None }
+      case None    => '{ None }
     val groupByExpr = Expr.ofSeq(stmt.groupBy.map(sqlExprToExpr))
     val havingExpr = stmt.having match
       case Some(h) => '{ Some(${ sqlExprToExpr(h) }) }
-      case None => '{ None }
+      case None    => '{ None }
     val orderByExpr = Expr.ofSeq(stmt.orderBy.map(orderSpecToExpr))
 
     '{
@@ -155,14 +158,14 @@ object SqlMacro:
         val leftExpr = fromClauseToExpr(left)
         val rightExpr = fromClauseToExpr(right)
         val joinTypeExpr = joinType match
-          case ast.JoinType.Inner => '{ ast.JoinType.Inner }
-          case ast.JoinType.LeftOuter => '{ ast.JoinType.LeftOuter }
+          case ast.JoinType.Inner      => '{ ast.JoinType.Inner }
+          case ast.JoinType.LeftOuter  => '{ ast.JoinType.LeftOuter }
           case ast.JoinType.RightOuter => '{ ast.JoinType.RightOuter }
-          case ast.JoinType.FullOuter => '{ ast.JoinType.FullOuter }
-          case ast.JoinType.Cross => '{ ast.JoinType.Cross }
+          case ast.JoinType.FullOuter  => '{ ast.JoinType.FullOuter }
+          case ast.JoinType.Cross      => '{ ast.JoinType.Cross }
         val condExpr = condition match
           case Some(cond) => '{ Some(${ sqlExprToExpr(cond) }) }
-          case None => '{ None }
+          case None       => '{ None }
         '{ FromClause.Join($leftExpr, $rightExpr, $joinTypeExpr, $condExpr) }
       case FromClause.Subquery(stmt, alias) =>
         '{ FromClause.Subquery(${ stmtToExpr(stmt) }, ${ Expr(alias) }) }
@@ -175,35 +178,35 @@ object SqlMacro:
 
   private def sqlExprToExpr(expr: SqlExpr)(using Quotes): Expr[SqlExpr] =
     expr match
-      case SqlExpr.IntLit(v) => '{ SqlExpr.IntLit(${ Expr(v) }) }
-      case SqlExpr.DoubleLit(v) => '{ SqlExpr.DoubleLit(${ Expr(v) }) }
-      case SqlExpr.StringLit(v) => '{ SqlExpr.StringLit(${ Expr(v) }) }
-      case SqlExpr.BoolLit(v) => '{ SqlExpr.BoolLit(${ Expr(v) }) }
-      case SqlExpr.NullLit => '{ SqlExpr.NullLit }
-      case SqlExpr.ColumnRef(n, q) => '{ SqlExpr.ColumnRef(${ Expr(n) }, ${ Expr(q) }) }
-      case SqlExpr.Star(q) => '{ SqlExpr.Star(${ Expr(q) }) }
+      case SqlExpr.IntLit(v)         => '{ SqlExpr.IntLit(${ Expr(v) }) }
+      case SqlExpr.DoubleLit(v)      => '{ SqlExpr.DoubleLit(${ Expr(v) }) }
+      case SqlExpr.StringLit(v)      => '{ SqlExpr.StringLit(${ Expr(v) }) }
+      case SqlExpr.BoolLit(v)        => '{ SqlExpr.BoolLit(${ Expr(v) }) }
+      case SqlExpr.NullLit           => '{ SqlExpr.NullLit }
+      case SqlExpr.ColumnRef(n, q)   => '{ SqlExpr.ColumnRef(${ Expr(n) }, ${ Expr(q) }) }
+      case SqlExpr.Star(q)           => '{ SqlExpr.Star(${ Expr(q) }) }
       case SqlExpr.Compare(l, op, r) =>
         val opExpr = op match
-          case CompareOp.Eq => '{ CompareOp.Eq }
+          case CompareOp.Eq    => '{ CompareOp.Eq }
           case CompareOp.NotEq => '{ CompareOp.NotEq }
-          case CompareOp.Lt => '{ CompareOp.Lt }
-          case CompareOp.LtEq => '{ CompareOp.LtEq }
-          case CompareOp.Gt => '{ CompareOp.Gt }
-          case CompareOp.GtEq => '{ CompareOp.GtEq }
+          case CompareOp.Lt    => '{ CompareOp.Lt }
+          case CompareOp.LtEq  => '{ CompareOp.LtEq }
+          case CompareOp.Gt    => '{ CompareOp.Gt }
+          case CompareOp.GtEq  => '{ CompareOp.GtEq }
         '{ SqlExpr.Compare(${ sqlExprToExpr(l) }, $opExpr, ${ sqlExprToExpr(r) }) }
       case SqlExpr.Arithmetic(l, op, r) =>
         val opExpr = op match
-          case ArithOp.Add => '{ ArithOp.Add }
+          case ArithOp.Add      => '{ ArithOp.Add }
           case ArithOp.Subtract => '{ ArithOp.Subtract }
           case ArithOp.Multiply => '{ ArithOp.Multiply }
-          case ArithOp.Divide => '{ ArithOp.Divide }
+          case ArithOp.Divide   => '{ ArithOp.Divide }
         '{ SqlExpr.Arithmetic(${ sqlExprToExpr(l) }, $opExpr, ${ sqlExprToExpr(r) }) }
-      case SqlExpr.And(l, r) => '{ SqlExpr.And(${ sqlExprToExpr(l) }, ${ sqlExprToExpr(r) }) }
-      case SqlExpr.Or(l, r) => '{ SqlExpr.Or(${ sqlExprToExpr(l) }, ${ sqlExprToExpr(r) }) }
-      case SqlExpr.Not(c) => '{ SqlExpr.Not(${ sqlExprToExpr(c) }) }
-      case SqlExpr.IsNull(c) => '{ SqlExpr.IsNull(${ sqlExprToExpr(c) }) }
+      case SqlExpr.And(l, r)    => '{ SqlExpr.And(${ sqlExprToExpr(l) }, ${ sqlExprToExpr(r) }) }
+      case SqlExpr.Or(l, r)     => '{ SqlExpr.Or(${ sqlExprToExpr(l) }, ${ sqlExprToExpr(r) }) }
+      case SqlExpr.Not(c)       => '{ SqlExpr.Not(${ sqlExprToExpr(c) }) }
+      case SqlExpr.IsNull(c)    => '{ SqlExpr.IsNull(${ sqlExprToExpr(c) }) }
       case SqlExpr.IsNotNull(c) => '{ SqlExpr.IsNotNull(${ sqlExprToExpr(c) }) }
-      case SqlExpr.Paren(c) => '{ SqlExpr.Paren(${ sqlExprToExpr(c) }) }
+      case SqlExpr.Paren(c)     => '{ SqlExpr.Paren(${ sqlExprToExpr(c) }) }
       case SqlExpr.Between(v, l, h) =>
         '{ SqlExpr.Between(${ sqlExprToExpr(v) }, ${ sqlExprToExpr(l) }, ${ sqlExprToExpr(h) }) }
       case SqlExpr.NotBetween(v, l, h) =>
@@ -211,12 +214,12 @@ object SqlMacro:
       case SqlExpr.Like(v, p, e) =>
         val escapeExpr = e match
           case Some(esc) => '{ Some(${ sqlExprToExpr(esc) }) }
-          case None => '{ None }
+          case None      => '{ None }
         '{ SqlExpr.Like(${ sqlExprToExpr(v) }, ${ sqlExprToExpr(p) }, $escapeExpr) }
       case SqlExpr.NotLike(v, p, e) =>
         val escapeExpr = e match
           case Some(esc) => '{ Some(${ sqlExprToExpr(esc) }) }
-          case None => '{ None }
+          case None      => '{ None }
         '{ SqlExpr.NotLike(${ sqlExprToExpr(v) }, ${ sqlExprToExpr(p) }, $escapeExpr) }
       case SqlExpr.In(v, list) =>
         val listExpr = Expr.ofSeq(list.map(sqlExprToExpr))
@@ -233,7 +236,7 @@ object SqlMacro:
         })
         elseValue match
           case Some(e) => '{ SqlExpr.CaseWhen($branchesExpr.toVector, Some(${ sqlExprToExpr(e) })) }
-          case None => '{ SqlExpr.CaseWhen($branchesExpr.toVector, None) }
+          case None    => '{ SqlExpr.CaseWhen($branchesExpr.toVector, None) }
       case SqlExpr.Cast(expr, targetType) =>
         '{ SqlExpr.Cast(${ sqlExprToExpr(expr) }, ${ sqlTypeToExpr(targetType) }) }
       case SqlExpr.ScalarSubquery(stmt) =>
@@ -251,15 +254,17 @@ object SqlMacro:
         val orderByExpr = Expr.ofSeq(windowSpec.orderBy.map(orderSpecToExpr))
         val frameExpr = windowSpec.frame match
           case Some(f) => '{ Some(${ windowFrameToExpr(f) }) }
-          case None => '{ None }
-        '{ SqlExpr.WindowFunction(
-          ${ sqlExprToExpr(function) },
-          WindowSpec($partitionByExpr.toVector, $orderByExpr.toVector, $frameExpr)
-        ) }
+          case None    => '{ None }
+        '{
+          SqlExpr.WindowFunction(
+            ${ sqlExprToExpr(function) },
+            WindowSpec($partitionByExpr.toVector, $orderByExpr.toVector, $frameExpr)
+          )
+        }
 
   private def windowFrameToExpr(frame: WindowFrame)(using Quotes): Expr[WindowFrame] =
     val frameTypeExpr = frame.frameType match
-      case FrameType.Rows => '{ FrameType.Rows }
+      case FrameType.Rows  => '{ FrameType.Rows }
       case FrameType.Range => '{ FrameType.Range }
     val startExpr = frameBoundToExpr(frame.start)
     val endExpr = frameBoundToExpr(frame.end)
@@ -269,18 +274,18 @@ object SqlMacro:
     bound match
       case FrameBound.UnboundedPreceding => '{ FrameBound.UnboundedPreceding }
       case FrameBound.UnboundedFollowing => '{ FrameBound.UnboundedFollowing }
-      case FrameBound.CurrentRow => '{ FrameBound.CurrentRow }
-      case FrameBound.Preceding(n) => '{ FrameBound.Preceding(${ Expr(n) }) }
-      case FrameBound.Following(n) => '{ FrameBound.Following(${ Expr(n) }) }
+      case FrameBound.CurrentRow         => '{ FrameBound.CurrentRow }
+      case FrameBound.Preceding(n)       => '{ FrameBound.Preceding(${ Expr(n) }) }
+      case FrameBound.Following(n)       => '{ FrameBound.Following(${ Expr(n) }) }
 
   private def sqlTypeToExpr(sqlType: SqlType)(using Quotes): Expr[SqlType] =
     sqlType match
-      case SqlType.IntType => '{ SqlType.IntType }
-      case SqlType.LongType => '{ SqlType.LongType }
-      case SqlType.DoubleType => '{ SqlType.DoubleType }
-      case SqlType.StringType => '{ SqlType.StringType }
-      case SqlType.BooleanType => '{ SqlType.BooleanType }
-      case SqlType.DateType => '{ SqlType.DateType }
+      case SqlType.IntType       => '{ SqlType.IntType }
+      case SqlType.LongType      => '{ SqlType.LongType }
+      case SqlType.DoubleType    => '{ SqlType.DoubleType }
+      case SqlType.StringType    => '{ SqlType.StringType }
+      case SqlType.BooleanType   => '{ SqlType.BooleanType }
+      case SqlType.DateType      => '{ SqlType.DateType }
       case SqlType.TimestampType => '{ SqlType.TimestampType }
 
   // Runtime helper methods
@@ -288,7 +293,7 @@ object SqlMacro:
   /** Validate columns exist in schema for any statement type. */
   def validateColumnsStmt(stmt: SqlStatement, schema: ProtoSchema): Vector[String] =
     stmt match
-      case s: SqlStatement.SelectStatement => validateColumns(s, schema)
+      case s: SqlStatement.SelectStatement                => validateColumns(s, schema)
       case SqlStatement.CompoundStatement(left, _, right) =>
         validateColumnsStmt(left, schema) ++ validateColumnsStmt(right, schema)
       case SqlStatement.WithStatement(ctes, _, query) =>
@@ -299,7 +304,7 @@ object SqlMacro:
   /** Derive output schema for any statement type. */
   def deriveOutputSchemaStmt(stmt: SqlStatement, inputSchema: ProtoSchema): ProtoSchema =
     stmt match
-      case s: SqlStatement.SelectStatement => deriveOutputSchema(s, inputSchema)
+      case s: SqlStatement.SelectStatement            => deriveOutputSchema(s, inputSchema)
       case SqlStatement.CompoundStatement(left, _, _) =>
         // For set operations, output schema is from the first query
         deriveOutputSchemaStmt(left, inputSchema)
@@ -314,31 +319,33 @@ object SqlMacro:
     def validateExpr(expr: SqlExpr): Vector[String] = expr match
       case SqlExpr.ColumnRef(name, _) if !fieldNames.contains(name) =>
         Vector(s"Unknown column '$name'. Available: ${fieldNames.mkString(", ")}")
-      case SqlExpr.Compare(l, _, r) => validateExpr(l) ++ validateExpr(r)
+      case SqlExpr.Compare(l, _, r)    => validateExpr(l) ++ validateExpr(r)
       case SqlExpr.Arithmetic(l, _, r) => validateExpr(l) ++ validateExpr(r)
-      case SqlExpr.And(l, r) => validateExpr(l) ++ validateExpr(r)
-      case SqlExpr.Or(l, r) => validateExpr(l) ++ validateExpr(r)
-      case SqlExpr.Not(c) => validateExpr(c)
-      case SqlExpr.IsNull(c) => validateExpr(c)
-      case SqlExpr.IsNotNull(c) => validateExpr(c)
-      case SqlExpr.Paren(c) => validateExpr(c)
-      case SqlExpr.Between(v, l, h) => validateExpr(v) ++ validateExpr(l) ++ validateExpr(h)
+      case SqlExpr.And(l, r)           => validateExpr(l) ++ validateExpr(r)
+      case SqlExpr.Or(l, r)            => validateExpr(l) ++ validateExpr(r)
+      case SqlExpr.Not(c)              => validateExpr(c)
+      case SqlExpr.IsNull(c)           => validateExpr(c)
+      case SqlExpr.IsNotNull(c)        => validateExpr(c)
+      case SqlExpr.Paren(c)            => validateExpr(c)
+      case SqlExpr.Between(v, l, h)    => validateExpr(v) ++ validateExpr(l) ++ validateExpr(h)
       case SqlExpr.NotBetween(v, l, h) => validateExpr(v) ++ validateExpr(l) ++ validateExpr(h)
-      case SqlExpr.Like(v, p, e) => validateExpr(v) ++ validateExpr(p) ++ e.map(validateExpr).getOrElse(Vector.empty)
-      case SqlExpr.NotLike(v, p, e) => validateExpr(v) ++ validateExpr(p) ++ e.map(validateExpr).getOrElse(Vector.empty)
-      case SqlExpr.In(v, list) => validateExpr(v) ++ list.flatMap(validateExpr)
-      case SqlExpr.NotIn(v, list) => validateExpr(v) ++ list.flatMap(validateExpr)
-      case SqlExpr.FunctionCall(_, args, _) => args.flatMap(validateExpr)
+      case SqlExpr.Like(v, p, e)       =>
+        validateExpr(v) ++ validateExpr(p) ++ e.map(validateExpr).getOrElse(Vector.empty)
+      case SqlExpr.NotLike(v, p, e) =>
+        validateExpr(v) ++ validateExpr(p) ++ e.map(validateExpr).getOrElse(Vector.empty)
+      case SqlExpr.In(v, list)                   => validateExpr(v) ++ list.flatMap(validateExpr)
+      case SqlExpr.NotIn(v, list)                => validateExpr(v) ++ list.flatMap(validateExpr)
+      case SqlExpr.FunctionCall(_, args, _)      => args.flatMap(validateExpr)
       case SqlExpr.CaseWhen(branches, elseValue) =>
         branches.flatMap((c, r) => validateExpr(c) ++ validateExpr(r)) ++
           elseValue.map(validateExpr).getOrElse(Vector.empty)
-      case SqlExpr.Cast(e, _) => validateExpr(e)
-      case SqlExpr.ScalarSubquery(stmt) => validateSubquery(stmt)
-      case SqlExpr.Exists(stmt) => validateSubquery(stmt)
-      case SqlExpr.NotExists(stmt) => validateSubquery(stmt)
-      case SqlExpr.InSubquery(value, stmt) => validateExpr(value) ++ validateSubquery(stmt)
+      case SqlExpr.Cast(e, _)                 => validateExpr(e)
+      case SqlExpr.ScalarSubquery(stmt)       => validateSubquery(stmt)
+      case SqlExpr.Exists(stmt)               => validateSubquery(stmt)
+      case SqlExpr.NotExists(stmt)            => validateSubquery(stmt)
+      case SqlExpr.InSubquery(value, stmt)    => validateExpr(value) ++ validateSubquery(stmt)
       case SqlExpr.NotInSubquery(value, stmt) => validateExpr(value) ++ validateSubquery(stmt)
-      case _ => Vector.empty
+      case _                                  => Vector.empty
 
     def validateSubquery(stmt: SqlStatement.SelectStatement): Vector[String] =
       // Subqueries can reference outer scope columns, so we skip validation for now
@@ -347,7 +354,7 @@ object SqlMacro:
 
     def validateFromClause(from: FromClause): Vector[String] =
       from match
-        case FromClause.Table(_) => Vector.empty
+        case FromClause.Table(_)                        => Vector.empty
         case FromClause.Join(left, right, _, condition) =>
           validateFromClause(left) ++ validateFromClause(right) ++
             condition.map(validateExpr).getOrElse(Vector.empty)
@@ -363,12 +370,14 @@ object SqlMacro:
     projErrors ++ whereErrors ++ groupByErrors ++ havingErrors ++ orderErrors ++ joinErrors
 
   /** Derive output schema from projections. */
-  def deriveOutputSchema(stmt: SqlStatement.SelectStatement, inputSchema: ProtoSchema): ProtoSchema =
+  def deriveOutputSchema(
+      stmt: SqlStatement.SelectStatement,
+      inputSchema: ProtoSchema
+  ): ProtoSchema =
     import protocatalyst.types.ProtoStructField
 
     // Handle SELECT *
-    if stmt.projections.exists(_.expr.isInstanceOf[SqlExpr.Star]) then
-      inputSchema
+    if stmt.projections.exists(_.expr.isInstanceOf[SqlExpr.Star]) then inputSchema
     else
       val outputFields = stmt.projections.flatMap { proj =>
         proj.expr match

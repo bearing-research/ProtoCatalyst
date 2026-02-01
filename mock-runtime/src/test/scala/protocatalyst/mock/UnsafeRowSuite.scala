@@ -337,13 +337,12 @@ class UnsafeRowSuite extends munit.FunSuite:
       if i % 2 == 0 then
         assertEquals(row.isNullAt(i), false)
         assertEquals(row.getInt(i), i)
-      else
-        assertEquals(row.isNullAt(i), true)
+      else assertEquals(row.isNullAt(i), true)
     }
 
   test("MockUnsafeRow memory layout is 8-byte aligned"):
     val writer = UnsafeRowWriter(3)
-    writer.write(0, "a")  // 1 byte content, should be padded
+    writer.write(0, "a") // 1 byte content, should be padded
     writer.write(1, "bb") // 2 byte content, should be padded
     writer.write(2, "ccc") // 3 byte content, should be padded
 
@@ -398,7 +397,6 @@ class UnsafeRowSuite extends munit.FunSuite:
     intercept[IllegalStateException] {
       writer.getRow()
     }
-
 
   // ============================================
   // Performance Characteristics (informational)
