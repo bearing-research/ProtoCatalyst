@@ -563,3 +563,110 @@ If(
   NewInstance(classOf[Some[String]], Seq(input), ...)
 )
 ```
+
+---
+
+## Part 10: Future Enhancements (Nice-to-Have)
+
+These features are **not required** for Spark 4.0 compatibility but could provide value for specific use cases. They are documented here for future reference.
+
+### 10.1 Type Support Enhancements
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **UUID Support** | Native encoder for `java.util.UUID` → StringType or BinaryType | Common in distributed systems for unique identifiers; avoids manual string conversion |
+| **Decimal Precision Control** | Configurable precision/scale beyond default (38, 18) | Financial applications requiring specific decimal formats |
+| **Generics Support** | Handle generic case classes like `Container[T]` at compile-time | Library authors building type-safe wrappers; reduces boilerplate |
+| **Value Classes** | Support `AnyVal`-based value classes with zero-cost abstraction | Domain-driven design patterns (e.g., `UserId(Long)`, `Email(String)`) without runtime overhead |
+| **Varargs Support** | Encode `case class WithVarargs(args: String*)` | APIs accepting variable-length arguments |
+
+### 10.2 Schema Management
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Schema Evolution** | Track schema versions, handle field renames/additions/drops | Production systems where schema changes over time; enables backward-compatible data migrations |
+| **Schema Registry Integration** | Store/retrieve schemas from Confluent Schema Registry | Kafka-based streaming pipelines; centralized schema governance |
+| **Metadata Annotations** | `@columnName("user_name")`, `@deprecated`, `@description` on fields | Database column name mapping; documentation generation; deprecation warnings |
+| **Schema Comparison** | Tools to diff and report schema changes between encoders | CI/CD pipelines to detect breaking changes; migration planning |
+| **Default Values** | Support default field values in deserialization | Schema evolution when new fields are added; null handling |
+
+### 10.3 Performance Optimizations
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Code Generation** | Generate specialized serialization bytecode at compile-time | High-throughput pipelines where serialization is a bottleneck; similar to Spark's ExpressionEncoder codegen |
+| **Columnar Encoding** | Bulk serialize/deserialize arrays of rows in columnar format | Analytics workloads; memory-efficient batch processing; better cache utilization |
+| **Lazy Deserialization** | Deserialize only accessed fields from binary data | Wide rows where only a few fields are needed; projection pushdown |
+| **Compression Support** | Optional field-level compression (gzip, snappy, zstd) | Network transfer optimization; storage-constrained environments |
+| **Buffer Pooling** | Reusable buffer pools for TransformingEncoder | Reduce GC pressure in high-throughput scenarios |
+
+### 10.4 Advanced Serialization
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Custom Serialization Annotations** | `@serialize`, `@deserialize` method annotations | Complex types requiring custom logic (e.g., encryption, normalization) |
+| **Field Transformers** | Define transformation pipelines during serialization | Data masking, normalization, computed fields |
+| **Polymorphic Encoding** | Type-safe encoding of sealed hierarchies beyond simple enums | ADTs with data (e.g., `sealed trait Event { case class Click(...); case class View(...) }`) |
+| **Circular Reference Handling** | Detect and handle circular references in object graphs | Graph-structured data; ORM entities with bidirectional relations |
+| **Binary Versioning** | Write schema version bytes to enable future format changes | Long-term storage where format may evolve |
+
+### 10.5 Codec Enhancements
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Adaptive Codec Selection** | Choose codec based on data size/structure automatically | Mixed workloads where different data benefits from different codecs |
+| **Codec Benchmarking** | Built-in performance comparison tools | Selecting optimal codec for specific data patterns |
+| **MessagePack Codec** | Alternative compact binary format | Cross-language interop; smaller payload than JSON |
+| **Protocol Buffers Codec** | Encode/decode protobuf messages directly | gRPC integration; schema-enforced serialization |
+| **Codec Chaining** | Compose codecs (e.g., Kryo → compression → encryption) | Security-sensitive data; space-constrained storage |
+
+### 10.6 Ecosystem Integration
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **JSON Schema Export** | Generate JSON Schema from ProtoEncoder | API documentation; frontend validation; OpenAPI specs |
+| **Avro Schema Conversion** | Bidirectional conversion with Avro schemas | Kafka Connect; data lake formats; legacy system integration |
+| **Arrow Integration** | Support Apache Arrow columnar format | Cross-process data sharing; Python/R interop via Arrow |
+| **Parquet Schema Mapping** | Direct mapping to Parquet schema | File format optimization; predicate pushdown hints |
+
+### 10.7 Developer Experience
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Encoder Macro Debugger** | Inspect generated encoder code at compile-time | Debugging derivation issues; understanding generated schemas |
+| **Schema Visualization** | ASCII/JSON/diagram rendering of encoder schemas | Documentation; debugging; schema review |
+| **Type Error Improvements** | Better compile-error messages for unsupported types | Faster development iteration; clearer guidance |
+| **REPL Tools** | Commands to inspect encoder details interactively | Exploration; debugging; learning |
+
+### 10.8 Robustness & Edge Cases
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Null Handling Modes** | Strict/lenient null policies per field | Data quality enforcement; handling dirty data |
+| **Type Coercion** | Allow implicit conversions (Int→Long, etc.) in deserialization | Schema evolution; interop with loosely-typed systems |
+| **Unknown Field Handling** | Skip/error/log on extra fields in deserialization | Forward compatibility; debugging data issues |
+| **Encoding Exception Hierarchy** | Custom exception types with detailed context | Better error handling; debugging production issues |
+
+### 10.9 Priority Assessment
+
+If implementing future enhancements, recommended priority order:
+
+1. **High Value, Low Effort**
+   - UUID Support (common need, simple implementation)
+   - Schema Comparison (useful for CI/CD)
+   - JSON Schema Export (documentation value)
+
+2. **High Value, Medium Effort**
+   - Polymorphic Encoding (enables ADT patterns)
+   - Schema Evolution (production necessity)
+   - Arrow Integration (ecosystem value)
+
+3. **High Value, High Effort**
+   - Code Generation (significant performance gains)
+   - Columnar Encoding (analytics optimization)
+   - Schema Registry Integration (enterprise feature)
+
+4. **Specialized Use Cases**
+   - Codec Chaining (security/compression)
+   - Lazy Deserialization (wide-row optimization)
+   - Custom Annotations (escape hatch for complex types)
