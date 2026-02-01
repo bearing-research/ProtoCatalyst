@@ -163,7 +163,10 @@ object InlineArrowWriter:
         val vec = root.getVector(fieldIndex).asInstanceOf[DecimalVector]
         val value = product.productElement(fieldIndex)
         if value != null then
-          vec.setSafe(rowIndex, value.asInstanceOf[BigDecimal].bigDecimal)
+          // Rescale to match the vector's configured scale
+          val bd = value.asInstanceOf[BigDecimal].bigDecimal
+          val scaled = bd.setScale(vec.getScale, java.math.RoundingMode.HALF_UP)
+          vec.setSafe(rowIndex, scaled)
         else
           vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
@@ -172,7 +175,10 @@ object InlineArrowWriter:
         val vec = root.getVector(fieldIndex).asInstanceOf[DecimalVector]
         val value = product.productElement(fieldIndex)
         if value != null then
-          vec.setSafe(rowIndex, value.asInstanceOf[java.math.BigDecimal])
+          // Rescale to match the vector's configured scale
+          val bd = value.asInstanceOf[java.math.BigDecimal]
+          val scaled = bd.setScale(vec.getScale, java.math.RoundingMode.HALF_UP)
+          vec.setSafe(rowIndex, scaled)
         else
           vec.setNull(rowIndex)
         writeFieldsImpl[ts](product, root, rowIndex, fieldIndex + 1)
