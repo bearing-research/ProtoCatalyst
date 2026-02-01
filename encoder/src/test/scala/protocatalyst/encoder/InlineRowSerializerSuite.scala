@@ -19,6 +19,8 @@ case class InlinePrimitives(
 case class InlineWithString(id: Int, name: String, description: String)
 case class InlineEmpty()
 case class InlineSingleField(value: Int)
+case class InlineWithUserList(name: String, users: List[InlineUser])
+case class InlineWithUserMap(name: String, usersByName: Map[String, InlineUser])
 
 class InlineRowSerializerSuite extends munit.FunSuite:
 
@@ -266,3 +268,51 @@ class InlineRowSerializerSuite extends munit.FunSuite:
     val rowResult = rowSerializer.serialize(RowUser("Test", 42))
 
     assertEquals(inlineResult.toSeq, rowResult.toSeq)
+
+  // === Collections of custom types ===
+
+  test("serialize List[CustomType]"):
+    val serializer = InlineRowSerializer.derived[InlineWithUserList]
+    val data = InlineWithUserList("team", List(InlineUser("Alice", 30), InlineUser("Bob", 25)))
+
+    val serialized = serializer.serialize(data)
+
+    assertEquals(serialized.length, 2)
+    assertEquals(serialized(0), "team")
+    // List of custom types should be serialized as a Seq of Array[Any]
+    val userList = serialized(1).asInstanceOf[List[?]]
+    assertEquals(userList.length, 2)
+    val user0 = userList(0).asInstanceOf[Array[Any]]
+    assertEquals(user0(0), "Alice")
+    assertEquals(user0(1), 30)
+    val user1 = userList(1).asInstanceOf[Array[Any]]
+    assertEquals(user1(0), "Bob")
+    assertEquals(user1(1), 25)
+
+  test("roundtrip List[CustomType]"):
+    val serializer = InlineRowSerializer.derived[InlineWithUserList]
+    val original = InlineWithUserList("team", List(InlineUser("Alice", 30), InlineUser("Bob", 25)))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("serialize Map[String, CustomType]"):
+    val serializer = InlineRowSerializer.derived[InlineWithUserMap]
+    val data = InlineWithUserMap("lookup", Map("alice" -> InlineUser("Alice", 30), "bob" -> InlineUser("Bob", 25)))
+
+    val serialized = serializer.serialize(data)
+
+    assertEquals(serialized.length, 2)
+    assertEquals(serialized(0), "lookup")
+    // Map values should be serialized as Array[Any]
+    val userMap = serialized(1).asInstanceOf[Map[?, ?]]
+    assertEquals(userMap.size, 2)
+
+  test("roundtrip Map[String, CustomType]"):
+    val serializer = InlineRowSerializer.derived[InlineWithUserMap]
+    val original = InlineWithUserMap("lookup", Map("alice" -> InlineUser("Alice", 30), "bob" -> InlineUser("Bob", 25)))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)

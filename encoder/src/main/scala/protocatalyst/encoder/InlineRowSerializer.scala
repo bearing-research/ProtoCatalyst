@@ -140,12 +140,7 @@ object InlineRowSerializer:
           case null => result(idx) = null
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
-      // === Seq/List/Vector collections ===
-      case _: (Seq[t] *: ts) =>
-        val seq = product.productElement(idx).asInstanceOf[Seq[?]]
-        result(idx) = conv.toInternal(seq, ProtoType.ArrayType(getProtoType[t], true))
-        serializeFieldsImpl[ts](product, result, idx + 1, conv)
-
+      // === Collections (order matters: specific types before general Seq) ===
       case _: (List[t] *: ts) =>
         val list = product.productElement(idx).asInstanceOf[List[?]]
         result(idx) = conv.toInternal(list, ProtoType.ArrayType(getProtoType[t], true))
@@ -159,6 +154,11 @@ object InlineRowSerializer:
       case _: (Set[t] *: ts) =>
         val set = product.productElement(idx).asInstanceOf[Set[?]]
         result(idx) = conv.toInternal(set.toSeq, ProtoType.ArrayType(getProtoType[t], true))
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
+      case _: (Seq[t] *: ts) =>
+        val seq = product.productElement(idx).asInstanceOf[Seq[?]]
+        result(idx) = conv.toInternal(seq, ProtoType.ArrayType(getProtoType[t], true))
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
       // === Map ===
@@ -212,13 +212,14 @@ object InlineRowSerializer:
     if value == null then null
     else
       summonFrom {
+        case enc: ProtoEncoder[T] =>
+          // Use the encoder's catalystType to get proper conversion (e.g., StructType for nested products)
+          // This allows MockInternalTypeConverter to wrap in MockRow
+          conv.toInternal(value, enc.catalystType)
         case m: Mirror.ProductOf[T] =>
-          // Nested product - serialize recursively
-          val product = value.asInstanceOf[Product]
-          val nestedSize = constValue[Tuple.Size[m.MirroredElemTypes]]
-          val nested = new Array[Any](nestedSize)
-          serializeFieldsImpl[m.MirroredElemTypes](product, nested, 0, conv)
-          nested
+          // Fallback for products without explicit encoder - derive one
+          val enc = ProtoEncoder.derived[T]
+          conv.toInternal(value, enc.catalystType)
         case _ =>
           // Unknown type - use generic conversion
           conv.toInternal(value, getProtoType[T])
@@ -240,7 +241,15 @@ object InlineRowSerializer:
       case _: java.time.LocalDate => ProtoType.DateType
       case _: java.time.Instant => ProtoType.TimestampType
       case _: java.time.LocalDateTime => ProtoType.TimestampNTZType
-      case _ => ProtoType.StringType // Fallback
+      case _ => getProtoTypeFromEncoder[T]
+
+  /** Get ProtoType by summoning encoder - handles custom types like case classes */
+  private inline def getProtoTypeFromEncoder[T]: ProtoType =
+    summonFrom {
+      case enc: ProtoEncoder[T] => enc.catalystType
+      case m: Mirror.ProductOf[T] => ProtoEncoder.derived[T].catalystType
+      case _ => ProtoType.StringType // Final fallback for truly unknown types
+    }
 
   // ============================================================
   // Inline deserialization with compile-time type specialization
@@ -308,29 +317,31 @@ object InlineRowSerializer:
           else Some(deserializeOptionValue[t](rawValue, conv))
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
-      // === Collections ===
-      case _: (Seq[t] *: ts) =>
-        values(idx) = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
-        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
-
+      // === Collections (order matters: specific types before general Seq) ===
       case _: (List[t] *: ts) =>
-        val seq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
-        values(idx) = seq.asInstanceOf[Seq[?]].toList
+        val rawSeq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
+        values(idx) = deserializeSeqElementsToList[t](rawSeq.asInstanceOf[Seq[?]], conv)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       case _: (Vector[t] *: ts) =>
-        val seq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
-        values(idx) = seq.asInstanceOf[Seq[?]].toVector
+        val rawSeq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
+        values(idx) = deserializeSeqElements[t](rawSeq.asInstanceOf[Seq[?]], conv).toVector
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (Seq[t] *: ts) =>
+        val rawSeq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
+        values(idx) = deserializeSeqElements[t](rawSeq.asInstanceOf[Seq[?]], conv)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       case _: (Set[t] *: ts) =>
-        val seq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
-        values(idx) = seq.asInstanceOf[Seq[?]].toSet
+        val rawSeq = conv.fromInternal(row(idx), ProtoType.ArrayType(getProtoType[t], true))
+        values(idx) = deserializeSeqElements[t](rawSeq.asInstanceOf[Seq[?]], conv).toSet
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       // === Map ===
       case _: (Map[k, v] *: ts) =>
-        values(idx) = conv.fromInternal(row(idx), ProtoType.MapType(getProtoType[k], getProtoType[v], true))
+        val rawMap = conv.fromInternal(row(idx), ProtoType.MapType(getProtoType[k], getProtoType[v], true))
+        values(idx) = deserializeMapElements[k, v](rawMap.asInstanceOf[Map[?, ?]], conv)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       // === Temporal types ===
@@ -370,24 +381,70 @@ object InlineRowSerializer:
       case _: Byte => value.asInstanceOf[T]
       case _: Short => value.asInstanceOf[T]
       case _: String => conv.fromInternal(value, ProtoType.StringType).asInstanceOf[T]
-      case _ => conv.fromInternal(value, getProtoType[T]).asInstanceOf[T]
+      // Use deserializeAnyField for complex types (nested structs, collections, etc.)
+      case _ => deserializeAnyField[T](value, conv)
+
+  /** Deserialize sequence elements to List, handling custom types (e.g., List[User]) */
+  private inline def deserializeSeqElementsToList[T](seq: Seq[?], conv: InternalTypeConverter): List[T] =
+    var result: List[T] = Nil
+    seq.foreach(elem => result = deserializeAnyField[T](elem, conv) :: result)
+    result.reverse
+
+  /** Deserialize sequence elements, handling custom types (e.g., Seq[User], Vector[User]) */
+  private inline def deserializeSeqElements[T](seq: Seq[?], conv: InternalTypeConverter): Seq[T] =
+    seq.map(elem => deserializeAnyField[T](elem, conv))
+
+  /** Deserialize map elements, handling custom value types (e.g., Map[String, User]) */
+  private inline def deserializeMapElements[K, V](map: Map[?, ?], conv: InternalTypeConverter): Map[K, V] =
+    map.map { case (k, v) =>
+      deserializeAnyField[K](k, conv) -> deserializeAnyField[V](v, conv)
+    }
 
   /** Fallback deserialization for complex types */
   private inline def deserializeAnyField[T](value: Any, conv: InternalTypeConverter): T =
     if value == null then null.asInstanceOf[T]
     else
-      summonFrom {
-        case m: Mirror.ProductOf[T] =>
-          // Nested product - deserialize recursively
-          val row = value.asInstanceOf[Array[Any]]
-          val nestedSize = constValue[Tuple.Size[m.MirroredElemTypes]]
-          val nested = new Array[Any](nestedSize)
-          deserializeFieldsImpl[m.MirroredElemTypes](row, nested, 0, conv)
-          m.fromProduct(ArrayProduct(nested))
+      // First try type-specific handling for collections
+      inline erasedValue[T] match
+        case _: List[t] =>
+          val rawSeq = conv.fromInternal(value, ProtoType.ArrayType(getProtoType[t], true))
+          deserializeSeqElementsToList[t](rawSeq.asInstanceOf[Seq[?]], conv).asInstanceOf[T]
+        case _: Vector[t] =>
+          val rawSeq = conv.fromInternal(value, ProtoType.ArrayType(getProtoType[t], true))
+          deserializeSeqElements[t](rawSeq.asInstanceOf[Seq[?]], conv).toVector.asInstanceOf[T]
+        case _: Set[t] =>
+          val rawSeq = conv.fromInternal(value, ProtoType.ArrayType(getProtoType[t], true))
+          deserializeSeqElements[t](rawSeq.asInstanceOf[Seq[?]], conv).toSet.asInstanceOf[T]
+        case _: Seq[t] =>
+          val rawSeq = conv.fromInternal(value, ProtoType.ArrayType(getProtoType[t], true))
+          deserializeSeqElements[t](rawSeq.asInstanceOf[Seq[?]], conv).asInstanceOf[T]
+        case _: Map[k, v] =>
+          val rawMap = conv.fromInternal(value, ProtoType.MapType(getProtoType[k], getProtoType[v], true))
+          deserializeMapElements[k, v](rawMap.asInstanceOf[Map[?, ?]], conv).asInstanceOf[T]
         case _ =>
-          // Unknown type - use generic conversion
-          conv.fromInternal(value, getProtoType[T]).asInstanceOf[T]
-      }
+          // Try product deserialization
+          summonFrom {
+            case m: Mirror.ProductOf[T] =>
+              // Nested product - deserialize recursively
+              // Handle:
+              //   - ProtoRow (from MockInternalTypeConverter)
+              //   - Array[Any] (from converters that serialize to arrays)
+              //   - Product (from default converter that passes through unchanged)
+              val row: Array[Any] = value match
+                case pr: ProtoRow => pr.toSeq.toArray
+                case arr: Array[Any @unchecked] => arr
+                case p: Product => p.productIterator.toArray
+                case other => throw IllegalArgumentException(
+                  s"Expected ProtoRow, Array[Any], or Product for nested product, got ${other.getClass.getName}"
+                )
+              val nestedSize = constValue[Tuple.Size[m.MirroredElemTypes]]
+              val nested = new Array[Any](nestedSize)
+              deserializeFieldsImpl[m.MirroredElemTypes](row, nested, 0, conv)
+              m.fromProduct(ArrayProduct(nested))
+            case _ =>
+              // Unknown type - use generic conversion
+              conv.fromInternal(value, getProtoType[T]).asInstanceOf[T]
+          }
 
   /** Helper to construct product from array - public for inline access */
   class ArrayProduct(values: Array[Any]) extends Product:

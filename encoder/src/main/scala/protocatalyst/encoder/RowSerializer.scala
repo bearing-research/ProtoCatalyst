@@ -53,10 +53,53 @@ trait InternalTypeConverter:
   def fromInternal(value: Any, dataType: ProtoType): Any
 
 object InternalTypeConverter:
-  /** Default converter - no transformation (for testing without Spark) */
+  /** Default converter - minimal transformation (for testing without Spark) */
   given default: InternalTypeConverter with
-    def toInternal(value: Any, dataType: ProtoType): Any = value
-    def fromInternal(value: Any, dataType: ProtoType): Any = value
+    def toInternal(value: Any, dataType: ProtoType): Any =
+      if value == null then null
+      else dataType match
+        // For struct types, extract product elements into Array[Any]
+        case ProtoType.StructType(fields) =>
+          value match
+            case p: Product =>
+              fields.zipWithIndex.map { case (field, idx) =>
+                toInternal(p.productElement(idx), field.dataType)
+              }.toArray
+            case other => other
+        // For array types, recursively convert elements
+        case ProtoType.ArrayType(elemType, _) =>
+          value match
+            case seq: Seq[?] => seq.map(e => toInternal(e, elemType)).toList
+            case arr: Array[?] => arr.map(e => toInternal(e, elemType)).toList
+            case other => other
+        // For map types, recursively convert keys and values
+        case ProtoType.MapType(keyType, valueType, _) =>
+          value match
+            case m: Map[?, ?] =>
+              m.map { case (k, v) => toInternal(k, keyType) -> toInternal(v, valueType) }
+            case other => other
+        // For other types, pass through unchanged
+        case _ => value
+
+    def fromInternal(value: Any, dataType: ProtoType): Any =
+      if value == null then null
+      else dataType match
+        // For struct types, convert Array[Any] back to itself (caller handles reconstruction)
+        case ProtoType.StructType(_) => value
+        // For array types, recursively convert elements back
+        case ProtoType.ArrayType(elemType, _) =>
+          value match
+            case seq: Seq[?] => seq.map(e => fromInternal(e, elemType)).toVector
+            case arr: Array[?] => arr.map(e => fromInternal(e, elemType)).toVector
+            case other => other
+        // For map types, recursively convert keys and values back
+        case ProtoType.MapType(keyType, valueType, _) =>
+          value match
+            case m: Map[?, ?] =>
+              m.map { case (k, v) => fromInternal(k, keyType) -> fromInternal(v, valueType) }
+            case other => other
+        // For other types, pass through unchanged
+        case _ => value
 
 object RowSerializer:
 

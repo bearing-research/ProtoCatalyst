@@ -3,15 +3,19 @@ package protocatalyst.mock
 import protocatalyst.encoder.*
 import protocatalyst.types.*
 
-// Test case classes
-case class User(name: String, age: Int)
-case class Address(street: String, city: String, zip: Option[Int])
-case class Person(user: User, address: Address, tags: List[String])
+// Test case classes (derive ProtoEncoder for nested type support)
+case class User(name: String, age: Int) derives ProtoEncoder
+case class Address(street: String, city: String, zip: Option[Int]) derives ProtoEncoder
+case class Person(user: User, address: Address, tags: List[String]) derives ProtoEncoder
 
 // Temporal test case classes
-case class Event(name: String, date: java.time.LocalDate)
-case class LogEntry(msg: String, timestamp: java.time.Instant)
-case class Appointment(title: String, dateTime: java.time.LocalDateTime)
+case class Event(name: String, date: java.time.LocalDate) derives ProtoEncoder
+case class LogEntry(msg: String, timestamp: java.time.Instant) derives ProtoEncoder
+case class Appointment(title: String, dateTime: java.time.LocalDateTime) derives ProtoEncoder
+
+// Collections of custom types
+case class Team(name: String, members: List[User]) derives ProtoEncoder
+case class Directory(name: String, usersByName: Map[String, User]) derives ProtoEncoder
 
 class MockInternalTypeConverterSuite extends munit.FunSuite:
 
@@ -285,3 +289,70 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     // Roundtrip
     val deserialized = serializer.deserialize(serialized)
     assertEquals(deserialized, appt)
+
+  // === Collections of custom types ===
+
+  test("RowSerializer with List[CustomType]"):
+    val serializer = RowSerializer.derived[Team]
+    val team = Team("Engineering", List(User("Alice", 30), User("Bob", 25)))
+
+    val serialized = serializer.serialize(team)
+
+    assertEquals(serialized.length, 2)
+    // Name is converted to MockUTF8String
+    assertEquals(serialized(0).asInstanceOf[MockUTF8String].toString, "Engineering")
+
+    // List of User is converted to MockArrayData containing MockRows
+    serialized(1) match
+      case arr: MockArrayData =>
+        assertEquals(arr.numElements, 2)
+        // Each User is converted to MockRow
+        arr.get(0) match
+          case row: MockRow =>
+            assertEquals(row.get(0).asInstanceOf[MockUTF8String].toString, "Alice")
+            assertEquals(row.get(1), 30)
+          case other =>
+            fail(s"Expected MockRow for User in list, got $other")
+        arr.get(1) match
+          case row: MockRow =>
+            assertEquals(row.get(0).asInstanceOf[MockUTF8String].toString, "Bob")
+            assertEquals(row.get(1), 25)
+          case other =>
+            fail(s"Expected MockRow for User in list, got $other")
+      case other =>
+        fail(s"Expected MockArrayData for List[User], got $other")
+
+  test("RowSerializer roundtrip with List[CustomType]"):
+    val serializer = RowSerializer.derived[Team]
+    val original = Team("Engineering", List(User("Alice", 30), User("Bob", 25)))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("RowSerializer with Map[String, CustomType]"):
+    val serializer = RowSerializer.derived[Directory]
+    val dir = Directory("Staff", Map("alice" -> User("Alice", 30), "bob" -> User("Bob", 25)))
+
+    val serialized = serializer.serialize(dir)
+
+    assertEquals(serialized.length, 2)
+    assertEquals(serialized(0).asInstanceOf[MockUTF8String].toString, "Staff")
+
+    // Map[String, User] is converted to MockMapData
+    serialized(1) match
+      case mapData: MockMapData =>
+        assertEquals(mapData.numElements, 2)
+        // Keys are MockUTF8String, values are MockRow
+        assert(mapData.keys.forall(_.isInstanceOf[MockUTF8String]))
+        assert(mapData.values.forall(_.isInstanceOf[MockRow]))
+      case other =>
+        fail(s"Expected MockMapData for Map[String, User], got $other")
+
+  test("RowSerializer roundtrip with Map[String, CustomType]"):
+    val serializer = RowSerializer.derived[Directory]
+    val original = Directory("Staff", Map("alice" -> User("Alice", 30), "bob" -> User("Bob", 25)))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
