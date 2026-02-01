@@ -594,7 +594,7 @@ These features are **not required** for Spark 4.0 compatibility but could provid
 
 | Feature | Description | Use Case |
 |---------|-------------|----------|
-| **Code Generation** | Generate specialized serialization bytecode at compile-time | High-throughput pipelines where serialization is a bottleneck; similar to Spark's ExpressionEncoder codegen |
+| **Inline Type Specialization** ✅ | **IMPLEMENTED** - Uses Scala 3 `inline` to generate type-specialized serialization code at compile-time. See `InlineRowSerializer` which is now the default in `RowSerializer.derived`. Achieves 2.8x-8.7x speedup over generic serialization. | High-throughput pipelines where serialization is a bottleneck; see [ADR-001](decisions/ADR-001-no-runtime-codegen.md) |
 | **Columnar Encoding** | Bulk serialize/deserialize arrays of rows in columnar format | Analytics workloads; memory-efficient batch processing; better cache utilization |
 | **Lazy Deserialization** | Deserialize only accessed fields from binary data | Wide rows where only a few fields are needed; projection pushdown |
 | **Compression Support** | Optional field-level compression (gzip, snappy, zstd) | Network transfer optimization; storage-constrained environments |
@@ -662,7 +662,7 @@ If implementing future enhancements, recommended priority order:
    - Arrow Integration (ecosystem value)
 
 3. **High Value, High Effort**
-   - Code Generation (significant performance gains)
+   - ~~Inline Type Specialization~~ ✅ **DONE** - Implemented in `InlineRowSerializer`, now the default
    - Columnar Encoding (analytics optimization)
    - Schema Registry Integration (enterprise feature)
 

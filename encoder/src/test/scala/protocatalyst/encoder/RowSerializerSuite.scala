@@ -128,7 +128,10 @@ class RowSerializerSuite extends munit.FunSuite:
     val serialized = serializer.serialize(row)
 
     assertEquals(serialized.length, 2)
-    assertEquals(serialized(0), RowUser("inner", 10))  // RowNested struct as-is with default converter
+    // Nested struct is serialized as Array[Any] (correct format for Spark InternalRow)
+    val innerArray = serialized(0).asInstanceOf[Array[Any]]
+    assertEquals(innerArray(0), "inner")
+    assertEquals(innerArray(1), 10)
     assertEquals(serialized(1), 3.14)
 
   test("nested schema has correct type"):
