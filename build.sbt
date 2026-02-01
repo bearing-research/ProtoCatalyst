@@ -18,7 +18,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(core, encoder, query, sqlParser, mockRuntime)
+  .aggregate(core, encoder, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -100,3 +100,49 @@ lazy val query = project
 //       "org.apache.spark" %% "spark-sql" % "4.0.0" % Provided
 //     )
 //   )
+
+// Benchmarks module (Scala 3) - JMH benchmarks for ProtoCatalyst encoders
+lazy val benchmarks = project
+  .in(file("benchmarks"))
+  .dependsOn(core, encoder, mockRuntime)
+  .enablePlugins(JmhPlugin)
+  .settings(
+    name := "protocatalyst-benchmarks",
+    commonSettings,
+    publish / skip := true,
+    // Fury needs access to internal JVM modules
+    Jmh / javaOptions ++= Seq(
+      "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED"
+    ),
+    Jmh / fork := true
+  )
+
+// Benchmark Spark comparison module (Scala 2.13) - Compare with Spark's ExpressionEncoder
+// Note: This module is standalone (no dependency on Scala 3 modules) to avoid version conflicts
+lazy val benchmarkSpark = project
+  .in(file("benchmark-spark"))
+  .enablePlugins(JmhPlugin)
+  .settings(
+    name := "protocatalyst-benchmark-spark",
+    scalaVersion := "2.13.16",
+    publish / skip := true,
+    scalacOptions ++= Seq(
+      "-deprecation",
+      "-feature",
+      "-unchecked"
+      // Note: -Werror removed for Scala 2.13 compatibility with Spark
+    ),
+    libraryDependencies ++= Seq(
+      "org.apache.spark" %% "spark-sql" % "4.0.0",
+      "org.apache.spark" %% "spark-catalyst" % "4.0.0",
+      "org.scala-lang" % "scala-reflect" % "2.13.16"  // Required for TypeTag
+    ),
+    Jmh / javaOptions ++= Seq(
+      "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED"
+    ),
+    Jmh / fork := true
+  )
