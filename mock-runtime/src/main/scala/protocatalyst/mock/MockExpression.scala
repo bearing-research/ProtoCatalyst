@@ -86,6 +86,11 @@ object MockExpression:
     def dataType: MockDataType = children.headOption.map(_.dataType).getOrElse(StringType)
     def nullable: Boolean = children.forall(_.nullable)
 
+  case class NullIf(left: MockExpression, right: MockExpression) extends MockExpression:
+    def dataType: MockDataType = left.dataType
+    def nullable: Boolean = true
+    def children: Seq[MockExpression] = Seq(left, right)
+
   // === Arithmetic Expressions ===
 
   sealed trait BinaryArithmetic extends MockExpression:
@@ -100,6 +105,68 @@ object MockExpression:
   case class Multiply(left: MockExpression, right: MockExpression) extends BinaryArithmetic
   case class Divide(left: MockExpression, right: MockExpression) extends BinaryArithmetic:
     override def nullable: Boolean = true // Division can produce null (div by zero)
+
+  // === Math Functions ===
+
+  case class Abs(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = child.dataType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Ceil(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = LongType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Floor(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = LongType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Round(child: MockExpression, scale: MockExpression) extends MockExpression:
+    def dataType: MockDataType = child.dataType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child, scale)
+
+  case class Truncate(child: MockExpression, scale: MockExpression) extends MockExpression:
+    def dataType: MockDataType = child.dataType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child, scale)
+
+  case class Sqrt(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = DoubleType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Cbrt(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = DoubleType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Pow(left: MockExpression, right: MockExpression) extends MockExpression:
+    def dataType: MockDataType = DoubleType
+    def nullable: Boolean = left.nullable || right.nullable
+    def children: Seq[MockExpression] = Seq(left, right)
+
+  case class Pmod(left: MockExpression, right: MockExpression) extends MockExpression:
+    def dataType: MockDataType = promoteNumericTypes(left.dataType, right.dataType)
+    def nullable: Boolean = left.nullable || right.nullable
+    def children: Seq[MockExpression] = Seq(left, right)
+
+  case class Sign(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = child.dataType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Log(child: MockExpression, base: Option[MockExpression]) extends MockExpression:
+    def dataType: MockDataType = DoubleType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child) ++ base.toSeq
+
+  case class Exp(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = DoubleType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
 
   // === String Expressions ===
 
@@ -126,6 +193,54 @@ object MockExpression:
     def dataType: MockDataType = BooleanType
     def nullable: Boolean = left.nullable || right.nullable
     def children: Seq[MockExpression] = Seq(left, right)
+
+  case class Trim(child: MockExpression, trimStr: Option[MockExpression], trimType: TrimType) extends MockExpression:
+    def dataType: MockDataType = StringType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child) ++ trimStr.toSeq
+
+  case class Length(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Replace(str: MockExpression, search: MockExpression, replace: MockExpression) extends MockExpression:
+    def dataType: MockDataType = StringType
+    def nullable: Boolean = str.nullable || search.nullable || replace.nullable
+    def children: Seq[MockExpression] = Seq(str, search, replace)
+
+  case class StringLocate(substr: MockExpression, str: MockExpression, start: Option[MockExpression]) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = substr.nullable || str.nullable
+    def children: Seq[MockExpression] = Seq(substr, str) ++ start.toSeq
+
+  case class Lpad(str: MockExpression, len: MockExpression, pad: MockExpression) extends MockExpression:
+    def dataType: MockDataType = StringType
+    def nullable: Boolean = str.nullable || len.nullable || pad.nullable
+    def children: Seq[MockExpression] = Seq(str, len, pad)
+
+  case class Rpad(str: MockExpression, len: MockExpression, pad: MockExpression) extends MockExpression:
+    def dataType: MockDataType = StringType
+    def nullable: Boolean = str.nullable || len.nullable || pad.nullable
+    def children: Seq[MockExpression] = Seq(str, len, pad)
+
+  case class StringSplit(str: MockExpression, delimiter: MockExpression, limit: Option[MockExpression]) extends MockExpression:
+    def dataType: MockDataType = ArrayType(StringType, false)
+    def nullable: Boolean = str.nullable || delimiter.nullable
+    def children: Seq[MockExpression] = Seq(str, delimiter) ++ limit.toSeq
+
+  case class Reverse(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = child.dataType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class StringRepeat(str: MockExpression, times: MockExpression) extends MockExpression:
+    def dataType: MockDataType = StringType
+    def nullable: Boolean = str.nullable || times.nullable
+    def children: Seq[MockExpression] = Seq(str, times)
+
+  enum TrimType:
+    case Both, Leading, Trailing
 
   // === Aggregate Expressions ===
 

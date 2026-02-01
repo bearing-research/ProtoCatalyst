@@ -646,3 +646,81 @@ class TransformSuite extends munit.FunSuite:
     // Recursive CTEs are not yet supported
     assert(result.isLeft, "Expected error for recursive CTE")
     assert(result.left.toOption.get.message.contains("Recursive"), "Expected error message about recursive CTEs")
+
+  // === Phase 10: String and Math Functions ===
+
+  test("transforms TRIM function"):
+    val stmt = asSelect(SqlParser.parse("SELECT TRIM(name) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms LENGTH function"):
+    val stmt = asSelect(SqlParser.parse("SELECT LENGTH(name) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms REPLACE function"):
+    val stmt = asSelect(SqlParser.parse("SELECT REPLACE(name, 'a', 'b') FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms ABS function"):
+    val stmt = asSelect(SqlParser.parse("SELECT ABS(salary) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms CEIL function"):
+    val stmt = asSelect(SqlParser.parse("SELECT CEIL(salary) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms FLOOR function"):
+    val stmt = asSelect(SqlParser.parse("SELECT FLOOR(salary) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms ROUND function"):
+    val stmt = asSelect(SqlParser.parse("SELECT ROUND(salary, 2) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms SQRT function"):
+    val stmt = asSelect(SqlParser.parse("SELECT SQRT(age) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms POW function"):
+    val stmt = asSelect(SqlParser.parse("SELECT POW(age, 2) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms MOD function"):
+    val stmt = asSelect(SqlParser.parse("SELECT MOD(age, 10) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms NULLIF function"):
+    val stmt = asSelect(SqlParser.parse("SELECT NULLIF(name, 'Unknown') FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms IFNULL function"):
+    val stmt = asSelect(SqlParser.parse("SELECT IFNULL(name, 'default') FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms IF function"):
+    val stmt = asSelect(SqlParser.parse("SELECT IF(age > 18, 'adult', 'minor') FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+  test("transforms complex expression with multiple functions"):
+    val stmt = asSelect(SqlParser.parse("""
+      SELECT
+        UPPER(TRIM(name)) AS clean_name,
+        ROUND(salary * 1.1, 2) AS new_salary,
+        ABS(age - 30) AS age_diff
+      FROM users
+    """).toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)

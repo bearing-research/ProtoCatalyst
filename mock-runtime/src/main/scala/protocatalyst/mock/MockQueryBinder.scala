@@ -253,6 +253,21 @@ object MockQueryBinder:
       case IsNull(child)    => IsNull(bindExpr(child, ctx))
       case IsNotNull(child) => IsNotNull(bindExpr(child, ctx))
       case Coalesce(children) => Coalesce(children.map(bindExpr(_, ctx)))
+      case NullIf(l, r) => NullIf(bindExpr(l, ctx), bindExpr(r, ctx))
+
+      // Math functions
+      case Abs(child) => Abs(bindExpr(child, ctx))
+      case Ceil(child) => Ceil(bindExpr(child, ctx))
+      case Floor(child) => Floor(bindExpr(child, ctx))
+      case Round(child, scale) => Round(bindExpr(child, ctx), bindExpr(scale, ctx))
+      case Truncate(child, scale) => Truncate(bindExpr(child, ctx), bindExpr(scale, ctx))
+      case Sqrt(child) => Sqrt(bindExpr(child, ctx))
+      case Cbrt(child) => Cbrt(bindExpr(child, ctx))
+      case Pow(l, r) => Pow(bindExpr(l, ctx), bindExpr(r, ctx))
+      case Pmod(l, r) => Pmod(bindExpr(l, ctx), bindExpr(r, ctx))
+      case Sign(child) => Sign(bindExpr(child, ctx))
+      case Log(child, base) => Log(bindExpr(child, ctx), base.map(bindExpr(_, ctx)))
+      case Exp(child) => Exp(bindExpr(child, ctx))
 
       // String
       case Concat(children) => Concat(children.map(bindExpr(_, ctx)))
@@ -260,6 +275,22 @@ object MockQueryBinder:
         Substring(bindExpr(str, ctx), bindExpr(pos, ctx), bindExpr(len, ctx))
       case Upper(child) => Upper(bindExpr(child, ctx))
       case Lower(child) => Lower(bindExpr(child, ctx))
+      case Trim(child, trimStr, trimType) =>
+        Trim(bindExpr(child, ctx), trimStr.map(bindExpr(_, ctx)), trimType)
+      case Length(child) => Length(bindExpr(child, ctx))
+      case Replace(str, search, replace) =>
+        Replace(bindExpr(str, ctx), bindExpr(search, ctx), bindExpr(replace, ctx))
+      case StringLocate(substr, str, start) =>
+        StringLocate(bindExpr(substr, ctx), bindExpr(str, ctx), start.map(bindExpr(_, ctx)))
+      case Lpad(str, len, pad) =>
+        Lpad(bindExpr(str, ctx), bindExpr(len, ctx), bindExpr(pad, ctx))
+      case Rpad(str, len, pad) =>
+        Rpad(bindExpr(str, ctx), bindExpr(len, ctx), bindExpr(pad, ctx))
+      case StringSplit(str, delimiter, limit) =>
+        StringSplit(bindExpr(str, ctx), bindExpr(delimiter, ctx), limit.map(bindExpr(_, ctx)))
+      case Reverse(child) => Reverse(bindExpr(child, ctx))
+      case StringRepeat(str, times) =>
+        StringRepeat(bindExpr(str, ctx), bindExpr(times, ctx))
 
       // Aggregates
       case Count(child, distinct) => Count(bindExpr(child, ctx), distinct)

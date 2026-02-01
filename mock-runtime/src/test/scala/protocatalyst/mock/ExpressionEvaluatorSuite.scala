@@ -225,3 +225,84 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
     ExpressionEvaluator.eval(expr) match
       case ExpressionEvaluator.EvalError(msg) => assert(msg.contains("Aggregate"))
       case other => fail(s"Expected EvalError, got $other")
+
+  // === Phase 10: Math Function Tests ===
+
+  test("evaluates ABS"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Abs(ProtoExpr.lit(-42))), ExpressionEvaluator.Success(42))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Abs(ProtoExpr.lit(42))), ExpressionEvaluator.Success(42))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Abs(ProtoExpr.lit(-3.14))), ExpressionEvaluator.Success(3.14))
+
+  test("evaluates CEIL"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Ceil(ProtoExpr.lit(3.1))), ExpressionEvaluator.Success(4L))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Ceil(ProtoExpr.lit(3.9))), ExpressionEvaluator.Success(4L))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Ceil(ProtoExpr.lit(-3.1))), ExpressionEvaluator.Success(-3L))
+
+  test("evaluates FLOOR"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Floor(ProtoExpr.lit(3.9))), ExpressionEvaluator.Success(3L))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Floor(ProtoExpr.lit(-3.1))), ExpressionEvaluator.Success(-4L))
+
+  test("evaluates ROUND"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Round(ProtoExpr.lit(3.456), ProtoExpr.lit(2))), ExpressionEvaluator.Success(3.46))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Round(ProtoExpr.lit(3.5), ProtoExpr.lit(0))), ExpressionEvaluator.Success(4.0))
+
+  test("evaluates SQRT"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Sqrt(ProtoExpr.lit(9.0))), ExpressionEvaluator.Success(3.0))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Sqrt(ProtoExpr.lit(2.0))), ExpressionEvaluator.Success(math.sqrt(2.0)))
+
+  test("evaluates POW"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Pow(ProtoExpr.lit(2.0), ProtoExpr.lit(3.0))), ExpressionEvaluator.Success(8.0))
+
+  test("evaluates MOD (pmod)"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Pmod(ProtoExpr.lit(7.0), ProtoExpr.lit(3.0))), ExpressionEvaluator.Success(1.0))
+
+  test("evaluates SIGN"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Sign(ProtoExpr.lit(-42))), ExpressionEvaluator.Success(-1))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Sign(ProtoExpr.lit(42))), ExpressionEvaluator.Success(1))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Sign(ProtoExpr.lit(0))), ExpressionEvaluator.Success(0))
+
+  test("evaluates LOG"):
+    val result = ExpressionEvaluator.eval(ProtoExpr.Log(ProtoExpr.lit(math.E), None))
+    result match
+      case ExpressionEvaluator.Success(v: Double) => assertEqualsDouble(v, 1.0, 0.0001)
+      case other => fail(s"Expected Success(1.0), got $other")
+
+  test("evaluates EXP"):
+    val result = ExpressionEvaluator.eval(ProtoExpr.Exp(ProtoExpr.lit(1.0)))
+    result match
+      case ExpressionEvaluator.Success(v: Double) => assertEqualsDouble(v, math.E, 0.0001)
+      case other => fail(s"Expected Success(e), got $other")
+
+  // === Phase 10: String Function Tests ===
+
+  test("evaluates LENGTH"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Length(ProtoExpr.lit("hello"))), ExpressionEvaluator.Success(5))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Length(ProtoExpr.lit(""))), ExpressionEvaluator.Success(0))
+
+  test("evaluates REPLACE"):
+    val expr = ProtoExpr.Replace(ProtoExpr.lit("hello world"), ProtoExpr.lit("world"), ProtoExpr.lit("scala"))
+    assertEquals(ExpressionEvaluator.eval(expr), ExpressionEvaluator.Success("hello scala"))
+
+  test("evaluates REVERSE"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.Reverse(ProtoExpr.lit("hello"))), ExpressionEvaluator.Success("olleh"))
+
+  test("evaluates StringRepeat"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.StringRepeat(ProtoExpr.lit("ab"), ProtoExpr.lit(3))), ExpressionEvaluator.Success("ababab"))
+
+  test("evaluates StringLocate"):
+    val expr = ProtoExpr.StringLocate(ProtoExpr.lit("o"), ProtoExpr.lit("hello"), None)
+    assertEquals(ExpressionEvaluator.eval(expr), ExpressionEvaluator.Success(5)) // 1-based index
+
+  test("evaluates LPAD"):
+    val expr = ProtoExpr.Lpad(ProtoExpr.lit("hi"), ProtoExpr.lit(5), ProtoExpr.lit("0"))
+    assertEquals(ExpressionEvaluator.eval(expr), ExpressionEvaluator.Success("000hi"))
+
+  test("evaluates RPAD"):
+    val expr = ProtoExpr.Rpad(ProtoExpr.lit("hi"), ProtoExpr.lit(5), ProtoExpr.lit("0"))
+    assertEquals(ExpressionEvaluator.eval(expr), ExpressionEvaluator.Success("hi000"))
+
+  // === Phase 10: Null Function Tests ===
+
+  test("evaluates NULLIF"):
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.NullIf(ProtoExpr.lit(1), ProtoExpr.lit(1))), ExpressionEvaluator.Success(null))
+    assertEquals(ExpressionEvaluator.eval(ProtoExpr.NullIf(ProtoExpr.lit(1), ProtoExpr.lit(2))), ExpressionEvaluator.Success(1))

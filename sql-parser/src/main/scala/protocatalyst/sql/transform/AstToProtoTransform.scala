@@ -684,6 +684,76 @@ object AstToProtoTransform:
             case "COALESCE" =>
               Right(ProtoExpr.Coalesce(transformedArgs))
 
+            // Additional string functions
+            case "TRIM" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Trim(transformedArgs.head, None, TrimType.Both))
+            case "LTRIM" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Trim(transformedArgs.head, None, TrimType.Leading))
+            case "RTRIM" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Trim(transformedArgs.head, None, TrimType.Trailing))
+            case "LENGTH" | "CHAR_LENGTH" | "CHARACTER_LENGTH" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Length(transformedArgs.head))
+            case "REPLACE" if transformedArgs.size == 3 =>
+              Right(ProtoExpr.Replace(transformedArgs(0), transformedArgs(1), transformedArgs(2)))
+            case "POSITION" | "LOCATE" | "INSTR" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.StringLocate(transformedArgs(0), transformedArgs(1), None))
+            case "LPAD" if transformedArgs.size == 3 =>
+              Right(ProtoExpr.Lpad(transformedArgs(0), transformedArgs(1), transformedArgs(2)))
+            case "RPAD" if transformedArgs.size == 3 =>
+              Right(ProtoExpr.Rpad(transformedArgs(0), transformedArgs(1), transformedArgs(2)))
+            case "SPLIT" if transformedArgs.size >= 2 =>
+              Right(ProtoExpr.StringSplit(transformedArgs(0), transformedArgs(1), transformedArgs.lift(2)))
+            case "REVERSE" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Reverse(transformedArgs.head))
+            case "REPEAT" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.StringRepeat(transformedArgs(0), transformedArgs(1)))
+            case "CONCAT_WS" if transformedArgs.nonEmpty =>
+              // CONCAT_WS(sep, s1, s2, ...) - just use Concat for now (simplified)
+              Right(ProtoExpr.Concat(transformedArgs.tail))
+
+            // Math functions
+            case "ABS" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Abs(transformedArgs.head))
+            case "CEIL" | "CEILING" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Ceil(transformedArgs.head))
+            case "FLOOR" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Floor(transformedArgs.head))
+            case "ROUND" if transformedArgs.size >= 1 =>
+              val scale = transformedArgs.lift(1).getOrElse(ProtoExpr.lit(0))
+              Right(ProtoExpr.Round(transformedArgs(0), scale))
+            case "TRUNCATE" | "TRUNC" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.Truncate(transformedArgs(0), transformedArgs(1)))
+            case "SQRT" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Sqrt(transformedArgs.head))
+            case "CBRT" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Cbrt(transformedArgs.head))
+            case "POW" | "POWER" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.Pow(transformedArgs(0), transformedArgs(1)))
+            case "MOD" | "PMOD" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.Pmod(transformedArgs(0), transformedArgs(1)))
+            case "SIGN" | "SIGNUM" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Sign(transformedArgs.head))
+            case "LOG" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Log(transformedArgs.head, None))
+            case "LOG" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.Log(transformedArgs(1), Some(transformedArgs(0))))
+            case "LN" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Log(transformedArgs.head, None))
+            case "LOG10" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Log(transformedArgs.head, Some(ProtoExpr.lit(10))))
+            case "LOG2" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Log(transformedArgs.head, Some(ProtoExpr.lit(2))))
+            case "EXP" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Exp(transformedArgs.head))
+
+            // Null/conditional functions
+            case "NULLIF" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.NullIf(transformedArgs(0), transformedArgs(1)))
+            case "NVL" | "IFNULL" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.Coalesce(transformedArgs))
+            case "IF" | "IIF" if transformedArgs.size == 3 =>
+              Right(ProtoExpr.If(transformedArgs(0), transformedArgs(1), transformedArgs(2)))
+
             // Aggregate functions
             case "SUM" if transformedArgs.size == 1 =>
               Right(ProtoExpr.Sum(transformedArgs.head))

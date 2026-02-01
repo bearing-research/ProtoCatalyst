@@ -187,23 +187,50 @@ WITH
 SELECT * FROM premium_active WHERE age > 25
 ```
 
-## Future Phases
+### Phase 10: String & Math Functions (Complete)
 
-### Phase 10: Additional Functions
+Built-in function support aligned with Spark SQL's function library:
 
-- Math: ABS, ROUND, CEIL, FLOOR, MOD, POWER, SQRT
-- String: TRIM, LTRIM, RTRIM, REPLACE, LENGTH, POSITION
-- Null handling: NULLIF, NVL/IFNULL, NVL2
-- Type conversion: TRY_CAST
+**String Functions:**
+- TRIM, LTRIM, RTRIM (leading/trailing whitespace removal)
+- LENGTH, CHAR_LENGTH, CHARACTER_LENGTH
+- REPLACE(str, search, replacement)
+- LOCATE/POSITION (substring position)
+- LPAD, RPAD (padding)
+- SPLIT (string to array)
+- REVERSE
+- REPEAT
+
+**Math Functions:**
+- ABS, CEIL/CEILING, FLOOR
+- ROUND(n, scale), TRUNCATE(n, scale)
+- SQRT, CBRT
+- POW/POWER
+- MOD (positive modulo, matching Spark's pmod)
+- SIGN
+- LOG (with optional base), LN
+- EXP
+
+**Null/Conditional Functions:**
+- NULLIF(a, b) - returns null if equal
+- NVL/IFNULL - aliases for COALESCE
+- IF(condition, then, else)
 
 ```sql
 SELECT
-  TRIM(name),
-  ROUND(salary, 2),
-  NULLIF(department, 'Unknown'),
-  LENGTH(description)
-FROM users
+  TRIM(name) AS clean_name,
+  LENGTH(description) AS desc_len,
+  REPLACE(title, 'old', 'new') AS new_title,
+  ROUND(price * 1.1, 2) AS adjusted_price,
+  ABS(balance) AS abs_balance,
+  NULLIF(category, 'Unknown') AS category,
+  IF(active, 'Yes', 'No') AS status
+FROM products
+WHERE LENGTH(name) > 5
+  AND MOD(id, 2) = 0
 ```
+
+## Future Phases
 
 ### Phase 11: Date/Time Functions
 

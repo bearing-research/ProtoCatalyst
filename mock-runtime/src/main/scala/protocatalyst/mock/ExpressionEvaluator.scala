@@ -80,6 +80,11 @@ object ExpressionEvaluator:
       case Coalesce(children) =>
         children.iterator.map(evalInternal(_, row)).find(_ != null).orNull
 
+      case NullIf(l, r) =>
+        val lv = evalInternal(l, row)
+        val rv = evalInternal(r, row)
+        if lv == rv then null else lv
+
       // Arithmetic
       case Add(l, r)      => numericOp(l, r, row, _ + _, _ + _, _ + _)
       case Subtract(l, r) => numericOp(l, r, row, _ - _, _ - _, _ - _)
@@ -88,6 +93,99 @@ object ExpressionEvaluator:
         val rv = evalInternal(r, row)
         if rv == 0 || rv == 0.0 || rv == 0L then null
         else numericOp(l, r, row, _ / _, _ / _, _ / _)
+
+      // Math functions
+      case Abs(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case i: Int => math.abs(i)
+          case l: Long => math.abs(l)
+          case f: Float => math.abs(f)
+          case d: Double => math.abs(d)
+          case bd: BigDecimal => bd.abs
+          case n: Number => math.abs(n.doubleValue)
+
+      case Ceil(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case d: Double => math.ceil(d).toLong
+          case f: Float => math.ceil(f.toDouble).toLong
+          case n: Number => math.ceil(n.doubleValue).toLong
+
+      case Floor(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case d: Double => math.floor(d).toLong
+          case f: Float => math.floor(f.toDouble).toLong
+          case n: Number => math.floor(n.doubleValue).toLong
+
+      case Round(child, scale) =>
+        val v = evalInternal(child, row)
+        val s = evalInternal(scale, row)
+        if v == null || s == null then null
+        else
+          val scaleInt = toInt(s)
+          val value = toDouble(v)
+          BigDecimal(value).setScale(scaleInt, BigDecimal.RoundingMode.HALF_UP).toDouble
+
+      case Truncate(child, scale) =>
+        val v = evalInternal(child, row)
+        val s = evalInternal(scale, row)
+        if v == null || s == null then null
+        else
+          val scaleInt = toInt(s)
+          val value = toDouble(v)
+          BigDecimal(value).setScale(scaleInt, BigDecimal.RoundingMode.DOWN).toDouble
+
+      case Sqrt(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case n: Number => math.sqrt(n.doubleValue)
+
+      case Cbrt(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case n: Number => math.cbrt(n.doubleValue)
+
+      case Pow(l, r) =>
+        val lv = evalInternal(l, row)
+        val rv = evalInternal(r, row)
+        if lv == null || rv == null then null
+        else math.pow(toDouble(lv), toDouble(rv))
+
+      case Pmod(l, r) =>
+        val lv = evalInternal(l, row)
+        val rv = evalInternal(r, row)
+        if lv == null || rv == null then null
+        else
+          val result = toDouble(lv) % toDouble(rv)
+          if result < 0 then result + math.abs(toDouble(rv)) else result
+
+      case Sign(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case i: Int => math.signum(i)
+          case l: Long => math.signum(l)
+          case f: Float => math.signum(f)
+          case d: Double => math.signum(d)
+          case n: Number => math.signum(n.doubleValue)
+
+      case Log(child, base) =>
+        val v = evalInternal(child, row)
+        if v == null then null
+        else
+          val logValue = math.log(toDouble(v))
+          base match
+            case Some(b) =>
+              val bv = evalInternal(b, row)
+              if bv == null then null
+              else logValue / math.log(toDouble(bv))
+            case None => logValue
+
+      case Exp(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case n: Number => math.exp(n.doubleValue)
 
       // String operations
       case Concat(children) =>
@@ -121,6 +219,83 @@ object ExpressionEvaluator:
           val end = math.min(sStr.length, start + lInt)
           if start >= sStr.length then ""
           else sStr.substring(start, end)
+
+      case Trim(child, trimStr, trimType) =>
+        val s = evalInternal(child, row)
+        if s == null then null
+        else
+          val str = s.toString
+          val chars = trimStr.map(e => evalInternal(e, row)).getOrElse(" ").toString
+          trimType match
+            case TrimType.Both => str.stripPrefix(chars).stripSuffix(chars)
+            case TrimType.Leading => str.stripPrefix(chars)
+            case TrimType.Trailing => str.stripSuffix(chars)
+
+      case Length(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case s: String => s.length
+          case other => other.toString.length
+
+      case Replace(str, search, replace) =>
+        val s = evalInternal(str, row)
+        val srch = evalInternal(search, row)
+        val repl = evalInternal(replace, row)
+        if s == null || srch == null || repl == null then null
+        else s.toString.replace(srch.toString, repl.toString)
+
+      case StringLocate(substr, str, start) =>
+        val sub = evalInternal(substr, row)
+        val s = evalInternal(str, row)
+        if sub == null || s == null then null
+        else
+          val startPos = start.map(e => toInt(evalInternal(e, row)) - 1).getOrElse(0)
+          val idx = s.toString.indexOf(sub.toString, startPos)
+          if idx < 0 then 0 else idx + 1 // 1-based index, 0 if not found
+
+      case Lpad(str, len, pad) =>
+        val s = evalInternal(str, row)
+        val l = evalInternal(len, row)
+        val p = evalInternal(pad, row)
+        if s == null || l == null || p == null then null
+        else
+          val sStr = s.toString
+          val lInt = toInt(l)
+          val pStr = p.toString
+          if sStr.length >= lInt then sStr.take(lInt)
+          else (pStr * ((lInt - sStr.length) / pStr.length + 1)).take(lInt - sStr.length) + sStr
+
+      case Rpad(str, len, pad) =>
+        val s = evalInternal(str, row)
+        val l = evalInternal(len, row)
+        val p = evalInternal(pad, row)
+        if s == null || l == null || p == null then null
+        else
+          val sStr = s.toString
+          val lInt = toInt(l)
+          val pStr = p.toString
+          if sStr.length >= lInt then sStr.take(lInt)
+          else sStr + (pStr * ((lInt - sStr.length) / pStr.length + 1)).take(lInt - sStr.length)
+
+      case StringSplit(str, delimiter, limit) =>
+        val s = evalInternal(str, row)
+        val d = evalInternal(delimiter, row)
+        if s == null || d == null then null
+        else
+          val lim = limit.map(e => toInt(evalInternal(e, row))).getOrElse(-1)
+          s.toString.split(java.util.regex.Pattern.quote(d.toString), lim).toSeq
+
+      case Reverse(child) =>
+        evalInternal(child, row) match
+          case null => null
+          case s: String => s.reverse
+          case other => other.toString.reverse
+
+      case StringRepeat(str, times) =>
+        val s = evalInternal(str, row)
+        val t = evalInternal(times, row)
+        if s == null || t == null then null
+        else s.toString * toInt(t)
 
       // Control flow
       case If(pred, trueVal, falseVal) =>

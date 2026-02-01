@@ -55,6 +55,7 @@ object ExpressionConverter:
       case IsNull(child) => ME.IsNull(toMock(child))
       case IsNotNull(child) => ME.IsNotNull(toMock(child))
       case Coalesce(children) => ME.Coalesce(children.map(toMock))
+      case NullIf(left, right) => ME.NullIf(toMock(left), toMock(right))
 
       // === Arithmetic ===
       case Add(left, right) => ME.Add(toMock(left), toMock(right))
@@ -62,11 +63,39 @@ object ExpressionConverter:
       case Multiply(left, right) => ME.Multiply(toMock(left), toMock(right))
       case Divide(left, right) => ME.Divide(toMock(left), toMock(right))
 
+      // === Math Functions ===
+      case Abs(child) => ME.Abs(toMock(child))
+      case Ceil(child) => ME.Ceil(toMock(child))
+      case Floor(child) => ME.Floor(toMock(child))
+      case Round(child, scale) => ME.Round(toMock(child), toMock(scale))
+      case Truncate(child, scale) => ME.Truncate(toMock(child), toMock(scale))
+      case Sqrt(child) => ME.Sqrt(toMock(child))
+      case Cbrt(child) => ME.Cbrt(toMock(child))
+      case Pow(left, right) => ME.Pow(toMock(left), toMock(right))
+      case Pmod(left, right) => ME.Pmod(toMock(left), toMock(right))
+      case Sign(child) => ME.Sign(toMock(child))
+      case Log(child, base) => ME.Log(toMock(child), base.map(toMock))
+      case Exp(child) => ME.Exp(toMock(child))
+
       // === String Operations ===
       case Concat(children) => ME.Concat(children.map(toMock))
       case Substring(str, pos, len) => ME.Substring(toMock(str), toMock(pos), toMock(len))
       case Upper(child) => ME.Upper(toMock(child))
       case Lower(child) => ME.Lower(toMock(child))
+      case Trim(child, trimStr, trimType) =>
+        val mockTrimType = trimType match
+          case TrimType.Both => ME.TrimType.Both
+          case TrimType.Leading => ME.TrimType.Leading
+          case TrimType.Trailing => ME.TrimType.Trailing
+        ME.Trim(toMock(child), trimStr.map(toMock), mockTrimType)
+      case Length(child) => ME.Length(toMock(child))
+      case Replace(str, search, replace) => ME.Replace(toMock(str), toMock(search), toMock(replace))
+      case StringLocate(substr, str, start) => ME.StringLocate(toMock(substr), toMock(str), start.map(toMock))
+      case Lpad(str, len, pad) => ME.Lpad(toMock(str), toMock(len), toMock(pad))
+      case Rpad(str, len, pad) => ME.Rpad(toMock(str), toMock(len), toMock(pad))
+      case StringSplit(str, delimiter, limit) => ME.StringSplit(toMock(str), toMock(delimiter), limit.map(toMock))
+      case Reverse(child) => ME.Reverse(toMock(child))
+      case StringRepeat(str, times) => ME.StringRepeat(toMock(str), toMock(times))
       case Like(value, pattern, escape) =>
         val escapeChar = escape.map(e => evaluateLiteralString(e).headOption.getOrElse('\\'))
         ME.Like(toMock(value), toMock(pattern), escapeChar)
@@ -239,6 +268,7 @@ object ExpressionConverter:
       case ME.IsNull(child) => PE.IsNull(fromMock(child))
       case ME.IsNotNull(child) => PE.IsNotNull(fromMock(child))
       case ME.Coalesce(children) => PE.Coalesce(children.map(fromMock).toVector)
+      case ME.NullIf(left, right) => PE.NullIf(fromMock(left), fromMock(right))
 
       // === Arithmetic ===
       case ME.Add(left, right) => PE.Add(fromMock(left), fromMock(right))
@@ -246,11 +276,39 @@ object ExpressionConverter:
       case ME.Multiply(left, right) => PE.Multiply(fromMock(left), fromMock(right))
       case ME.Divide(left, right) => PE.Divide(fromMock(left), fromMock(right))
 
+      // === Math Functions ===
+      case ME.Abs(child) => PE.Abs(fromMock(child))
+      case ME.Ceil(child) => PE.Ceil(fromMock(child))
+      case ME.Floor(child) => PE.Floor(fromMock(child))
+      case ME.Round(child, scale) => PE.Round(fromMock(child), fromMock(scale))
+      case ME.Truncate(child, scale) => PE.Truncate(fromMock(child), fromMock(scale))
+      case ME.Sqrt(child) => PE.Sqrt(fromMock(child))
+      case ME.Cbrt(child) => PE.Cbrt(fromMock(child))
+      case ME.Pow(left, right) => PE.Pow(fromMock(left), fromMock(right))
+      case ME.Pmod(left, right) => PE.Pmod(fromMock(left), fromMock(right))
+      case ME.Sign(child) => PE.Sign(fromMock(child))
+      case ME.Log(child, base) => PE.Log(fromMock(child), base.map(fromMock))
+      case ME.Exp(child) => PE.Exp(fromMock(child))
+
       // === String Operations ===
       case ME.Concat(children) => PE.Concat(children.map(fromMock).toVector)
       case ME.Substring(str, pos, len) => PE.Substring(fromMock(str), fromMock(pos), fromMock(len))
       case ME.Upper(child) => PE.Upper(fromMock(child))
       case ME.Lower(child) => PE.Lower(fromMock(child))
+      case ME.Trim(child, trimStr, trimType) =>
+        val protoTrimType = trimType match
+          case ME.TrimType.Both => TrimType.Both
+          case ME.TrimType.Leading => TrimType.Leading
+          case ME.TrimType.Trailing => TrimType.Trailing
+        PE.Trim(fromMock(child), trimStr.map(fromMock), protoTrimType)
+      case ME.Length(child) => PE.Length(fromMock(child))
+      case ME.Replace(str, search, replace) => PE.Replace(fromMock(str), fromMock(search), fromMock(replace))
+      case ME.StringLocate(substr, str, start) => PE.StringLocate(fromMock(substr), fromMock(str), start.map(fromMock))
+      case ME.Lpad(str, len, pad) => PE.Lpad(fromMock(str), fromMock(len), fromMock(pad))
+      case ME.Rpad(str, len, pad) => PE.Rpad(fromMock(str), fromMock(len), fromMock(pad))
+      case ME.StringSplit(str, delimiter, limit) => PE.StringSplit(fromMock(str), fromMock(delimiter), limit.map(fromMock))
+      case ME.Reverse(child) => PE.Reverse(fromMock(child))
+      case ME.StringRepeat(str, times) => PE.StringRepeat(fromMock(str), fromMock(times))
       case ME.Like(left, right, escapeChar) =>
         PE.Like(fromMock(left), fromMock(right), escapeChar.map(c => PE.lit(c.toString)))
 

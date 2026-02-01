@@ -32,6 +32,7 @@ enum ProtoExpr extends Serializable:
   case IsNull(child: ProtoExpr)
   case IsNotNull(child: ProtoExpr)
   case Coalesce(children: Vector[ProtoExpr])
+  case NullIf(left: ProtoExpr, right: ProtoExpr)
 
   // Arithmetic
   case Add(left: ProtoExpr, right: ProtoExpr)
@@ -39,11 +40,34 @@ enum ProtoExpr extends Serializable:
   case Multiply(left: ProtoExpr, right: ProtoExpr)
   case Divide(left: ProtoExpr, right: ProtoExpr)
 
+  // Math functions
+  case Abs(child: ProtoExpr)
+  case Ceil(child: ProtoExpr)
+  case Floor(child: ProtoExpr)
+  case Round(child: ProtoExpr, scale: ProtoExpr)
+  case Truncate(child: ProtoExpr, scale: ProtoExpr)
+  case Sqrt(child: ProtoExpr)
+  case Cbrt(child: ProtoExpr)
+  case Pow(left: ProtoExpr, right: ProtoExpr)
+  case Pmod(left: ProtoExpr, right: ProtoExpr)
+  case Sign(child: ProtoExpr)
+  case Log(child: ProtoExpr, base: Option[ProtoExpr])
+  case Exp(child: ProtoExpr)
+
   // String
   case Concat(children: Vector[ProtoExpr])
   case Substring(str: ProtoExpr, pos: ProtoExpr, len: ProtoExpr)
   case Upper(child: ProtoExpr)
   case Lower(child: ProtoExpr)
+  case Trim(child: ProtoExpr, trimStr: Option[ProtoExpr], trimType: TrimType)
+  case Length(child: ProtoExpr)
+  case Replace(str: ProtoExpr, search: ProtoExpr, replace: ProtoExpr)
+  case StringLocate(substr: ProtoExpr, str: ProtoExpr, start: Option[ProtoExpr])
+  case Lpad(str: ProtoExpr, len: ProtoExpr, pad: ProtoExpr)
+  case Rpad(str: ProtoExpr, len: ProtoExpr, pad: ProtoExpr)
+  case StringSplit(str: ProtoExpr, delimiter: ProtoExpr, limit: Option[ProtoExpr])
+  case Reverse(child: ProtoExpr)
+  case StringRepeat(str: ProtoExpr, times: ProtoExpr)
 
   // Aggregates
   case Count(child: ProtoExpr, distinct: Boolean)
@@ -112,6 +136,10 @@ enum FrameBound extends Serializable:
   case CurrentRow
   case Preceding(n: Long)
   case Following(n: Long)
+
+/** Trim type for TRIM function. */
+enum TrimType extends Serializable:
+  case Both, Leading, Trailing
 
 object ProtoExpr:
   // Convenience constructors for literals
