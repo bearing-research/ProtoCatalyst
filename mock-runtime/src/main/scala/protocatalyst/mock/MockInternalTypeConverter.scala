@@ -1,6 +1,6 @@
 package protocatalyst.mock
 
-import protocatalyst.encoder.InternalTypeConverter
+import protocatalyst.encoder.{InternalTypeConverter, ProtoRow, GenericProtoRow}
 import protocatalyst.types.*
 
 /**
@@ -45,9 +45,16 @@ object MockInternalTypeConverter extends InternalTypeConverter:
         MockMapData(keys, values)
 
       case ProtoType.StructType(fields) =>
-        val product = value.asInstanceOf[Product]
+        // Handle both ProtoRow and Product types
+        val rowValues: Int => Any = value match
+          case row: ProtoRow => row.get
+          case product: Product => product.productElement
+          case other => throw IllegalArgumentException(
+            s"Expected ProtoRow or Product, got: ${other.getClass}"
+          )
+
         val values = fields.zipWithIndex.map { case (field, idx) =>
-          val rawValue = product.productElement(idx)
+          val rawValue = rowValues(idx)
           // Handle Option fields - unwrap Some/None to value/null
           val unwrapped = if field.nullable then
             rawValue match

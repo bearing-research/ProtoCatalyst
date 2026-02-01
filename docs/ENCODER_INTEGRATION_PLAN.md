@@ -93,12 +93,12 @@ AgnosticEncoder[T]
 ├── StructEncoder[K]
 │   ├── ProductEncoder[K]   ← Case classes  ✅
 │   ├── JavaBeanEncoder[K]  ← Java beans  ✅ (runtime introspection)
-│   └── RowEncoder          ← Row type  ⏳
+│   └── RowEncoder          ← Row type  ✅ (ProtoRow + GenericRowEncoder)
 ├── EnumEncoder
 │   ├── ScalaEnumEncoder  ✅ (Scala 3 via Mirror.SumOf)
 │   └── JavaEnumEncoder  ✅ (via type bound E <: Enum[E])
 ├── UDTEncoder  ✅ (via ProtoUDT trait)
-└── TransformingEncoder (Kryo, Java serialization)  ⏳
+└── TransformingEncoder (Kryo, Java serialization)  ✅
 ```
 
 ---
