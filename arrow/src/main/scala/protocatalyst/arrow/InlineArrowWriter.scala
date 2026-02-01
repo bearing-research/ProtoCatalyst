@@ -291,7 +291,45 @@ object InlineArrowWriter:
         v.setSafe(rowIndex, bytes)
       case v: BitVector =>
         v.setSafe(rowIndex, if value.asInstanceOf[Boolean] then 1 else 0)
+      case v: StructVector =>
+        // Handle Option[NestedProduct] - write the product fields to struct
+        val product = value.asInstanceOf[Product]
+        writeProductToStruct(product, v, rowIndex)
+        v.setIndexDefined(rowIndex)
       case _ => () // Unsupported
+
+  /** Write a product's fields to a struct vector (runtime version for Option fallback) */
+  private def writeProductToStruct(
+      product: Product,
+      structVec: StructVector,
+      rowIndex: Int
+  ): Unit =
+    var i = 0
+    while i < product.productArity do
+      val value = product.productElement(i)
+      val childVec = structVec.getChildByOrdinal(i)
+      if value != null then
+        childVec match
+          case v: IntVector => v.setSafe(rowIndex, value.asInstanceOf[Int])
+          case v: BigIntVector => v.setSafe(rowIndex, value.asInstanceOf[Long])
+          case v: Float8Vector => v.setSafe(rowIndex, value.asInstanceOf[Double])
+          case v: Float4Vector => v.setSafe(rowIndex, value.asInstanceOf[Float])
+          case v: VarCharVector =>
+            val bytes = value.asInstanceOf[String].getBytes(StandardCharsets.UTF_8)
+            v.setSafe(rowIndex, bytes)
+          case v: BitVector =>
+            v.setSafe(rowIndex, if value.asInstanceOf[Boolean] then 1 else 0)
+          case _ => ()
+      else
+        childVec match
+          case v: VarCharVector => v.setNull(rowIndex)
+          case v: IntVector => v.setNull(rowIndex)
+          case v: BigIntVector => v.setNull(rowIndex)
+          case v: Float8Vector => v.setNull(rowIndex)
+          case v: Float4Vector => v.setNull(rowIndex)
+          case v: BitVector => v.setNull(rowIndex)
+          case _ => ()
+      i += 1
 
   /** Set null at field position */
   private def setNullAt(root: VectorSchemaRoot, fieldIndex: Int, rowIndex: Int): Unit =
@@ -331,6 +369,8 @@ object InlineArrowWriter:
           val structVec = root.getVector(fieldIndex).asInstanceOf[StructVector]
           val nestedProduct = fieldValue.asInstanceOf[Product]
           writeStructFields[m.MirroredElemTypes](nestedProduct, structVec, rowIndex, 0)
+          // Mark the struct row as valid (not null)
+          structVec.setIndexDefined(rowIndex)
         case _ =>
           // Unknown type - try generic handling
           writeGenericValue(root, fieldIndex, rowIndex, fieldValue)

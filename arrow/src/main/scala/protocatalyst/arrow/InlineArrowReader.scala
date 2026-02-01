@@ -241,7 +241,18 @@ object InlineArrowReader:
         val bytes = root.getVector(fieldIndex).asInstanceOf[VarCharVector].get(rowIndex)
         new String(bytes, StandardCharsets.UTF_8).asInstanceOf[T]
       case _ =>
-        readAnyOptionValue(root, rowIndex, fieldIndex).asInstanceOf[T]
+        // Try to summon a Mirror for nested products
+        summonFrom {
+          case m: Mirror.ProductOf[T] =>
+            // Nested product - read from struct vector
+            val structVec = root.getVector(fieldIndex).asInstanceOf[StructVector]
+            val nestedCount = constValue[Tuple.Size[m.MirroredElemTypes]]
+            val nestedValues = new Array[Any](nestedCount)
+            readStructFields[m.MirroredElemTypes](structVec, rowIndex, 0, nestedValues)
+            m.fromProduct(ArrayProduct(nestedValues))
+          case _ =>
+            readAnyOptionValue(root, rowIndex, fieldIndex).asInstanceOf[T]
+        }
 
   /** Fallback for complex Option types */
   private def readAnyOptionValue(
@@ -262,7 +273,33 @@ object InlineArrowReader:
       case v: TimeStampMicroTZVector =>
         val micros = v.get(rowIndex)
         java.time.Instant.ofEpochSecond(micros / 1000000L, (micros % 1000000L) * 1000)
+      case v: StructVector =>
+        // Return the struct vector + rowIndex - caller needs Mirror to reconstruct
+        // For runtime fallback, we read fields into an array
+        readProductFromStruct(v, rowIndex)
       case _ => null
+
+  /** Read a product's fields from a struct vector (runtime version for Option fallback) */
+  private def readProductFromStruct(
+      structVec: StructVector,
+      rowIndex: Int
+  ): Array[Any] =
+    val numChildren = structVec.size()
+    val values = new Array[Any](numChildren)
+    var i = 0
+    while i < numChildren do
+      val childVec = structVec.getChildByOrdinal(i)
+      values(i) = childVec match
+        case v: IntVector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: BigIntVector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: Float8Vector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: Float4Vector if !v.isNull(rowIndex) => v.get(rowIndex)
+        case v: VarCharVector if !v.isNull(rowIndex) =>
+          new String(v.get(rowIndex), StandardCharsets.UTF_8)
+        case v: BitVector if !v.isNull(rowIndex) => v.get(rowIndex) == 1
+        case _ => null
+      i += 1
+    values
 
   /** Check if field is null at position */
   private def isNullAt(root: VectorSchemaRoot, fieldIndex: Int, rowIndex: Int): Boolean =
