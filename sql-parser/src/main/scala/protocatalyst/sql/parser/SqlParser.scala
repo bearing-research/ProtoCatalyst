@@ -527,8 +527,6 @@ class SqlParser(tokens: Vector[Token]):
         }
     }
 
-  
-
   private def parseExprList(): Either[ParseError, Vector[SqlExpr]] =
     parseExpr().flatMap { first =>
       parseRestOfExprList(Vector(first))

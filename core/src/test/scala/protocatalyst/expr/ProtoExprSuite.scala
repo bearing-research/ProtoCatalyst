@@ -308,7 +308,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val expr = ProtoExpr.StringLocate(substr, str, Some(ProtoExpr.lit(1)))
     expr match
       case ProtoExpr.StringLocate(_, _, Some(_)) => ()
-      case _                                      => fail(s"Expected StringLocate, got $expr")
+      case _                                     => fail(s"Expected StringLocate, got $expr")
 
   // === Aggregate Expressions ===
 

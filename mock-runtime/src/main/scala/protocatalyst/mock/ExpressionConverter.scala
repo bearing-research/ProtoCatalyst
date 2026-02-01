@@ -1,7 +1,11 @@
 package protocatalyst.mock
 
 import protocatalyst.expr._
-import protocatalyst.plan.{NullOrdering => ProtoNullOrdering, SortDirection => ProtoSortDirection, SortOrder => ProtoSortOrder}
+import protocatalyst.plan.{
+  NullOrdering => ProtoNullOrdering,
+  SortDirection => ProtoSortDirection,
+  SortOrder => ProtoSortOrder
+}
 import protocatalyst.types._
 
 /** Bidirectional converter between ProtoExpr and MockExpression.

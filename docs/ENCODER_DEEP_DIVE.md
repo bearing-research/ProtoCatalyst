@@ -1,170 +1,451 @@
-# Spark Encoder Deep Dive: From TypeTag to Mirror
+# Understanding Encoders: A Beginner's Guide
+
+This guide explains what encoders are, why they matter, and how ProtoCatalyst implements them using Scala 3. No prior knowledge of Spark or serialization is assumed.
 
 ## Table of Contents
 
-1. [What is an Encoder?](#1-what-is-an-encoder)
-2. [Why Encoders Matter](#2-why-encoders-matter)
-3. [Spark's Current Approach (Scala 2 / TypeTag)](#3-sparks-current-approach-scala-2--typetag)
-4. [The Mirror-Based Approach (Scala 3)](#4-the-mirror-based-approach-scala-3)
-5. [Technical Deep Dive](#5-technical-deep-dive)
-6. [Feature Comparison](#6-feature-comparison)
-7. [Performance Analysis](#7-performance-analysis)
-8. [Migration Path](#8-migration-path)
+1. [The Problem: Objects vs. Tabular Data](#1-the-problem-objects-vs-tabular-data)
+2. [What is an Encoder?](#2-what-is-an-encoder)
+3. [Why Encoders Matter](#3-why-encoders-matter)
+4. [Getting Started with ProtoCatalyst](#4-getting-started-with-protocatalyst)
+5. [How It Works Under the Hood](#5-how-it-works-under-the-hood)
+6. [Advanced Topics](#6-advanced-topics)
+7. [Spark's Approach vs ProtoCatalyst](#7-sparks-approach-vs-protocatalyst)
+8. [Performance Analysis](#8-performance-analysis)
+9. [Glossary](#9-glossary)
 
 ---
 
-## 1. What is an Encoder?
+## 1. The Problem: Objects vs. Tabular Data
 
-An **Encoder** is Spark's mechanism for converting between JVM objects (like case classes) and Spark's internal row format (InternalRow/UnsafeRow). It serves three critical purposes:
+### The Two Worlds
+
+When you work with data, you typically deal with two different representations:
+
+**1. Objects in your code** - Structured types that are easy to work with:
+
+```scala
+case class Person(name: String, age: Int)
+val alice = Person("Alice", 30)
+
+// Easy to use in code
+println(alice.name)  // "Alice"
+println(alice.age)   // 30
+```
+
+**2. Tabular data** - Rows and columns for storage and processing:
+
+```
+┌─────────┬─────┐
+│  name   │ age │
+├─────────┼─────┤
+│ "Alice" │ 30  │
+│ "Bob"   │ 25  │
+└─────────┴─────┘
+```
+
+The challenge: **How do you convert between these two formats efficiently?**
+
+### Why This Matters
+
+Data processing frameworks like Apache Spark store data in a tabular format called "rows" internally. This format is:
+- Compact (uses less memory)
+- Cache-friendly (data is contiguous)
+- Optimized for columnar operations
+
+But when you write application code, you want to use nice case classes, not raw arrays. You need something to bridge these two worlds.
+
+### A Simple Example
+
+Imagine you have a million `Person` objects to process:
+
+```scala
+val people: List[Person] = loadMillionPeople()
+
+// You want to filter people over 18
+val adults = people.filter(_.age >= 18)
+```
+
+Behind the scenes, a data processing engine needs to:
+1. **Serialize**: Convert each `Person` → row format (for efficient storage)
+2. **Process**: Filter the rows
+3. **Deserialize**: Convert rows → `Person` objects (for your code to use)
+
+This conversion happens billions of times in real applications. **Efficiency matters.**
+
+---
+
+## 2. What is an Encoder?
+
+An **Encoder** is the component that converts between objects and row format:
 
 ```
 ┌─────────────────┐       Encoder        ┌─────────────────┐
-│   JVM Object    │ ──────────────────▶  │  InternalRow    │
-│  (case class)   │ ◀──────────────────  │  (Spark format) │
-└─────────────────┘    serialize /       └─────────────────┘
-                      deserialize
+│   Your Object   │ ─────────────────▶   │   Row Format    │
+│  Person("Alice",│    serialize()       │  ["Alice", 30]  │
+│           30)   │ ◀─────────────────   │                 │
+└─────────────────┘   deserialize()      └─────────────────┘
 ```
 
-### Understanding InternalRow
+### The Three Jobs of an Encoder
 
-Spark's `InternalRow` is an abstract interface. The most common implementation, `GenericInternalRow`, is simply a wrapper around `Array[Any]`:
+1. **Schema Discovery** - Figure out what fields a type has
+   ```scala
+   Person has: name (String), age (Int)
+   // → Schema: [("name", StringType), ("age", IntType)]
+   ```
 
-```scala
-// Spark's GenericInternalRow (simplified)
-class GenericInternalRow(val values: Array[Any]) extends InternalRow {
-  def numFields: Int = values.length
-  def get(ordinal: Int, dataType: DataType): Any = values(ordinal)
-  def getInt(ordinal: Int): Int = values(ordinal).asInstanceOf[Int]
-  def getLong(ordinal: Int): Long = values(ordinal).asInstanceOf[Long]
-  // ...typed getters that cast from the underlying array
-}
+2. **Serialization** - Convert object → row
+   ```scala
+   Person("Alice", 30) → Array("Alice", 30)
+   ```
+
+3. **Deserialization** - Convert row → object
+   ```scala
+   Array("Alice", 30) → Person("Alice", 30)
+   ```
+
+### Why Not Just Use JSON?
+
+You might wonder: "Why not serialize to JSON or use Java serialization?"
+
+The problem is **performance**:
+
+| Format | Size for Person | Parse Time |
+|--------|-----------------|------------|
+| JSON | ~25 bytes | Slow (string parsing) |
+| Java Serialization | ~200 bytes | Medium |
+| **Row format** | **~13 bytes** | **Fast (direct memory access)** |
+
+When processing billions of rows, the difference is massive.
+
+---
+
+## 3. Why Encoders Matter
+
+### 3.1 Performance: Memory Efficiency
+
+Let's see why row format is so much more efficient than regular Java objects.
+
+**A Java Object uses a lot of hidden memory:**
+
+```
+Person("Alice", 30) in memory:
+┌────────────────────────────────────────────┐
+│ Person object header (16 bytes)            │
+│ name: pointer to String (8 bytes)    ─────┼──┐
+│ age: int (4 bytes) + padding (4 bytes)     │  │
+└────────────────────────────────────────────┘  │
+                                                │
+        ┌───────────────────────────────────────┘
+        ▼
+┌────────────────────────────────────────────┐
+│ String object header (16 bytes)            │
+│ value: pointer to char[] (8 bytes)   ─────┼──┐
+│ hash: int (4 bytes) + padding (4 bytes)    │  │
+└────────────────────────────────────────────┘  │
+                                                │
+        ┌───────────────────────────────────────┘
+        ▼
+┌────────────────────────────────────────────┐
+│ char[] header (16 bytes)                   │
+│ length (4 bytes)                           │
+│ "Alice" data (10 bytes in UTF-16)          │
+└────────────────────────────────────────────┘
+
+Total: ~80+ bytes scattered across 3 objects
 ```
 
-**Key insight**: The actual data lives in `Array[Any]`. The `InternalRow` class just provides typed accessors.
+**Row format is compact and contiguous:**
 
-ProtoCatalyst's `InlineRowSerializer` produces exactly what goes inside that array:
+```
+Person as Row:
+┌────────────────────────────────────────────┐
+│ ["Alice", 30]                              │
+│ ├─ "Alice" in UTF-8 (5 bytes)              │
+│ └─ 30 as integer (4 bytes)                 │
+└────────────────────────────────────────────┘
 
-```scala
-// ProtoCatalyst output
-val row: Array[Any] = serializer.serialize(Person("Alice", 30, address))
-// row = Array("Alice", 30, Array("123 Main St", "NYC", "10001"))
-
-// To create Spark's InternalRow - just wrap it:
-val internalRow = new GenericInternalRow(row)  // Direct compatibility!
+Total: ~13 bytes in one contiguous block
 ```
 
-The internal type representations are also identical:
+**Why this matters:**
+- **Less memory**: 5-6x reduction means more data fits in RAM
+- **Faster access**: No pointer chasing, data is right next to each other
+- **Better cache usage**: CPU caches work on contiguous memory blocks
+- **Less garbage collection**: Fewer objects = less GC overhead
 
-| External Type | Internal Format | Spark | ProtoCatalyst |
-|--------------|-----------------|-------|---------------|
-| `String` | UTF-8 bytes | `UTF8String` | `MockUTF8String` |
-| `Seq[T]` | Array wrapper | `ArrayData` | `MockArrayData` |
-| `Map[K,V]` | Key/value arrays | `MapData` | `MockMapData` |
-| Nested struct | Nested row | `InternalRow` | `MockRow` |
-| `LocalDate` | `Int` (epoch days) | Same | Same |
-| `Instant` | `Long` (microseconds) | Same | Same |
+### 3.2 Type Safety
 
-The `InternalTypeConverter` trait provides the pluggable backend - implement `SparkInternalTypeConverter` when integrating with actual Spark code.
-
-### 1.1 The Three Responsibilities
-
-1. **Schema Derivation**: Extract the `StructType` schema from a Scala type
-   ```scala
-   case class Person(name: String, age: Int)
-   // → StructType(StructField("name", StringType), StructField("age", IntegerType))
-   ```
-
-2. **Serialization**: Convert objects to Spark's columnar row format
-   ```scala
-   Person("Alice", 30) → InternalRow(UTF8String("Alice"), 30)
-   ```
-
-3. **Deserialization**: Reconstruct objects from row format
-   ```scala
-   InternalRow(UTF8String("Alice"), 30) → Person("Alice", 30)
-   ```
-
-### 1.2 Where Encoders Are Used
+Encoders also provide compile-time type checking:
 
 ```scala
-// Dataset creation
-spark.createDataset(Seq(Person("Alice", 30)))  // needs Encoder[Person]
+// Without encoder - errors happen at runtime (bad!)
+val row: Array[Any] = Array("Alice", 30)
+val name = row(0).asInstanceOf[String]  // What if it's not a String?
+val age = row(1).asInstanceOf[Int]      // Runtime crash if wrong type
 
-// DataFrame operations that return typed data
-df.as[Person]                                   // needs Encoder[Person]
-
-// User-defined functions
-udf((p: Person) => p.age * 2)                  // needs Encoder[Person], Encoder[Int]
-
-// Aggregations
-ds.groupByKey(_.name).mapValues(_.age)         // needs Encoder[String], Encoder[Int]
+// With encoder - errors caught at compile time (good!)
+case class Person(name: String, age: Int)
+val person: Person = deserialize(row)   // Compiler knows the types
+println(person.name)                     // Definitely a String
+println(person.age)                      // Definitely an Int
 ```
 
 ---
 
-## 2. Why Encoders Matter
+## 4. Getting Started with ProtoCatalyst
 
-### 2.1 Performance: The Tungsten Advantage
+### 4.1 Your First Encoder
 
-Spark's Tungsten engine uses off-heap memory with a compact binary format:
-
-```
-Standard Java Object (Person):
-┌──────────────────────────────────────────────────┐
-│ Object Header (16 bytes)                         │
-│ name: String reference (8 bytes) ──────┐        │
-│ age: int (4 bytes, + 4 padding)        │        │
-└──────────────────────────────────────────────────┘
-                                          ▼
-┌──────────────────────────────────────────────────┐
-│ String Object Header (16 bytes)                  │
-│ char[] reference (8 bytes) ──────┐              │
-│ hash: int (4 bytes)              │              │
-└──────────────────────────────────────────────────┘
-                                    ▼
-┌──────────────────────────────────────────────────┐
-│ char[] Header (16 bytes)                         │
-│ length (4 bytes)                                 │
-│ "Alice" (10 bytes for UTF-16)                    │
-└──────────────────────────────────────────────────┘
-
-Total: ~80+ bytes, 3 objects, 2 pointer dereferences
-
-
-Tungsten UnsafeRow (Person):
-┌──────────────────────────────────────────────────┐
-│ Null bitmap (8 bytes)                            │
-│ name offset+length (8 bytes)                     │
-│ age value (8 bytes)                              │
-│ "Alice" UTF-8 (5 bytes + padding)                │
-└──────────────────────────────────────────────────┘
-
-Total: 32 bytes, 1 contiguous memory block, 0 dereferences
-```
-
-**Benefits**:
-- 60-80% less memory usage
-- Better CPU cache locality
-- No garbage collection pressure
-- Enables vectorized processing
-
-### 2.2 Type Safety
-
-Without encoders, Spark operates on `Row` objects with runtime type checking:
+Here's the simplest way to use ProtoCatalyst:
 
 ```scala
-// Untyped (DataFrame) - runtime errors
-df.select("naem")  // typo not caught until runtime
+import protocatalyst.encoder.*
 
-// Typed (Dataset with Encoder) - compile-time errors
-ds.map(p => p.naem)  // compile error: value naem is not a member of Person
+// Step 1: Define your case class with "derives ProtoEncoder"
+case class Person(name: String, age: Int) derives ProtoEncoder
+
+// Step 2: Get the encoder (it's created at compile time!)
+val encoder = summon[ProtoEncoder[Person]]
+
+// Step 3: See the schema it derived
+println(encoder.schema)
+// Output: Vector(ProtoStructField(name,StringType,false), ProtoStructField(age,IntType,false))
+```
+
+That's it! The `derives ProtoEncoder` clause tells the Scala compiler to automatically generate an encoder for your case class.
+
+### 4.2 Serialization and Deserialization
+
+To actually convert objects to/from row format:
+
+```scala
+import protocatalyst.encoder.*
+
+case class Person(name: String, age: Int) derives ProtoEncoder
+
+// Get a serializer
+val serializer = RowSerializer.derived[Person]
+
+// Serialize: Object → Row
+val alice = Person("Alice", 30)
+val row: Array[Any] = serializer.serialize(alice)
+// row = Array("Alice", 30)
+
+// Deserialize: Row → Object
+val restored: Person = serializer.deserialize(row)
+// restored = Person("Alice", 30)
+
+assert(alice == restored)  // They're equal!
+```
+
+### 4.3 Nested Types
+
+Encoders handle nested case classes automatically:
+
+```scala
+case class Address(street: String, city: String) derives ProtoEncoder
+case class Person(name: String, address: Address) derives ProtoEncoder
+
+val serializer = RowSerializer.derived[Person]
+val alice = Person("Alice", Address("123 Main St", "NYC"))
+
+val row = serializer.serialize(alice)
+// row = Array("Alice", Array("123 Main St", "NYC"))
+//                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                      Nested struct becomes nested array
+
+val restored = serializer.deserialize(row)
+assert(restored == alice)
+```
+
+### 4.4 Collections
+
+Lists, Sets, Maps, and Arrays all work:
+
+```scala
+case class Team(name: String, members: List[String]) derives ProtoEncoder
+
+val serializer = RowSerializer.derived[Team]
+val team = Team("Engineers", List("Alice", "Bob", "Charlie"))
+
+val row = serializer.serialize(team)
+// row = Array("Engineers", List("Alice", "Bob", "Charlie"))
+```
+
+### 4.5 Optional Values
+
+Use `Option[T]` for fields that might be missing:
+
+```scala
+case class User(name: String, email: Option[String]) derives ProtoEncoder
+
+val serializer = RowSerializer.derived[User]
+
+// With email
+val user1 = User("Alice", Some("alice@example.com"))
+val row1 = serializer.serialize(user1)
+// row1 = Array("Alice", "alice@example.com")
+
+// Without email
+val user2 = User("Bob", None)
+val row2 = serializer.serialize(user2)
+// row2 = Array("Bob", null)
+```
+
+### 4.6 Enums and Sealed Traits
+
+ProtoCatalyst handles Scala 3 enums and sealed traits (sum types):
+
+```scala
+// Simple enum
+enum Color derives ProtoEncoder:
+  case Red, Green, Blue
+
+// Sealed trait with data
+sealed trait Event derives ProtoEncoder
+case class Click(x: Int, y: Int) extends Event derives ProtoEncoder
+case class View(page: String) extends Event derives ProtoEncoder
+case object Close extends Event
+
+// Both can be serialized
+val colorSerializer = RowSerializer.derived[Color]
+val eventSerializer = RowSerializer.derivedSum[Event]
 ```
 
 ---
 
-## 3. Spark's Current Approach (Scala 2 / TypeTag)
+## 5. How It Works Under the Hood
 
-### 3.1 How It Works
+### 5.1 The Magic of "derives"
+
+When you write `case class Person(name: String, age: Int) derives ProtoEncoder`, the Scala 3 compiler:
+
+1. **Analyzes the type at compile time** - Finds all fields and their types
+2. **Generates specialized code** - Creates a custom encoder for `Person`
+3. **Stores it as a given instance** - Makes it available via `summon[ProtoEncoder[Person]]`
+
+This all happens **before your program runs**. Zero runtime overhead for schema discovery.
+
+### 5.2 Scala 3's Mirror System
+
+Scala 3 provides a mechanism called `Mirror` that gives compile-time access to type information:
+
+```scala
+import scala.deriving.Mirror
+
+// For case class Person(name: String, age: Int):
+// The compiler provides a Mirror.ProductOf[Person] with:
+//   - MirroredElemTypes = (String, Int)    // The field types
+//   - MirroredElemLabels = ("name", "age") // The field names
+```
+
+ProtoCatalyst uses this Mirror information to generate encoders:
+
+```scala
+inline def derived[T](using m: Mirror.ProductOf[T]): ProtoEncoder[T] =
+  // m.MirroredElemTypes tells us the field types
+  // m.MirroredElemLabels tells us the field names
+  // All resolved at compile time!
+```
+
+### 5.3 The Inline Keyword
+
+The `inline` keyword is crucial. It tells the compiler to:
+1. Copy the method body to each call site
+2. Specialize the code for the specific type
+3. Eliminate runtime type checks
+
+```scala
+// Without inline: Runtime type checking
+def serialize(value: Any, dataType: Type): Any = dataType match
+  case IntType => value        // Checked at runtime for every call
+  case StringType => convert(value)
+  // ... many more cases
+
+// With inline: Compile-time type checking
+inline def serialize[T](value: T): Any = inline erasedValue[T] match
+  case _: Int => value         // Compiler knows it's Int, no runtime check
+  case _: String => convert(value)
+  // ... specialized code generated per type
+```
+
+### 5.4 Type Representations
+
+When serializing, certain types need conversion to their "internal" format:
+
+| Your Type | Internal Format | Why |
+|-----------|-----------------|-----|
+| `String` | `UTF8String` | UTF-8 is more compact than UTF-16 |
+| `LocalDate` | `Int` | Days since 1970-01-01 |
+| `Instant` | `Long` | Microseconds since 1970-01-01 |
+| `List[T]` | `ArrayData` | Optimized array wrapper |
+| Nested case class | Nested `Array[Any]` | Recursive structure |
+
+The `InternalTypeConverter` trait handles these conversions:
+
+```scala
+// Converting String → UTF8String (internal format)
+def toInternal(value: Any, dataType: ProtoType): Any = dataType match
+  case StringType => UTF8String.fromString(value.asInstanceOf[String])
+  case DateType => value.asInstanceOf[LocalDate].toEpochDay.toInt
+  // ...
+```
+
+---
+
+## 6. Advanced Topics
+
+### 6.1 Custom Types (UDT)
+
+For types that don't have automatic encoding, create a User-Defined Type:
+
+```scala
+// Your custom type
+case class Point(x: Double, y: Double)
+
+// Define how to encode it
+object PointUDT extends ProtoUDT[Point]:
+  def sqlType = ProtoType.ArrayType(ProtoType.DoubleType, containsNull = false)
+  def serialize(p: Point): Any = Array(p.x, p.y)
+  def deserialize(datum: Any): Point =
+    val arr = datum.asInstanceOf[Array[Double]]
+    Point(arr(0), arr(1))
+  def userClass = classOf[Point]
+
+// Use it
+val encoder = ProtoEncoder.fromUDT(PointUDT)
+```
+
+### 6.2 Java Beans
+
+For Java classes with getter/setter patterns:
+
+```scala
+// Java class with getName/getAge methods
+val encoder = JavaBeanEncoder(classOf[JavaPerson])
+```
+
+### 6.3 Fallback Encoding
+
+For third-party types you can't modify:
+
+```scala
+// Uses Java serialization (slower but works with anything)
+val encoder = TransformingEncoder.java[ThirdPartyClass]
+
+// Or Kryo (faster)
+val encoder = TransformingEncoder.kryo[ThirdPartyClass]
+```
+
+---
+
+## 7. Spark's Approach vs ProtoCatalyst
+
+This section is for readers who want to understand the technical differences between Spark's current encoder implementation and ProtoCatalyst.
+
+### 7.1 How Spark Does It (Scala 2)
 
 Spark uses Scala 2's `TypeTag` for runtime reflection:
 
@@ -190,710 +471,129 @@ def encoderFor[E : TypeTag]: AgnosticEncoder[E] = {
 }
 ```
 
-### 3.2 The ScalaReflection.scala Deep Dive
+### 7.2 Problems with Spark's TypeTag Approach
 
-Located at `sql/api/src/main/scala/org/apache/spark/sql/catalyst/ScalaReflection.scala`, this ~1000 line file is the heart of Spark's encoder derivation:
+| Problem | Description |
+|---------|-------------|
+| **Runtime overhead** | Encoder derivation happens at runtime, taking 100-700μs each time |
+| **Not thread-safe** | Requires global synchronization, limiting parallelism |
+| **Runtime errors** | Type errors only caught when code runs |
+| **Can't do sealed traits** | `TypeTag` cannot enumerate subtypes of sealed traits |
+| **Scala 3 incompatible** | `TypeTag` doesn't exist in Scala 3 |
 
-```scala
-object ScalaReflection extends ScalaReflection {
-  val universe: scala.reflect.runtime.universe.type = scala.reflect.runtime.universe
-  val mirror: universe.Mirror = universe.runtimeMirror(getClass.getClassLoader)
+### 7.3 How ProtoCatalyst Does It (Scala 3)
 
-  def encoderFor[E : TypeTag]: AgnosticEncoder[E] = {
-    encoderFor(typeTag[E].in(mirror).tpe, Set.empty)
-  }
-
-  private def encoderFor(
-      tpe: Type,
-      seenTypeSet: Set[Type]): AgnosticEncoder[_] = {
-
-    // Step 1: Get the dealiased type
-    val clsName = getClassNameFromType(tpe)
-    val walkedTypePath = WalkedTypePath().recordRoot(clsName)
-
-    // Step 2: Pattern match on type structure
-    tpe.dealias match {
-      case t if isSubtype(t, localTypeOf[Option[_]]) =>
-        val TypeRef(_, _, Seq(optType)) = t
-        OptionEncoder(encoderFor(optType, seenTypeSet))
-
-      case t if isSubtype(t, localTypeOf[Product]) =>
-        val params = getConstructorParameters(t)  // Uses runtime Symbol API
-        val fields = params.map { case (name, fieldType) =>
-          val encoder = encoderFor(fieldType, seenTypeSet)
-          EncoderField(name, encoder, encoder.nullable, Metadata.empty)
-        }
-        ProductEncoder(classTag[E], fields, None)
-
-      case t if isSubtype(t, localTypeOf[Seq[_]]) =>
-        val TypeRef(_, _, Seq(elementType)) = t
-        IterableEncoder(classTag[Seq[_]], encoderFor(elementType, seenTypeSet), ...)
-
-      // ... ~30 more type patterns
-    }
-  }
-
-  private def getConstructorParameters(tpe: Type): Seq[(String, Type)] = {
-    val constructor = tpe.member(termNames.CONSTRUCTOR).asMethod
-    constructor.paramLists.flatten.map { param =>
-      (param.name.toString, param.typeSignature)
-    }
-  }
-}
-```
-
-### 3.3 Problems with the TypeTag Approach
-
-#### Problem 1: Runtime Overhead
-
-Every encoder derivation happens at runtime, even for the same type:
-
-```scala
-// Each call to toDS() potentially re-derives the encoder
-(1 to 1000).foreach { _ =>
-  Seq(Person("Alice", 30)).toDS()  // ScalaReflection.encoderFor runs each time
-}
-```
-
-**Measured overhead**: 100-700μs per derivation (see benchmarks below).
-
-#### Problem 2: Thread Safety Issues
-
-The `<:<` (subtype check) operator in `scala.reflect.runtime.universe` is **not thread-safe**:
-
-```scala
-// From Spark's ScalaReflection.scala - actual workaround code:
-private def isSubtype(tpe1: Type, tpe2: Type): Boolean = {
-  // Scala's reflection API is not thread-safe, need to synchronize
-  ScalaReflection.universe.synchronized {
-    tpe1 <:< tpe2
-  }
-}
-```
-
-This synchronization creates a **global lock** that limits parallelism.
-
-#### Problem 3: No Compile-Time Verification
-
-Type errors are only caught at runtime:
-
-```scala
-case class BadType(fn: Int => Int)  // Functions can't be serialized
-
-// This compiles successfully:
-val ds = spark.createDataset(Seq(BadType(_ + 1)))
-
-// Runtime explosion:
-// java.lang.UnsupportedOperationException:
-//   No Encoder found for Int => Int
-```
-
-#### Problem 4: Limited Type Support
-
-TypeTag cannot introspect certain type patterns:
-
-```scala
-// Cannot enumerate subtypes of sealed traits
-sealed trait Event
-case class Click(x: Int, y: Int) extends Event
-case class View(page: String) extends Event
-
-spark.createDataset(Seq[Event](Click(1, 2)))
-// Error: Unable to find encoder for type Event
-// Spark CANNOT automatically derive encoders for sealed traits
-```
-
-#### Problem 5: Scala 3 Incompatibility
-
-`TypeTag` is **removed in Scala 3**. There is no migration path:
-
-```scala
-// Scala 2
-import scala.reflect.runtime.universe._
-def encoderFor[T: TypeTag]: Encoder[T] = ...
-
-// Scala 3 - TypeTag doesn't exist
-// This is why Spark cannot fully support Scala 3
-```
-
----
-
-## 4. The Mirror-Based Approach (Scala 3)
-
-### 4.1 Core Concept: Compile-Time Derivation
-
-Scala 3 replaces `TypeTag` with `Mirror`, which enables **compile-time** type inspection:
+ProtoCatalyst uses Scala 3's `Mirror` for compile-time derivation:
 
 ```scala
 import scala.deriving.Mirror
 
-// Mirror.ProductOf provides compile-time type information for case classes
 inline def derived[T](using m: Mirror.ProductOf[T]): ProtoEncoder[T] =
-  // MirroredElemTypes: Tuple of field types (String, Int) for Person
-  // MirroredElemLabels: Tuple of field names ("name", "age") as literal types
-  // These are computed at compile time, not runtime!
+  // m.MirroredElemTypes = (String, Int) for Person
+  // m.MirroredElemLabels = ("name", "age")
+  // All computed at compile time!
 ```
 
-### 4.2 How ProtoCatalyst Implements It
+**Key differences:**
 
-```scala
-trait ProtoEncoder[T]:
-  def schema: ProtoSchema       // The StructType equivalent
-  def catalystType: ProtoType   // The DataType
-  def nullable: Boolean         // Is root nullable?
-  def clsTag: ClassTag[T]       // For runtime class access
-  def fields: Vector[FieldEncoder[?]]     // For products
-  def variants: Vector[VariantEncoder[?]] // For sum types
+| Aspect | Spark (TypeTag) | ProtoCatalyst (Mirror) |
+|--------|-----------------|------------------------|
+| When | Runtime | Compile-time |
+| Cost | 100-700μs per derivation | 0 (already done) |
+| Thread safety | Synchronized | Lock-free |
+| Error timing | Runtime | Compile-time |
+| Sealed traits | ❌ | ✅ |
+| Scala 3 enums | ❌ | ✅ |
 
-object ProtoEncoder:
-  /** Main entry point - dispatches based on Mirror type */
-  inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] =
-    inline m match
-      case p: Mirror.ProductOf[T] =>
-        val ct = summonInline[ClassTag[T]]
-        deriveProduct[T](p, ct)
-      case s: Mirror.SumOf[T] =>
-        val ct = summonInline[ClassTag[T]]
-        deriveEnum[T](s, ct)
-```
+### 7.4 Supported Types Comparison
 
-### 4.3 Product (Case Class) Derivation
-
-```scala
-private inline def deriveProduct[T](m: Mirror.ProductOf[T], ct: ClassTag[T]): ProtoEncoder[T] =
-  // Extract field encoders from the Mirror's type information
-  val fieldEncoders = deriveFields[m.MirroredElemTypes, m.MirroredElemLabels]
-  val structFields = fieldEncoders.map { fe =>
-    ProtoStructField(fe.name, fe.encoder.catalystType, fe.nullable)
-  }
-  makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields), ct)
-
-private inline def deriveFields[Types <: Tuple, Labels <: Tuple]: Vector[FieldEncoder[?]] =
-  inline (erasedValue[Types], erasedValue[Labels]) match
-    case (_: EmptyTuple, _: EmptyTuple) =>
-      Vector.empty
-    case (_: (t *: ts), _: (l *: ls)) =>
-      val name = constValue[l].toString     // Field name from literal type
-      val enc = summonEncoder[t]             // Recursively derive/summon encoder
-      FieldEncoder[t](name, enc, enc.nullable) +: deriveFields[ts, ls]
-```
-
-**Key insight**: `MirroredElemTypes` and `MirroredElemLabels` are **compile-time tuples**. The `inline` keyword and `constValue` extract information at compile time.
-
-### 4.4 Sum Type (Sealed Trait) Derivation
-
-This is where Mirror **significantly outperforms** TypeTag:
-
-```scala
-sealed trait Event derives ProtoEncoder
-case class Click(x: Int, y: Int) extends Event
-case class View(page: String) extends Event
-case object Close extends Event
-
-// Mirror.SumOf provides:
-// - MirroredElemTypes: (Click, View, Close.type)
-// - MirroredElemLabels: ("Click", "View", "Close")
-// - ordinal(value: Event): Int  // Runtime dispatch
-```
-
-Implementation:
-
-```scala
-private inline def deriveEnum[T](m: Mirror.SumOf[T], ct: ClassTag[T]): ProtoEncoder[T] =
-  val variantEncoders = deriveVariants[m.MirroredElemTypes, m.MirroredElemLabels](0)
-  val allSingletons = variantEncoders.forall(_.isSingleton)
-
-  if allSingletons then
-    // Simple enum (all case objects) → StringType
-    makeEnumEncoder[T](ct)
-  else
-    // Sealed trait with data → SumType
-    makeSumEncoder[T](m, variantEncoders, ct)
-
-private inline def deriveVariantEncoder[T](name: String, ordinal: Int): VariantEncoder[T] =
-  summonFrom {
-    case m: Mirror.ProductOf[T] =>
-      inline erasedValue[m.MirroredElemTypes] match
-        case _: EmptyTuple =>
-          // Zero fields = case object (singleton)
-          VariantEncoder[T](name, ordinal, None, isSingleton = true)
-        case _ =>
-          // Has fields = case class with data
-          val enc = derived[T]
-          VariantEncoder[T](name, ordinal, Some(enc), isSingleton = false)
-    case _ =>
-      VariantEncoder[T](name, ordinal, None, isSingleton = true)
-  }
-```
-
-**Why Spark can't do this with TypeTag**:
-- `TypeTag` cannot enumerate the subtypes of a sealed trait
-- `TypeTag.tpe.typeSymbol.asClass.knownDirectSubclasses` is unreliable (returns empty before subclasses are compiled)
-- No way to get ordinal/dispatch information
-
-### 4.5 Schema Representation
-
-The derived encoder produces a `SumType` schema for sealed traits:
-
-```scala
-sealed trait Event
-case class Click(x: Int, y: Int) extends Event
-case class View(page: String) extends Event
-case object Close extends Event
-
-// Resulting schema:
-SumType(
-  discriminatorField = "_type",
-  variants = Vector(
-    SumVariant("Click", 0, Some(StructType([("x", IntType), ("y", IntType)]))),
-    SumVariant("View", 1, Some(StructType([("page", StringType)]))),
-    SumVariant("Close", 2, None)  // case object has no data
-  )
-)
-```
-
----
-
-## 5. Technical Deep Dive
-
-### 5.1 The `summonFrom` Macro
-
-`summonFrom` is a compile-time pattern matcher for implicit resolution:
-
-```scala
-private inline def summonEncoder[T]: ProtoEncoder[T] =
-  summonFrom {
-    // First: Try to find an existing encoder in scope
-    case enc: ProtoEncoder[T] => enc
-
-    // Second: If T is a product (case class), derive it
-    case _: Mirror.ProductOf[T] => derived[T]
-
-    // Third: If T is a sum (enum/sealed trait), derive it
-    case _: Mirror.SumOf[T] => derived[T]
-
-    // Fourth: Compile error with helpful message
-    case _ => error("Cannot find or derive ProtoEncoder...")
-  }
-```
-
-This replaces TypeTag's runtime pattern matching with compile-time resolution.
-
-### 5.2 The `inline` Keyword's Role
-
-```scala
-// WITHOUT inline: Runtime execution
-def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] = ...
-// Mirror information computed at runtime (slower)
-
-// WITH inline: Compile-time execution
-inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] = ...
-// Mirror information inlined at call site (zero runtime cost)
-```
-
-The compiler literally copies the method body to each call site, specializing it for the specific type.
-
-### 5.3 Field Name Extraction via Literal Types
-
-```scala
-// MirroredElemLabels for Person(name: String, age: Int)
-type Labels = ("name", "age")  // Tuple of literal string types
-
-// constValue extracts the string at compile time
-inline def deriveFields[Types <: Tuple, Labels <: Tuple]: Vector[FieldEncoder[?]] =
-  inline (erasedValue[Types], erasedValue[Labels]) match
-    case (_: (t *: ts), _: (l *: ls)) =>
-      val name = constValue[l].toString  // "name" extracted at compile time!
-```
-
-### 5.4 ClassTag Handling
-
-Spark's `Encoder` requires a `ClassTag[T]` for runtime class information:
-
-```scala
-// Spark's Encoder trait
-trait Encoder[T] extends Serializable {
-  def schema: StructType
-  def clsTag: ClassTag[T]  // Required for Dataset operations
-}
-
-// Our approach: Summon ClassTag at compile time
-inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] =
-  inline m match
-    case p: Mirror.ProductOf[T] =>
-      val ct = summonInline[ClassTag[T]]  // Compile-time summoning
-      deriveProduct[T](p, ct)
-```
-
-### 5.5 Recursive Type Handling
-
-For nested case classes:
-
-```scala
-case class Address(street: String, city: String)
-case class Person(name: String, address: Address)
-
-// Derivation flow:
-// 1. derived[Person] called
-// 2. deriveFields extracts (String, Address)
-// 3. summonEncoder[String] returns PrimitiveEncoder
-// 4. summonEncoder[Address] recursively calls derived[Address]
-// 5. Address encoder returned, Person encoder completed
-```
-
-The recursion happens at **compile time**, producing fully specialized code.
-
----
-
-## 6. Feature Comparison
-
-### 6.1 Type Support Matrix
-
-| Type | Spark (TypeTag) | ProtoCatalyst (Mirror) |
-|------|-----------------|------------------------|
+| Type | Spark | ProtoCatalyst |
+|------|-------|---------------|
 | Primitives (Int, Long, etc.) | ✅ | ✅ |
 | String, Binary | ✅ | ✅ |
 | BigDecimal | ✅ | ✅ |
 | java.time types | ✅ | ✅ |
-| java.sql types | ✅ | ✅ |
 | Option[T] | ✅ | ✅ |
-| Seq/List/Vector/Set | ✅ | ✅ |
-| Map[K, V] | ✅ | ✅ |
-| Array[T] | ✅ | ✅ |
+| Collections (List, Map, etc.) | ✅ | ✅ |
 | Case classes | ✅ | ✅ |
-| Tuples | ✅ | ✅ |
 | Nested structs | ✅ | ✅ |
 | Java enums | ✅ | ✅ |
 | **Scala 3 enums** | ❌ | ✅ |
 | **Sealed traits (ADTs)** | ❌ | ✅ |
-| Java Beans | ✅ (runtime) | ✅ (runtime) |
-| UDTs | ✅ | ✅ |
-| Boxed primitives | ✅ | ✅ |
-
-### 6.2 Capability Comparison
-
-| Capability | Spark (TypeTag) | ProtoCatalyst (Mirror) |
-|------------|-----------------|------------------------|
-| Derivation timing | Runtime | **Compile-time** |
-| Thread safety | Requires synchronization | **Lock-free** |
-| Error detection | Runtime | **Compile-time** |
-| Scala 3 support | ❌ | ✅ |
-| Sum type enumeration | ❌ | ✅ |
-| Ordinal dispatch | ❌ | ✅ |
-| Zero-overhead derivation | ❌ | ✅ |
-
-### 6.3 API Comparison
-
-**Spark (Scala 2)**:
-```scala
-import spark.implicits._
-
-case class Person(name: String, age: Int)
-
-// Implicit encoder derivation
-val ds1 = Seq(Person("Alice", 30)).toDS()
-
-// Explicit encoder
-val encoder: Encoder[Person] = Encoders.product[Person]
-val ds2 = spark.createDataset(Seq(Person("Bob", 25)))(encoder)
-```
-
-**ProtoCatalyst (Scala 3)**:
-```scala
-import protocatalyst.encoder.ProtoEncoder
-
-case class Person(name: String, age: Int) derives ProtoEncoder
-
-// Automatic derivation
-val encoder = summon[ProtoEncoder[Person]]
-
-// Or explicit
-val encoder = ProtoEncoder.derived[Person]
-
-// Sealed traits just work
-sealed trait Event derives ProtoEncoder
-case class Click(x: Int, y: Int) extends Event
-case object Close extends Event
-
-val eventEncoder = summon[ProtoEncoder[Event]]  // Works!
-```
 
 ---
 
-## 7. Performance Analysis
+## 8. Performance Analysis
 
-### 7.1 Schema Derivation Cost
+All benchmarks run on JDK 21, Apple Silicon, using JMH 1.37.
 
-Environment: JDK 21, Apple Silicon, JMH 1.37
+### 8.1 Schema Derivation Cost
 
 | Type | Spark (μs) | ProtoCatalyst |
 |------|-----------|---------------|
-| Simple | 228 | **0 (compile-time)** |
-| Person | 960 | **0 (compile-time)** |
+| Simple (2 fields) | 228 | **0 (compile-time)** |
+| Person (nested) | 960 | **0 (compile-time)** |
 | Team (List[Person]) | 832 | **0 (compile-time)** |
 
-**Why the massive difference?**
+**Why the difference?** ProtoCatalyst's encoder already exists at compile time. Spark must analyze the type structure at runtime every time.
 
-- **Proto**: Encoder already exists (compile-time). Zero runtime cost.
-- **Spark**: Full reflection pipeline runs every time:
-  1. TypeTag materialization
-  2. Runtime mirror creation
-  3. Type symbol lookup
-  4. Constructor parameter extraction
-  5. Recursive type analysis
-  6. Expression tree generation
+### 8.2 Serialization and Deserialization (ns/op, lower is better)
 
-### 7.2 Serialization Benchmarks (ns/op, lower is better)
+| Operation | Type | Spark | ProtoCatalyst | Speedup |
+|-----------|------|-------|---------------|---------|
+| Serialize | Simple | 26 | 6.8 | **3.8x** |
+| Serialize | Person | 109 | 61.2 | **1.8x** |
+| Deserialize | Simple | 23 | 3.4 | **6.8x** |
+| Deserialize | Person | 74 | 8.6 | **8.6x** |
+| Roundtrip | Simple | 158 | 5.9 | **27x** |
+| Roundtrip | Person | 590 | 60.3 | **10x** |
 
-| Type | Spark | ProtoCatalyst | Speedup |
-|------|-------|---------------|---------|
-| Simple (2 fields) | 26 | 6.8 | **3.8x** |
-| Person (nested struct) | 109 | 61.2 | **1.8x** |
-| Team (List[Person]) | 654 | 382 | **1.7x** |
+### 8.3 Why ProtoCatalyst is Faster
 
-### 7.3 Deserialization Benchmarks (ns/op, lower is better)
+1. **No runtime type dispatch**: Code is specialized at compile time
+2. **No expression interpretation**: Spark interprets Catalyst expression trees
+3. **Better JIT optimization**: Simpler code structure
 
-| Type | Spark | ProtoCatalyst | Speedup |
-|------|-------|---------------|---------|
-| Simple | 23 | 3.4 | **6.8x** |
-| Person | 74 | 8.6 | **8.6x** |
-| Team | 546 | 74.6 | **7.3x** |
-
-### 7.4 Roundtrip Benchmarks (ns/op, lower is better)
-
-| Type | Spark | ProtoCatalyst | Speedup |
-|------|-------|---------------|---------|
-| Simple | 158 | 5.9 | **26.8x** |
-| Person | 590 | 60.3 | **9.8x** |
-| Team | 1,281 | 390 | **3.3x** |
-
-### 7.5 Scaling Analysis
+### 8.4 Batch Processing Scaling
 
 The speedup holds at larger batch sizes:
 
-| Batch Size | Deserialization Speedup | Serialization Speedup |
-|------------|------------------------|----------------------|
-| 10 | 49x | 1.6x |
-| 100 | 42x | 1.2x |
-| 1,000 | 25x | 1.6x |
-| 10,000 | 32x | 1.1x |
-
-### 7.7 Why Serialization is Also Faster
-
-Even though serialization happens at runtime, Proto is faster because:
-
-1. **No expression interpretation**: Spark's ExpressionEncoder interprets Catalyst expression trees
-2. **Compile-time specialization**: Scala 3 `inline` generates specialized code at compile time
-3. **No null-checking overhead**: Compile-time nullability analysis eliminates unnecessary checks
-4. **Better inlining**: Simpler code structure allows JIT optimization
-
-### 7.8 Why We Don't Use Runtime Code Generation
-
-Spark uses **Janino** to generate specialized Java bytecode at runtime. We considered this approach but decided against it. See [ADR-001: No Runtime Code Generation](decisions/ADR-001-no-runtime-codegen.md) for the full decision record.
-
-**Key reasons:**
-
-1. **Already faster than Spark**: As shown above, ProtoCatalyst outperforms Spark 1.7-3.8x on serialization and 6.8-8.6x on deserialization without codegen
-2. **Scala 3 inline is sufficient**: Compile-time `inline` expansion provides similar benefits to runtime codegen
-3. **Simpler codebase**: No Janino dependency, easier debugging, no generated bytecode to inspect
-4. **JIT optimizes hot paths**: The `productElement(i)` pattern is optimized by the JVM after warmup
-
-**Comparison of approaches:**
-
-| Aspect | Spark Runtime Codegen | Scala 3 Inline |
-|--------|----------------------|----------------|
-| When code is generated | First use (runtime) | Compile time |
-| Startup overhead | JIT warmup needed | Zero |
-| Debugging | Generated bytecode (hard) | Source visible (easy) |
-| Dependencies | Janino library | None |
-
-### 7.9 Inline Type Specialization (Implemented)
-
-We've implemented **inline type specialization** in `InlineRowSerializer`, which eliminates runtime type dispatch by generating specialized code for each field type at compile time.
-
-**How it works:**
-
-```scala
-// Compile-time type dispatch - generates specialized code per field type
-inline def serializeFields[Types <: Tuple](product: Product, arr: Array[Any], idx: Int): Unit =
-  inline erasedValue[Types] match
-    case _: EmptyTuple => ()
-    case _: (Int *: ts) =>
-      arr(idx) = product.productElement(idx)  // Known to be Int at compile time
-      serializeFields[ts](product, arr, idx + 1)
-    case _: (Option[t] *: ts) =>
-      // Specialized Option handling - no runtime isInstanceOf check
-      product.productElement(idx) match
-        case Some(v) => arr(idx) = serializeValue[t](v)
-        case None => arr(idx) = null
-      serializeFields[ts](product, arr, idx + 1)
-```
-
-**Benchmark results (InlineRowSerializer vs generic RowSerializer):**
-
-| Benchmark | Generic (ns) | Inline (ns) | Speedup |
-|-----------|-------------|-------------|---------|
-| Serialize Simple | 15.1 | 4.1 | **3.7x** |
-| Serialize Person (nested) | 23.1 | 6.7 | **3.4x** |
-| Serialize Wide (20 fields) | 82.3 | 28.9 | **2.8x** |
-| Deserialize Simple | 19.1 | 3.3 | **5.7x** |
-| Deserialize Person | 28.8 | 7.4 | **3.9x** |
-| Roundtrip Simple | 37.2 | 4.3 | **8.7x** |
-| Roundtrip Person | 43.8 | 7.1 | **6.2x** |
-
-`InlineRowSerializer` is now the default implementation used by `RowSerializer.derived`.
+| Batch Size | Deserialize Speedup |
+|------------|---------------------|
+| 10 | 49x |
+| 100 | 42x |
+| 1,000 | 25x |
+| 10,000 | 32x |
 
 ---
 
-## 8. Migration Path
+## 9. Glossary
 
-### 8.1 For Spark Users (When Spark Adopts Scala 3)
-
-The user-facing API remains compatible:
-
-```scala
-// Scala 2 (current)
-import spark.implicits._
-val ds = Seq(Person("Alice", 30)).toDS()
-
-// Scala 3 (future) - same code, different implementation
-import spark.implicits.given
-val ds = Seq(Person("Alice", 30)).toDS()
-```
-
-### 8.2 For Spark Developers (Porting to Scala 3)
-
-The ProtoCatalyst code will be ported to replace `ScalaReflection.scala`:
-
-```scala
-// Current Spark (Scala 2)
-object ScalaReflection {
-  def encoderFor[E: TypeTag]: AgnosticEncoder[E] = {
-    val tpe = typeTag[E].in(mirror).tpe
-    // ... runtime reflection
-  }
-}
-
-// Future Spark (Scala 3, ported from ProtoCatalyst)
-object ScalaReflection {
-  inline def encoderFor[E](using m: Mirror.Of[E]): AgnosticEncoder[E] =
-    inline m match
-      case p: Mirror.ProductOf[E] => deriveProductEncoder[E](p)
-      case s: Mirror.SumOf[E] => deriveSumEncoder[E](s)
-}
-```
-
-### 8.3 New Capabilities Enabled
-
-With sealed trait support, patterns that were impossible become trivial:
-
-```scala
-// Event sourcing
-sealed trait Event derives ProtoEncoder
-case class UserCreated(id: String, email: String) extends Event
-case class UserDeleted(id: String, reason: Option[String]) extends Event
-case object SystemShutdown extends Event
-
-val events: Dataset[Event] = spark.createDataset(Seq(
-  UserCreated("u1", "alice@example.com"),
-  UserDeleted("u2", Some("inactive")),
-  SystemShutdown
-))
-
-// Pattern matching in Spark SQL
-events.filter {
-  case UserCreated(_, email) => email.endsWith("@company.com")
-  case _ => false
-}
-```
-
----
-
-## Appendix A: Type Flow Diagrams
-
-### A.1 Spark TypeTag Flow (Runtime)
-
-```
-User Code                    SQLImplicits                 ScalaReflection
-    │                            │                              │
-    │ Seq(Person(...)).toDS()    │                              │
-    │────────────────────────────▶│                              │
-    │                            │ newProductEncoder[T: TypeTag] │
-    │                            │──────────────────────────────▶│
-    │                            │                              │ TypeTag.tpe
-    │                            │                              │ ────────┐
-    │                            │                              │         │
-    │                            │                              │ ◀───────┘
-    │                            │                              │ runtimeMirror
-    │                            │                              │ ────────┐
-    │                            │                              │         │
-    │                            │                              │ ◀───────┘
-    │                            │                              │ getConstructorParameters
-    │                            │                              │ ────────┐
-    │                            │                              │         │
-    │                            │                              │ ◀───────┘
-    │                            │     AgnosticEncoder[Person]  │
-    │                            │◀──────────────────────────────│
-    │     Dataset[Person]        │                              │
-    │◀────────────────────────────│                              │
-```
-
-### A.2 ProtoCatalyst Mirror Flow (Compile-Time)
-
-```
-User Code (compile time)          Compiler                    Generated Code
-    │                                │                              │
-    │ case class Person(...) derives │                              │
-    │ ProtoEncoder                   │                              │
-    │───────────────────────────────▶│                              │
-    │                                │ Mirror.ProductOf[Person]     │
-    │                                │ extracted                    │
-    │                                │                              │
-    │                                │ MirroredElemTypes: (String, Int)
-    │                                │ MirroredElemLabels: ("name", "age")
-    │                                │                              │
-    │                                │ Inline expansion             │
-    │                                │─────────────────────────────▶│
-    │                                │                              │ val personEncoder =
-    │                                │                              │   new ProtoEncoder[Person]:
-    │                                │                              │     val catalystType = StructType(...)
-    │                                │                              │     val fields = Vector(...)
-    │                                │                              │     ...
-
-User Code (runtime)
-    │
-    │ summon[ProtoEncoder[Person]]
-    │───────────────────────────────▶ Returns pre-built instance (0.1μs)
-```
-
----
-
-## Appendix B: Glossary
+Terms used in this document:
 
 | Term | Definition |
 |------|------------|
-| **TypeTag** | Scala 2's mechanism for preserving type information at runtime |
-| **Mirror** | Scala 3's compile-time type introspection mechanism |
-| **Mirror.ProductOf** | Mirror for product types (case classes, tuples) |
-| **Mirror.SumOf** | Mirror for sum types (enums, sealed traits) |
-| **MirroredElemTypes** | Tuple type containing all field/variant types |
-| **MirroredElemLabels** | Tuple type containing all field/variant names as literal types |
-| **inline** | Scala 3 keyword for compile-time method expansion |
-| **summonInline** | Compile-time implicit/given resolution |
-| **summonFrom** | Compile-time pattern matching on available implicits |
-| **constValue** | Extract literal type value at compile time |
-| **erasedValue** | Create a phantom value for type-level computation |
-| **AgnosticEncoder** | Spark's type-agnostic encoder hierarchy |
-| **ExpressionEncoder** | Spark's encoder that uses Catalyst expressions |
-| **InternalRow** | Spark's generic row representation |
-| **UnsafeRow** | Spark's optimized binary row format |
+| **Encoder** | Component that converts between objects and row format |
+| **Serialization** | Converting an object to row format |
+| **Deserialization** | Converting row format back to an object |
+| **Schema** | Description of field names and types |
+| **Case class** | Scala's immutable data class (like `case class Person(name: String, age: Int)`) |
+| **Row format** | Compact representation as `Array[Any]` |
+| **TypeTag** | Scala 2's mechanism for runtime type information |
+| **Mirror** | Scala 3's mechanism for compile-time type information |
+| **inline** | Scala 3 keyword that expands code at compile time |
+| **derives** | Scala 3 keyword for automatic typeclass derivation |
+| **Product** | Scala term for case classes and tuples |
+| **Sum type** | Sealed trait with variants (like `sealed trait Event`) |
+| **ADT** | Algebraic Data Type - sum types and product types together |
+| **InternalRow** | Spark's row representation |
+| **UTF8String** | Spark's internal string representation (UTF-8 encoded) |
 
 ---
 
-## Appendix C: References
+## Further Reading
 
-1. [Spark Encoders Documentation](https://spark.apache.org/docs/latest/sql-programming-guide.html#datasets-and-dataframes)
-2. [Scala 3 Mirror Documentation](https://docs.scala-lang.org/scala3/reference/contextual/derivation.html)
-3. [Spark ScalaReflection.scala](https://github.com/apache/spark/blob/master/sql/api/src/main/scala/org/apache/spark/sql/catalyst/ScalaReflection.scala)
-4. [SIP-28: Inline](https://docs.scala-lang.org/sips/inline-meta.html)
-5. [Tungsten Memory Format](https://databricks.com/blog/2015/04/28/project-tungsten-bringing-spark-closer-to-bare-metal.html)
+- [Spark Migration Guide](SPARK_MIGRATION.md) - Integrating with Spark
+- [ADR-001: No Runtime Codegen](decisions/ADR-001-no-runtime-codegen.md) - Design decision rationale
+- [Scala 3 Derivation](https://docs.scala-lang.org/scala3/reference/contextual/derivation.html) - Official docs on `derives`
+- [Tungsten Memory Format](https://databricks.com/blog/2015/04/28/project-tungsten-bringing-spark-closer-to-bare-metal.html) - Why row format matters

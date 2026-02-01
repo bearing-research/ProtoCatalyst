@@ -362,10 +362,8 @@ object InlineArrowReader:
         readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
 
   /** Simple runtime struct field reader - no nested product reconstruction */
-  
 
   /** Runtime fallback for list elements */
-  
 
   /** Fallback for complex Option types */
   private def readAnyOptionValue(

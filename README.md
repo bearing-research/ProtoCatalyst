@@ -134,10 +134,10 @@ sbt 'benchmarkSpark/Jmh/run SparkEncoderBenchmarks'
 
 ## Documentation
 
-- [Design Document](docs/DESIGN.md) - Architecture and design decisions
-- [Encoder Deep Dive](docs/ENCODER_DEEP_DIVE.md) - How compile-time derivation works
+- **[Understanding Encoders](docs/ENCODER_DEEP_DIVE.md)** - Start here! Beginner-friendly guide explaining what encoders are and how to use them
 - [Spark Migration Guide](docs/SPARK_MIGRATION.md) - Integration with Spark Scala 3
 - [Benchmarks](benchmarks/README.md) - Performance comparison with Spark
+- [Design Document](docs/DESIGN.md) - Architecture and design decisions
 - [ADR-001: No Runtime Codegen](docs/decisions/ADR-001-no-runtime-codegen.md) - Why compile-time over runtime
 
 ## Requirements

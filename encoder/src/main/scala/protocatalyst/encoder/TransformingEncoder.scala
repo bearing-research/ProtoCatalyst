@@ -5,7 +5,14 @@ import scala.reflect.ClassTag
 import com.esotericsoftware.kryo.Kryo
 import org.apache.fury.config.FuryBuilder
 
-import protocatalyst.encoder.codec.{BinaryCodec, ForyCodecImpl, ForySerializationCodec, JavaSerializationCodec, KryoCodecImpl, KryoSerializationCodec}
+import protocatalyst.encoder.codec.{
+  BinaryCodec,
+  ForyCodecImpl,
+  ForySerializationCodec,
+  JavaSerializationCodec,
+  KryoCodecImpl,
+  KryoSerializationCodec
+}
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.types.ProtoType
 
