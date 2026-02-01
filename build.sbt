@@ -18,7 +18,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(core, encoder, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark)
+  .aggregate(core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -66,6 +66,26 @@ lazy val encoder = project
     Test / fork := true
   )
 
+// Arrow integration module: compile-time Arrow columnar format support
+lazy val arrow = project
+  .in(file("arrow"))
+  .dependsOn(core, encoder)
+  .settings(
+    name := "protocatalyst-arrow",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      "org.apache.arrow" % "arrow-memory-core" % "18.1.0",
+      "org.apache.arrow" % "arrow-memory-unsafe" % "18.1.0",
+      "org.apache.arrow" % "arrow-vector" % "18.1.0"
+    ),
+    // Arrow needs access to internal JVM modules for off-heap memory
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    ),
+    Test / fork := true
+  )
+
 // SQL Parser module: compile-time SQL parsing
 lazy val sqlParser = project
   .in(file("sql-parser"))
@@ -104,17 +124,19 @@ lazy val query = project
 // Benchmarks module (Scala 3) - JMH benchmarks for ProtoCatalyst encoders
 lazy val benchmarks = project
   .in(file("benchmarks"))
-  .dependsOn(core, encoder, mockRuntime)
+  .dependsOn(core, encoder, arrow, mockRuntime)
   .enablePlugins(JmhPlugin)
   .settings(
     name := "protocatalyst-benchmarks",
     commonSettings,
     publish / skip := true,
-    // Fury needs access to internal JVM modules
+    // Fury and Arrow need access to internal JVM modules
     Jmh / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
-      "--add-opens=java.base/java.util=ALL-UNNAMED"
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
     Jmh / fork := true
   )
@@ -137,12 +159,18 @@ lazy val benchmarkSpark = project
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql" % "4.0.0",
       "org.apache.spark" %% "spark-catalyst" % "4.0.0",
-      "org.scala-lang" % "scala-reflect" % "2.13.16"  // Required for TypeTag
+      "org.scala-lang" % "scala-reflect" % "2.13.16",  // Required for TypeTag
+      // Arrow dependencies for Arrow benchmarks
+      "org.apache.arrow" % "arrow-memory-core" % "18.1.0",
+      "org.apache.arrow" % "arrow-memory-unsafe" % "18.1.0",
+      "org.apache.arrow" % "arrow-vector" % "18.1.0"
     ),
     Jmh / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
-      "--add-opens=java.base/java.util=ALL-UNNAMED"
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
     Jmh / fork := true
   )
