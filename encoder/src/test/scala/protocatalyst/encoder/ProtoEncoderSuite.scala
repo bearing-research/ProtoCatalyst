@@ -177,6 +177,12 @@ class ProtoEncoderSuite extends munit.FunSuite:
     val enc = summon[ProtoEncoder[java.time.LocalDateTime]]
     assertEquals(enc.catalystType, ProtoType.TimestampNTZType)
 
+  test("java.time.LocalTime encoder"):
+    val enc = summon[ProtoEncoder[java.time.LocalTime]]
+    enc.catalystType match
+      case ProtoType.TimeType(6) => () // ok - default microsecond precision
+      case other => fail(s"Expected TimeType(6), got $other")
+
   // === Tuple encoder tests ===
 
   test("tuple2 encoder"):

@@ -18,6 +18,11 @@ enum ProtoType extends Serializable:
   case TimestampNTZType
   case DayTimeIntervalType   // For java.time.Duration
   case YearMonthIntervalType // For java.time.Period
+  case TimeType(precision: Int)         // For java.time.LocalTime (microseconds since midnight)
+  case CalendarIntervalType             // For CalendarInterval (months, days, microseconds)
+  case VariantType                      // For semi-structured data (JSON-like)
+  case CharType(length: Int)            // Fixed-length string
+  case VarcharType(length: Int)         // Variable-length string with max
   case DecimalType(precision: Int, scale: Int)
   case ArrayType(elementType: ProtoType, containsNull: Boolean)
   case MapType(keyType: ProtoType, valueType: ProtoType, valueContainsNull: Boolean)
@@ -59,6 +64,8 @@ enum LiteralValue extends Serializable:
   case DecimalValue(value: BigDecimal)
   case DateValue(epochDays: Int)
   case TimestampValue(epochMicros: Long)
+  case TimeValue(microsSinceMidnight: Long)
+  case CalendarIntervalValue(months: Int, days: Int, microseconds: Long)
   case NullValue(dataType: ProtoType)
 
 object LiteralValue:
@@ -75,4 +82,6 @@ object LiteralValue:
     case DecimalValue(_) => ProtoType.DecimalType(38, 18)
     case DateValue(_) => ProtoType.DateType
     case TimestampValue(_) => ProtoType.TimestampType
+    case TimeValue(_) => ProtoType.TimeType(6) // Default microsecond precision
+    case CalendarIntervalValue(_, _, _) => ProtoType.CalendarIntervalType
     case NullValue(dt) => dt

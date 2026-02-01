@@ -188,6 +188,10 @@ object InlineRowSerializer:
         result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimestampType)
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
+      case _: (java.time.LocalTime *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimeType(6))
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
       // === Fallback for other types (nested products, etc.) ===
       case _: (t *: ts) =>
         val fieldValue = product.productElement(idx)
@@ -363,6 +367,10 @@ object InlineRowSerializer:
 
       case _: (java.sql.Timestamp *: ts) =>
         values(idx) = conv.fromInternal(row(idx), ProtoType.TimestampType)
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (java.time.LocalTime *: ts) =>
+        values(idx) = conv.fromInternal(row(idx), ProtoType.TimeType(6))
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       // === Fallback for other types ===

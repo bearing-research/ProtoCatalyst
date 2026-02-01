@@ -56,6 +56,10 @@ Both ProtoCatalyst and Spark use the same internal representations:
 | Nested struct | Nested row | `InternalRow` | `MockRow` |
 | `LocalDate` | `Int` (epoch days) | Same | Same |
 | `Instant` | `Long` (microseconds) | Same | Same |
+| `LocalTime` | `Long` (micros since midnight) | Same | Same |
+| `LocalDateTime` | `Long` (microseconds) | Same | Same |
+| `Duration` | `Long` (microseconds) | Same | Same |
+| `Period` | `Int` (months) | Same | Same |
 | Primitives | Direct values | Same | Same |
 
 ## Architecture
@@ -186,7 +190,14 @@ object SparkInternalTypeConverter extends InternalTypeConverter:
 | `DateType` | `DateType` | Int (epoch days) |
 | `TimestampType` | `TimestampType` | Long (microseconds) |
 | `TimestampNTZType` | `TimestampNTZType` | Long (microseconds, no TZ) |
+| `TimeType(p)` | `TimeType(p)` | Long (micros since midnight) |
+| `DayTimeIntervalType` | `DayTimeIntervalType` | java.time.Duration |
+| `YearMonthIntervalType` | `YearMonthIntervalType` | java.time.Period |
+| `CalendarIntervalType` | `CalendarIntervalType` | (months, days, micros) |
 | `DecimalType(p,s)` | `DecimalType(p,s)` | BigDecimal |
+| `CharType(n)` | `CharType(n)` | Fixed-length string |
+| `VarcharType(n)` | `VarcharType(n)` | Variable-length string |
+| `VariantType` | `VariantType` | Semi-structured (JSON) |
 | `ArrayType(e,n)` | `ArrayType(e,n)` | Via ArrayData |
 | `MapType(k,v,n)` | `MapType(k,v,n)` | Via MapData |
 | `StructType(fields)` | `StructType(fields)` | Nested InternalRow |

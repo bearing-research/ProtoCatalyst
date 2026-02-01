@@ -185,6 +185,12 @@ class MockUnsafeRow private (
       case MockDataType.TimestampNTZType => getLong(ordinal)
       case MockDataType.DayTimeIntervalType => getLong(ordinal) // Duration as micros
       case MockDataType.YearMonthIntervalType => getInt(ordinal) // Period as months
+      case _: MockDataType.TimeType => getLong(ordinal) // Time as micros since midnight
+      case MockDataType.CalendarIntervalType =>
+        throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
+      case MockDataType.VariantType =>
+        throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+      case _: MockDataType.CharType | _: MockDataType.VarcharType => getUTF8String(ordinal)
       case _: MockDataType.DecimalType => getDecimal(ordinal)
       case st: MockDataType.StructType => getStruct(ordinal, st.fields.size)
       case _: MockDataType.ArrayType => getArray(ordinal)

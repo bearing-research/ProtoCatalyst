@@ -111,6 +111,8 @@ val internalRow = new GenericInternalRow(row)  // Direct compatibility
 | Nested struct | Row | `InternalRow` | `MockRow` |
 | Date | Int (epoch days) | Same | Same |
 | Timestamp | Long (microseconds) | Same | Same |
+| Time | Long (micros since midnight) | Same | Same |
+| Duration/Period | Long/Int | Same | Same |
 
 The `InternalTypeConverter` trait provides the pluggable backend - swap `MockInternalTypeConverter` for a Spark-native implementation when integrating.
 

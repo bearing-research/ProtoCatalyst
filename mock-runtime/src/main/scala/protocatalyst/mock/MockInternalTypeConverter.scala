@@ -100,6 +100,28 @@ object MockInternalTypeConverter extends InternalTypeConverter:
             s"TimestampNTZType expects LocalDateTime, String, or Long, got: ${other.getClass}"
           )
 
+      case _: ProtoType.TimeType =>
+        // LocalTime stored as microseconds since midnight (0-86399999999)
+        value match
+          case lt: java.time.LocalTime => lt.toNanoOfDay / 1000
+          case s: String => java.time.LocalTime.parse(s).toNanoOfDay / 1000
+          case micros: Long => micros
+          case other => throw IllegalArgumentException(
+            s"TimeType expects LocalTime, String, or Long, got: ${other.getClass}"
+          )
+
+      case ProtoType.CalendarIntervalType =>
+        // CalendarInterval stored as (months, days, microseconds) tuple
+        value // Pass through - would need CalendarInterval class for proper handling
+
+      case ProtoType.VariantType =>
+        // Variant stored as binary blob - pass through
+        value
+
+      case _: ProtoType.CharType | _: ProtoType.VarcharType =>
+        // Char/Varchar are treated as strings internally
+        MockUTF8String(value.asInstanceOf[String])
+
       // Other primitive types - no conversion needed
       case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
            ProtoType.IntType | ProtoType.LongType | ProtoType.FloatType |
@@ -174,6 +196,26 @@ object MockInternalTypeConverter extends InternalTypeConverter:
           ((micros % 1000000) * 1000).toInt,
           java.time.ZoneOffset.UTC
         )
+
+      case _: ProtoType.TimeType =>
+        // Convert microseconds since midnight back to LocalTime
+        val micros = value.asInstanceOf[Long]
+        java.time.LocalTime.ofNanoOfDay(micros * 1000)
+
+      case ProtoType.CalendarIntervalType =>
+        // Would need CalendarInterval class for proper handling
+        value
+
+      case ProtoType.VariantType =>
+        // Pass through
+        value
+
+      case _: ProtoType.CharType | _: ProtoType.VarcharType =>
+        // Convert back to String
+        value match
+          case utf8: MockUTF8String => utf8.toString
+          case s: String => s
+          case other => throw IllegalArgumentException(s"Expected MockUTF8String or String, got: ${other.getClass}")
 
       // Other primitive types - no conversion needed
       case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |

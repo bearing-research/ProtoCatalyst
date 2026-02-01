@@ -33,6 +33,8 @@ object ExpressionEvaluator:
       case Literal(LiteralValue.DecimalValue(v))   => v
       case Literal(LiteralValue.DateValue(v))      => v
       case Literal(LiteralValue.TimestampValue(v)) => v
+      case Literal(LiteralValue.TimeValue(v))      => v
+      case Literal(LiteralValue.CalendarIntervalValue(m, d, u)) => (m, d, u)
       case Literal(LiteralValue.NullValue(_))      => null
 
       // Bound references

@@ -24,6 +24,11 @@ object MockSchemaConverter:
     case ProtoType.TimestampNTZType => MockDataType.TimestampNTZType
     case ProtoType.DayTimeIntervalType => MockDataType.DayTimeIntervalType
     case ProtoType.YearMonthIntervalType => MockDataType.YearMonthIntervalType
+    case ProtoType.TimeType(precision) => MockDataType.TimeType(precision)
+    case ProtoType.CalendarIntervalType => MockDataType.CalendarIntervalType
+    case ProtoType.VariantType => MockDataType.VariantType
+    case ProtoType.CharType(length) => MockDataType.CharType(length)
+    case ProtoType.VarcharType(length) => MockDataType.VarcharType(length)
     case ProtoType.DecimalType(p, s) =>
       MockDataType.DecimalType(p, s)
     case ProtoType.ArrayType(elem, containsNull) =>
@@ -67,6 +72,11 @@ object MockSchemaConverter:
     case MockDataType.TimestampNTZType => ProtoType.TimestampNTZType
     case MockDataType.DayTimeIntervalType => ProtoType.DayTimeIntervalType
     case MockDataType.YearMonthIntervalType => ProtoType.YearMonthIntervalType
+    case MockDataType.TimeType(precision) => ProtoType.TimeType(precision)
+    case MockDataType.CalendarIntervalType => ProtoType.CalendarIntervalType
+    case MockDataType.VariantType => ProtoType.VariantType
+    case MockDataType.CharType(length) => ProtoType.CharType(length)
+    case MockDataType.VarcharType(length) => ProtoType.VarcharType(length)
     case MockDataType.DecimalType(p, s) =>
       ProtoType.DecimalType(p, s)
     case MockDataType.ArrayType(elem, containsNull) =>

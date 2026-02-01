@@ -83,3 +83,61 @@ class MockSchemaConverterSuite extends munit.FunSuite:
     assertEquals(mockSchema.fields(0).name, "name")
     assertEquals(mockSchema.fields(1).name, "age")
     assertEquals(mockSchema.fields(2).name, "salary")
+
+  // === Tests for newly added Spark types ===
+
+  test("converts TimeType"):
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.TimeType(6)),
+      MockDataType.TimeType(6)
+    )
+
+  test("converts CalendarIntervalType"):
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.CalendarIntervalType),
+      MockDataType.CalendarIntervalType
+    )
+
+  test("converts VariantType"):
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.VariantType),
+      MockDataType.VariantType
+    )
+
+  test("converts CharType"):
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.CharType(10)),
+      MockDataType.CharType(10)
+    )
+
+  test("converts VarcharType"):
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.VarcharType(255)),
+      MockDataType.VarcharType(255)
+    )
+
+  test("converts interval types"):
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.DayTimeIntervalType),
+      MockDataType.DayTimeIntervalType
+    )
+    assertEquals(
+      MockSchemaConverter.toMockType(ProtoType.YearMonthIntervalType),
+      MockDataType.YearMonthIntervalType
+    )
+
+  test("roundtrip conversion for new types"):
+    val newTypes: Vector[ProtoType] = Vector(
+      ProtoType.TimeType(6),
+      ProtoType.CalendarIntervalType,
+      ProtoType.VariantType,
+      ProtoType.CharType(20),
+      ProtoType.VarcharType(100),
+      ProtoType.DayTimeIntervalType,
+      ProtoType.YearMonthIntervalType
+    )
+
+    for pt <- newTypes do
+      val mock = MockSchemaConverter.toMockType(pt)
+      val back = MockSchemaConverter.toProtoType(mock)
+      assertEquals(back, pt, s"Roundtrip failed for $pt")

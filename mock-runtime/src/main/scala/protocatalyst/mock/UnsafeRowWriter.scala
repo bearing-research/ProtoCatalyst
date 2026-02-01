@@ -203,6 +203,16 @@ class UnsafeRowWriter(numFields: Int):
       case MockDataType.TimestampNTZType => write(ordinal, value.asInstanceOf[Long])
       case MockDataType.DayTimeIntervalType => write(ordinal, value.asInstanceOf[Long])
       case MockDataType.YearMonthIntervalType => write(ordinal, value.asInstanceOf[Int])
+      case _: MockDataType.TimeType => write(ordinal, value.asInstanceOf[Long])
+      case MockDataType.CalendarIntervalType =>
+        throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
+      case MockDataType.VariantType =>
+        throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+      case _: MockDataType.CharType | _: MockDataType.VarcharType =>
+        value match
+          case s: String => write(ordinal, s)
+          case u: MockUTF8String => write(ordinal, u)
+          case _ => write(ordinal, value.toString)
       case _: MockDataType.DecimalType =>
         value match
           case bd: BigDecimal => write(ordinal, bd.underlying.unscaledValue().longValue())

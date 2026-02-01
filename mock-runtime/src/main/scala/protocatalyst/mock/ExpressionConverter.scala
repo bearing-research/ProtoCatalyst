@@ -175,6 +175,10 @@ object ExpressionConverter:
       case DecimalValue(v) => MockExpression.Literal(v, DecimalType(38, 18))
       case DateValue(epochDays) => MockExpression.Literal(epochDays, DateType)
       case TimestampValue(epochMicros) => MockExpression.Literal(epochMicros, TimestampType)
+      case TimeValue(microsSinceMidnight) => MockExpression.Literal(microsSinceMidnight, TimeType(6))
+      case CalendarIntervalValue(months, days, micros) =>
+        // Store as a tuple - CalendarInterval would need proper MockDataType support
+        MockExpression.Literal((months, days, micros), CalendarIntervalType)
       case NullValue(dt) => MockExpression.Literal(null, TypeConverter.toMock(dt))
 
   private def convertSortOrder(so: ProtoSortOrder): MockExpression.SortOrder =
@@ -445,6 +449,11 @@ object TypeConverter:
       case TimestampNTZType => MDT.TimestampNTZType
       case DayTimeIntervalType => MDT.DayTimeIntervalType
       case YearMonthIntervalType => MDT.YearMonthIntervalType
+      case TimeType(precision) => MDT.TimeType(precision)
+      case CalendarIntervalType => MDT.CalendarIntervalType
+      case VariantType => MDT.VariantType
+      case CharType(length) => MDT.CharType(length)
+      case VarcharType(length) => MDT.VarcharType(length)
       case DecimalType(p, s) => MDT.DecimalType(p, s)
       case ArrayType(elem, containsNull) => MDT.ArrayType(toMock(elem), containsNull)
       case MapType(key, value, valueContainsNull) => MDT.MapType(toMock(key), toMock(value), valueContainsNull)
@@ -479,6 +488,11 @@ object TypeConverter:
       case MDT.TimestampNTZType => PT.TimestampNTZType
       case MDT.DayTimeIntervalType => PT.DayTimeIntervalType
       case MDT.YearMonthIntervalType => PT.YearMonthIntervalType
+      case MDT.TimeType(precision) => PT.TimeType(precision)
+      case MDT.CalendarIntervalType => PT.CalendarIntervalType
+      case MDT.VariantType => PT.VariantType
+      case MDT.CharType(length) => PT.CharType(length)
+      case MDT.VarcharType(length) => PT.VarcharType(length)
       case MDT.DecimalType(p, s) => PT.DecimalType(p, s)
       case MDT.ArrayType(elem, containsNull) => PT.ArrayType(fromMock(elem), containsNull)
       case MDT.MapType(key, value, valueContainsNull) => PT.MapType(fromMock(key), fromMock(value), valueContainsNull)

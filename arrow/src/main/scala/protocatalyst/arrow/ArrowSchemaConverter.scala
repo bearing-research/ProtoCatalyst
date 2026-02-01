@@ -48,6 +48,18 @@ object ArrowSchemaConverter:
     case ProtoType.TimestampNTZType => new ArrowType.Timestamp(TimeUnit.MICROSECOND, null)
     case ProtoType.DayTimeIntervalType => new ArrowType.Duration(TimeUnit.MICROSECOND)
     case ProtoType.YearMonthIntervalType => new ArrowType.Interval(IntervalUnit.YEAR_MONTH)
+    case ProtoType.TimeType(precision) =>
+      // TimeType stores microseconds since midnight
+      new ArrowType.Time(TimeUnit.MICROSECOND, 64) // 64-bit time with microsecond precision
+    case ProtoType.CalendarIntervalType =>
+      // CalendarInterval maps to Arrow Interval (month/day/nano)
+      new ArrowType.Interval(IntervalUnit.MONTH_DAY_NANO)
+    case ProtoType.VariantType =>
+      // Variant is semi-structured data - store as binary
+      ArrowType.LargeBinary.INSTANCE
+    case ProtoType.CharType(_) | ProtoType.VarcharType(_) =>
+      // Char/Varchar are stored as UTF8 strings
+      ArrowType.Utf8.INSTANCE
 
     // Decimal
     case ProtoType.DecimalType(precision, scale) =>

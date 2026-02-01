@@ -316,3 +316,15 @@ class InlineRowSerializerSuite extends munit.FunSuite:
     val deserialized = serializer.deserialize(serializer.serialize(original))
 
     assertEquals(deserialized, original)
+
+  // === LocalTime test ===
+
+  case class InlineWithLocalTime(name: String, time: java.time.LocalTime)
+
+  test("roundtrip LocalTime"):
+    val serializer = InlineRowSerializer.derived[InlineWithLocalTime]
+    val original = InlineWithLocalTime("morning", java.time.LocalTime.of(9, 30, 0))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)

@@ -219,6 +219,7 @@ object ProtoEncoder:
   given ProtoEncoder[java.time.LocalDateTime] = PrimitiveEncoder(ProtoType.TimestampNTZType, classTag[java.time.LocalDateTime])
   given ProtoEncoder[java.time.Duration] = PrimitiveEncoder(ProtoType.DayTimeIntervalType, classTag[java.time.Duration])
   given ProtoEncoder[java.time.Period] = PrimitiveEncoder(ProtoType.YearMonthIntervalType, classTag[java.time.Period])
+  given ProtoEncoder[java.time.LocalTime] = PrimitiveEncoder(ProtoType.TimeType(6), classTag[java.time.LocalTime])
 
   // java.sql types (legacy compatibility)
   given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] = PrimitiveEncoder(ProtoType.DateType, classTag[java.sql.Date])

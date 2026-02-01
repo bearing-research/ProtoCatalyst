@@ -133,6 +133,16 @@ object UnsafeRowSerializer:
       case MockDataType.TimestampNTZType => writer.write(ordinal, value.asInstanceOf[Long])
       case MockDataType.DayTimeIntervalType => writer.write(ordinal, value.asInstanceOf[Long])
       case MockDataType.YearMonthIntervalType => writer.write(ordinal, value.asInstanceOf[Int])
+      case _: MockDataType.TimeType => writer.write(ordinal, value.asInstanceOf[Long]) // microseconds since midnight
+      case MockDataType.CalendarIntervalType =>
+        // CalendarInterval is stored as a struct with (months, days, microseconds)
+        throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
+      case MockDataType.VariantType =>
+        // Variant is stored as binary
+        throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+      case _: MockDataType.CharType | _: MockDataType.VarcharType =>
+        // Char/Varchar are stored as strings
+        writer.write(ordinal, value.asInstanceOf[String].getBytes("UTF-8"))
       case _: MockDataType.DecimalType =>
         value match
           case bd: BigDecimal => writer.write(ordinal, bd.underlying.unscaledValue().longValue())
@@ -187,6 +197,12 @@ object UnsafeRowSerializer:
       case MockDataType.TimestampNTZType => row.getLong(ordinal)
       case MockDataType.DayTimeIntervalType => row.getLong(ordinal)
       case MockDataType.YearMonthIntervalType => row.getInt(ordinal)
+      case _: MockDataType.TimeType => row.getLong(ordinal)
+      case MockDataType.CalendarIntervalType =>
+        throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
+      case MockDataType.VariantType =>
+        throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+      case _: MockDataType.CharType | _: MockDataType.VarcharType => row.getString(ordinal)
       case _: MockDataType.DecimalType => row.getDecimal(ordinal)
       case st: MockDataType.StructType =>
         val nestedRow = row.getStruct(ordinal, st.fields.size)

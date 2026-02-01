@@ -51,6 +51,21 @@ object MockDataType:
   case object YearMonthIntervalType extends MockDataType:
     def typeName = "interval year to month"
 
+  case class TimeType(precision: Int) extends MockDataType:
+    def typeName = s"time($precision)"
+
+  case object CalendarIntervalType extends MockDataType:
+    def typeName = "interval"
+
+  case object VariantType extends MockDataType:
+    def typeName = "variant"
+
+  case class CharType(length: Int) extends MockDataType:
+    def typeName = s"char($length)"
+
+  case class VarcharType(length: Int) extends MockDataType:
+    def typeName = s"varchar($length)"
+
   case class DecimalType(precision: Int, scale: Int) extends MockDataType:
     def typeName = s"decimal($precision,$scale)"
 

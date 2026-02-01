@@ -154,6 +154,8 @@ object PlanConverter:
           case DecimalValue(v) => v
           case DateValue(v) => v
           case TimestampValue(v) => v
+          case TimeValue(v) => v
+          case CalendarIntervalValue(months, days, micros) => (months, days, micros)
           case NullValue(_) => null
       case _ => throw IllegalArgumentException(s"Expected literal in VALUES, got: $expr")
 

@@ -356,3 +356,109 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     val deserialized = serializer.deserialize(serializer.serialize(original))
 
     assertEquals(deserialized, original)
+
+  // === Tests for newly added Spark types ===
+
+  test("TimeType converts LocalTime to microseconds"):
+    val localTime = java.time.LocalTime.of(10, 30, 45, 123456000) // 10:30:45.123456
+    val result = MockInternalTypeConverter.toInternal(localTime, ProtoType.TimeType(6))
+
+    val expectedMicros = localTime.toNanoOfDay / 1000
+    assertEquals(result, expectedMicros)
+
+  test("TimeType converts String to microseconds"):
+    val timeStr = "14:30:00"
+    val result = MockInternalTypeConverter.toInternal(timeStr, ProtoType.TimeType(6))
+
+    val expectedMicros = java.time.LocalTime.parse(timeStr).toNanoOfDay / 1000
+    assertEquals(result, expectedMicros)
+
+  test("TimeType passes through Long (already internal)"):
+    val micros = 12345678L
+    val result = MockInternalTypeConverter.toInternal(micros, ProtoType.TimeType(6))
+    assertEquals(result, micros)
+
+  test("TimeType fromInternal converts microseconds to LocalTime"):
+    val micros = 38445123456L // 10:40:45.123456
+    val result = MockInternalTypeConverter.fromInternal(micros, ProtoType.TimeType(6))
+
+    val expected = java.time.LocalTime.ofNanoOfDay(micros * 1000)
+    assertEquals(result, expected)
+
+  test("TimeType roundtrip"):
+    val original = java.time.LocalTime.of(9, 15, 30, 500000000) // 9:15:30.5
+    val internal = MockInternalTypeConverter.toInternal(original, ProtoType.TimeType(6))
+    val back = MockInternalTypeConverter.fromInternal(internal, ProtoType.TimeType(6))
+
+    assertEquals(back.asInstanceOf[java.time.LocalTime].toSecondOfDay, original.toSecondOfDay)
+
+  test("CalendarIntervalType passes through value"):
+    val interval = (12, 5, 1000000L) // (months, days, microseconds)
+    val result = MockInternalTypeConverter.toInternal(interval, ProtoType.CalendarIntervalType)
+    assertEquals(result, interval)
+
+  test("CalendarIntervalType fromInternal passes through"):
+    val interval = (6, 15, 500000L)
+    val result = MockInternalTypeConverter.fromInternal(interval, ProtoType.CalendarIntervalType)
+    assertEquals(result, interval)
+
+  test("VariantType passes through binary"):
+    val data = Array[Byte](1, 2, 3, 4, 5)
+    val result = MockInternalTypeConverter.toInternal(data, ProtoType.VariantType)
+    assert(result.asInstanceOf[Array[Byte]].sameElements(data))
+
+  test("VariantType fromInternal passes through"):
+    val data = Array[Byte](10, 20, 30)
+    val result = MockInternalTypeConverter.fromInternal(data, ProtoType.VariantType)
+    assert(result.asInstanceOf[Array[Byte]].sameElements(data))
+
+  test("CharType converts String to MockUTF8String"):
+    val str = "hello"
+    val result = MockInternalTypeConverter.toInternal(str, ProtoType.CharType(10))
+
+    result match
+      case utf8: MockUTF8String =>
+        assertEquals(utf8.toString, "hello")
+      case other =>
+        fail(s"Expected MockUTF8String, got $other")
+
+  test("CharType fromInternal converts back to String"):
+    val utf8 = MockUTF8String("world")
+    val result = MockInternalTypeConverter.fromInternal(utf8, ProtoType.CharType(10))
+    assertEquals(result, "world")
+
+  test("VarcharType converts String to MockUTF8String"):
+    val str = "variable length string"
+    val result = MockInternalTypeConverter.toInternal(str, ProtoType.VarcharType(255))
+
+    result match
+      case utf8: MockUTF8String =>
+        assertEquals(utf8.toString, str)
+      case other =>
+        fail(s"Expected MockUTF8String, got $other")
+
+  test("VarcharType fromInternal converts back to String"):
+    val utf8 = MockUTF8String("test")
+    val result = MockInternalTypeConverter.fromInternal(utf8, ProtoType.VarcharType(50))
+    assertEquals(result, "test")
+
+  test("CharType and VarcharType roundtrip"):
+    val original = "roundtrip test"
+
+    val charInternal = MockInternalTypeConverter.toInternal(original, ProtoType.CharType(20))
+    val charBack = MockInternalTypeConverter.fromInternal(charInternal, ProtoType.CharType(20))
+    assertEquals(charBack, original)
+
+    val varcharInternal = MockInternalTypeConverter.toInternal(original, ProtoType.VarcharType(100))
+    val varcharBack = MockInternalTypeConverter.fromInternal(varcharInternal, ProtoType.VarcharType(100))
+    assertEquals(varcharBack, original)
+
+  test("DayTimeIntervalType passes through Duration internal value"):
+    val durationNanos = 3600000000000L // 1 hour in nanos (but stored differently)
+    val result = MockInternalTypeConverter.toInternal(durationNanos, ProtoType.DayTimeIntervalType)
+    assertEquals(result, durationNanos)
+
+  test("YearMonthIntervalType passes through Period internal value"):
+    val months = 14 // 1 year 2 months
+    val result = MockInternalTypeConverter.toInternal(months, ProtoType.YearMonthIntervalType)
+    assertEquals(result, months)
