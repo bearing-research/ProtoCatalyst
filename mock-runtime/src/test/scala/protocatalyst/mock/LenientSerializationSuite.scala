@@ -1,6 +1,7 @@
 package protocatalyst.mock
 
 import munit.FunSuite
+
 import protocatalyst.types.ProtoType
 
 class LenientSerializationSuite extends FunSuite:

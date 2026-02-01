@@ -8,8 +8,12 @@ lazy val commonSettings = Seq(
     "-deprecation",
     "-feature",
     "-unchecked",
+    "-Wunused:imports", // Required for Scalafix OrganizeImports rule
     "-Werror"
   ),
+  // Enable SemanticDB for Scalafix
+  semanticdbEnabled := true,
+  semanticdbVersion := scalafixSemanticdb.revision,
   libraryDependencies += "org.scalameta" %% "munit" % "1.2.2" % Test,
   testFrameworks += new TestFramework("munit.Framework")
 )
@@ -153,9 +157,13 @@ lazy val benchmarkSpark = project
     scalacOptions ++= Seq(
       "-deprecation",
       "-feature",
-      "-unchecked"
+      "-unchecked",
+      "-Wunused:imports" // Required for Scalafix OrganizeImports
       // Note: -Werror removed for Scala 2.13 compatibility with Spark
     ),
+    // Enable SemanticDB for Scalafix
+    semanticdbEnabled := true,
+    semanticdbVersion := scalafixSemanticdb.revision,
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql" % "4.0.0",
       "org.apache.spark" %% "spark-catalyst" % "4.0.0",

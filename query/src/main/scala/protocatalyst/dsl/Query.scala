@@ -1,12 +1,11 @@
 package protocatalyst.dsl
 
-import protocatalyst.artifact.*
-import protocatalyst.encoder.*
+import protocatalyst.artifact._
+import protocatalyst.encoder._
 import protocatalyst.expr.ProtoExpr
-import protocatalyst.plan.*
-import protocatalyst.query.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.plan._
+import protocatalyst.query._
+import protocatalyst.schema._
 
 /** Type-safe query builder.
   *

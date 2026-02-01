@@ -1,12 +1,9 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.ProtoType
-import protocatalyst.encoder.codec.{
-  JavaSerializationCodec,
-  KryoSerializationCodec,
-  ForySerializationCodec
-}
 import munit.FunSuite
+
+import protocatalyst.encoder.codec.JavaSerializationCodec
+import protocatalyst.types.ProtoType
 
 // Test types must be top-level to be Serializable
 // (inner classes capture a reference to the outer class)
@@ -65,7 +62,6 @@ class TransformingEncoderSuite extends FunSuite:
     assertEquals(enc.decode(null), null)
 
   test("TransformingEncoder.kryo with custom configuration"):
-    import com.esotericsoftware.kryo.Kryo
     val enc = TransformingEncoder.kryo[TestSimpleData] { kryo =>
       kryo.register(classOf[TestSimpleData])
     }

@@ -1,10 +1,13 @@
 package protocatalyst.arrow
 
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.*
-import org.apache.arrow.memory.RootAllocator
 import java.nio.charset.StandardCharsets
+
 import scala.compiletime.uninitialized
+
+import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.vector._
+
+import protocatalyst.encoder.ProtoEncoder
 
 // Test case classes - defined at package level for proper derivation
 case class ArrowSimple(name: String, age: Int) derives ProtoEncoder

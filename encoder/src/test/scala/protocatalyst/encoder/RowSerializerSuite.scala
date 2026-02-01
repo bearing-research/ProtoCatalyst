@@ -1,7 +1,6 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.*
-import scala.deriving.Mirror
+import protocatalyst.types._
 
 // Test case classes for RowSerializer (prefixed to avoid conflicts with ProtoEncoderSuite)
 case class RowUser(name: String, age: Int)

@@ -1,8 +1,8 @@
 package protocatalyst.query
 
-import protocatalyst.artifact.*
-import protocatalyst.encoder.*
-import protocatalyst.schema.*
+import protocatalyst.artifact._
+import protocatalyst.encoder._
+import protocatalyst.schema._
 import protocatalyst.sql.SqlMacro
 
 /** Type-safe compiled query wrapper. */

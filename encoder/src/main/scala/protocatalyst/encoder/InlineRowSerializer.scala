@@ -1,9 +1,10 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.*
+import scala.compiletime._
 import scala.deriving.Mirror
-import scala.compiletime.*
 import scala.reflect.ClassTag
+
+import protocatalyst.types._
 
 /** Type-specialized row serializer using compile-time inline expansion.
   *

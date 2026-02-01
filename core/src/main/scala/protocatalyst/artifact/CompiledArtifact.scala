@@ -1,9 +1,8 @@
 package protocatalyst.artifact
 
-import protocatalyst.plan.*
-import protocatalyst.schema.*
 import protocatalyst.codec.{ArtifactCodec => Codec}
-import java.io.Serializable
+import protocatalyst.plan._
+import protocatalyst.schema._
 
 case class CompiledArtifact(
     formatVersion: ArtifactVersion,

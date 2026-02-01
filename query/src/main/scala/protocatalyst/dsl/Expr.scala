@@ -2,8 +2,6 @@ package protocatalyst.dsl
 
 import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.expr.ProtoExpr
-import protocatalyst.types.*
-import scala.util.NotGiven
 
 /** Type-safe expression wrapper. A is the Scala type this expression evaluates to. */
 trait Expr[A]:

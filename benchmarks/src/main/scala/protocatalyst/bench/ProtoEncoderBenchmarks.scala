@@ -1,9 +1,12 @@
 package protocatalyst.bench
 
-import org.openjdk.jmh.annotations.*
 import java.util.concurrent.TimeUnit
+
 import scala.compiletime.uninitialized
-import protocatalyst.encoder.{ProtoEncoder, RowSerializer, InternalTypeConverter}
+
+import org.openjdk.jmh.annotations._
+
+import protocatalyst.encoder.{InternalTypeConverter, ProtoEncoder, RowSerializer}
 
 /** Benchmarks for ProtoEncoder schema derivation and RowSerializer serialization.
   *

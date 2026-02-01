@@ -1,19 +1,19 @@
 package protocatalyst.benchmark
 
-import org.openjdk.jmh.annotations._
 import java.util.concurrent.TimeUnit
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.arrow.ArrowWriter
-import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
-import org.apache.spark.sql.types._
-import org.apache.spark.sql.catalyst.util.ArrayData
+
+import scala.jdk.CollectionConverters._
+
+import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
-import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision}
-import org.apache.arrow.vector.types.{TimeUnit => ArrowTimeUnit}
-import org.apache.arrow.memory.RootAllocator
-import scala.jdk.CollectionConverters._
+import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit => ArrowTimeUnit}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.execution.arrow.ArrowWriter
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ArrowColumnVector
+import org.openjdk.jmh.annotations._
 
 /** Benchmarks for Spark's Arrow serialization.
   *

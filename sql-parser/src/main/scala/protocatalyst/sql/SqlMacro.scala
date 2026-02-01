@@ -1,13 +1,13 @@
 package protocatalyst.sql
 
-import protocatalyst.artifact.*
-import protocatalyst.encoder.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.sql.ast.*
+import scala.quoted._
+
+import protocatalyst.artifact._
+import protocatalyst.encoder._
+import protocatalyst.schema._
+import protocatalyst.sql.ast._
 import protocatalyst.sql.parser.SqlParser
 import protocatalyst.sql.transform.AstToProtoTransform
-import scala.quoted.*
 
 /** Compile-time SQL parsing macro. */
 object SqlMacro:

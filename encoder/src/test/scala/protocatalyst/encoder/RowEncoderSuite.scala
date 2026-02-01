@@ -1,8 +1,9 @@
 package protocatalyst.encoder
 
 import munit.FunSuite
+
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.types.*
+import protocatalyst.types._
 
 class RowEncoderSuite extends FunSuite:
 

@@ -1,7 +1,8 @@
 package protocatalyst.schema
 
-import protocatalyst.types.*
 import java.io.Serializable
+
+import protocatalyst.types._
 
 case class ProtoSchema(
     fields: Vector[ProtoStructField],

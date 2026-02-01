@@ -1,14 +1,14 @@
 package protocatalyst.arrow
-
-import protocatalyst.types.*
-import protocatalyst.schema.*
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.*
-import org.apache.arrow.vector.complex.*
-import org.apache.arrow.vector.types.pojo.Schema
-import scala.deriving.Mirror
-import scala.compiletime.*
 import java.nio.charset.StandardCharsets
+
+import scala.compiletime._
+import scala.deriving.Mirror
+
+import org.apache.arrow.vector._
+import org.apache.arrow.vector.complex._
+import org.apache.arrow.vector.types.pojo.Schema
+
+import protocatalyst.encoder.ProtoEncoder
 
 /** Compile-time specialized Arrow column reader.
   *
@@ -362,42 +362,10 @@ object InlineArrowReader:
         readProductFields[ts](structVec, rowIndex, fieldIndex + 1, values)
 
   /** Simple runtime struct field reader - no nested product reconstruction */
-  private def simpleReadStructFields(
-      structVec: StructVector,
-      rowIndex: Int,
-      values: Array[Any]
-  ): Unit =
-    var i = 0
-    while i < values.length do
-      val childVec = structVec.getChildByOrdinal(i)
-      values(i) = childVec match
-        case v: IntVector if !v.isNull(rowIndex)     => v.get(rowIndex)
-        case v: BigIntVector if !v.isNull(rowIndex)  => v.get(rowIndex)
-        case v: Float8Vector if !v.isNull(rowIndex)  => v.get(rowIndex)
-        case v: Float4Vector if !v.isNull(rowIndex)  => v.get(rowIndex)
-        case v: VarCharVector if !v.isNull(rowIndex) =>
-          new String(v.get(rowIndex), StandardCharsets.UTF_8)
-        case v: BitVector if !v.isNull(rowIndex) => v.get(rowIndex) == 1
-        case _                                   => null
-      i += 1
+  
 
   /** Runtime fallback for list elements */
-  private def readListElementGeneric(
-      dataVec: ValueVector,
-      index: Int
-  ): Any =
-    dataVec match
-      case v: IntVector     => v.get(index)
-      case v: BigIntVector  => v.get(index)
-      case v: Float8Vector  => v.get(index)
-      case v: Float4Vector  => v.get(index)
-      case v: BitVector     => v.get(index) == 1
-      case v: VarCharVector =>
-        if v.isNull(index) then null
-        else new String(v.get(index), StandardCharsets.UTF_8)
-      case v: StructVector =>
-        readProductFromStruct(v, index)
-      case _ => null
+  
 
   /** Fallback for complex Option types */
   private def readAnyOptionValue(

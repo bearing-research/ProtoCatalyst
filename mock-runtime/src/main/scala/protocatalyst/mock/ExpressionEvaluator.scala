@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
-import protocatalyst.expr.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.types._
 
 /** Evaluates ProtoExpr against MockRow data. Used for testing canonicalization and constant
   * folding.

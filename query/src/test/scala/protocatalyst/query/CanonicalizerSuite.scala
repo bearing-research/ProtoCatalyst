@@ -1,7 +1,7 @@
 package protocatalyst.query
 
-import protocatalyst.expr.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.types._
 
 class CanonicalizerSuite extends munit.FunSuite:
 

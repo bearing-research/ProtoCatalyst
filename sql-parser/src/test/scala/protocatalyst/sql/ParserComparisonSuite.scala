@@ -1,19 +1,16 @@
 package protocatalyst.sql
 
+import scala.jdk.CollectionConverters._
+import scala.util.{Failure, Success, Try}
+
 import munit.FunSuite
-import protocatalyst.sql.parser.SqlParser
-import protocatalyst.sql.ast.*
-
 import net.sf.jsqlparser.parser.CCJSqlParserUtil
-import net.sf.jsqlparser.statement.select.{Select, PlainSelect, SetOperationList}
-import net.sf.jsqlparser.expression.{Expression as JExpr, *}
-import net.sf.jsqlparser.expression.operators.conditional.{AndExpression, OrExpression}
-import net.sf.jsqlparser.expression.operators.relational.*
-import net.sf.jsqlparser.schema.{Column, Table}
-import net.sf.jsqlparser.statement.Statement as JStatement
+import net.sf.jsqlparser.schema.Table
+import net.sf.jsqlparser.statement.select.{PlainSelect, Select, SetOperationList}
+import net.sf.jsqlparser.statement.{Statement => JStatement}
 
-import scala.jdk.CollectionConverters.*
-import scala.util.{Try, Success, Failure}
+import protocatalyst.sql.ast._
+import protocatalyst.sql.parser.SqlParser
 
 /** Comparison test suite that validates our SQL parser against JSQLParser.
   *
@@ -44,7 +41,7 @@ class ParserComparisonSuite extends FunSuite:
     (ours, jsql) match
       case (Right(_), Right(_)) => () // Both succeed - good
       case (Left(_), Left(_))   => () // Both fail - acceptable
-      case (Right(_), Left(e))  =>
+      case (Right(_), Left(_))  =>
         // We parsed but JSQLParser didn't - may be acceptable if we're more lenient
         // Log but don't fail (JSQLParser may be stricter)
         ()
@@ -183,7 +180,7 @@ class ParserComparisonSuite extends FunSuite:
         )
       case (Left(e), _) =>
         fail(s"Our parser failed: $e\nSQL: $sql")
-      case (_, Left(e)) =>
+      case (_, Left(_)) =>
         // JSQLParser failed but we succeeded - that's OK, log it
         ()
 

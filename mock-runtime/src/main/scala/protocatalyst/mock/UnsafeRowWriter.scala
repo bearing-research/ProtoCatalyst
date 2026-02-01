@@ -1,6 +1,7 @@
 package protocatalyst.mock
 
 import java.nio.{ByteBuffer, ByteOrder}
+
 import scala.collection.mutable.ArrayBuffer
 
 /** Writer for constructing MockUnsafeRow instances.

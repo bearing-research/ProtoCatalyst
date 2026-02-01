@@ -1,10 +1,10 @@
 package protocatalyst.codec
 
-import protocatalyst.artifact.*
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.artifact._
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 class JsonArtifactCodecSuite extends munit.FunSuite:
 

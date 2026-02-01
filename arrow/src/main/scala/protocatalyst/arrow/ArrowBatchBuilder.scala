@@ -1,12 +1,15 @@
 package protocatalyst.arrow
 
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.*
-import org.apache.arrow.vector.types.pojo.Schema
-import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
+import java.io.Closeable
+
 import scala.deriving.Mirror
 import scala.util.Using
-import java.io.Closeable
+
+import org.apache.arrow.memory.BufferAllocator
+import org.apache.arrow.vector._
+import org.apache.arrow.vector.types.pojo.Schema
+
+import protocatalyst.encoder.ProtoEncoder
 
 /** Builder for creating Arrow RecordBatches from sequences of case classes.
   *

@@ -89,7 +89,7 @@ class Lexer(input: String):
     while pos < input.length && current.isWhitespace do advance()
 
   private def readNumber(negative: Boolean): Either[LexerError, Token] =
-    val startCol = col
+    col
     val sb = new StringBuilder
     if negative then sb.append('-')
 

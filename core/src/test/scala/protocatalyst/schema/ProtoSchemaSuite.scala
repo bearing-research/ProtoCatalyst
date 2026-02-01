@@ -1,6 +1,6 @@
 package protocatalyst.schema
 
-import protocatalyst.types.*
+import protocatalyst.types._
 
 class ProtoSchemaSuite extends munit.FunSuite:
 

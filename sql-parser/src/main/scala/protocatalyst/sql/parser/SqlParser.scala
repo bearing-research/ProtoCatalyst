@@ -1,7 +1,7 @@
 package protocatalyst.sql.parser
 
-import protocatalyst.sql.lexer.{Lexer, LexerError, Token}
-import protocatalyst.sql.ast.*
+import protocatalyst.sql.ast._
+import protocatalyst.sql.lexer.{Lexer, Token}
 
 /** Recursive descent SQL parser. */
 class SqlParser(tokens: Vector[Token]):
@@ -527,12 +527,7 @@ class SqlParser(tokens: Vector[Token]):
         }
     }
 
-  private def parseInList(): Either[ParseError, Vector[SqlExpr]] =
-    expect(Token.LParen, "(").flatMap { _ =>
-      parseExprList().flatMap { items =>
-        expect(Token.RParen, ")").map(_ => items)
-      }
-    }
+  
 
   private def parseExprList(): Either[ParseError, Vector[SqlExpr]] =
     parseExpr().flatMap { first =>

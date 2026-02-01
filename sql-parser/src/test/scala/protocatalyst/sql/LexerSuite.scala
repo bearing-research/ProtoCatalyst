@@ -1,6 +1,6 @@
 package protocatalyst.sql
 
-import protocatalyst.sql.lexer.*
+import protocatalyst.sql.lexer._
 
 class LexerSuite extends munit.FunSuite:
 

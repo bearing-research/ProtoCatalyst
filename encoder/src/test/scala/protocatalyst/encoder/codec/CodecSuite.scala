@@ -160,5 +160,5 @@ class CodecSuite extends FunSuite:
 
   test("ForySerializationCodec factory returns codec instance"):
     val codec1 = ForySerializationCodec()
-    val codec2 = ForySerializationCodec()
+    ForySerializationCodec()
     assert(codec1.isInstanceOf[ForyCodecImpl])

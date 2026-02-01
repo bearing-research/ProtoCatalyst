@@ -1,6 +1,6 @@
 package protocatalyst.mock
 
-import protocatalyst.mock.MockExpression.*
+import protocatalyst.mock.MockExpression._
 
 /** Mock Spark LogicalPlan hierarchy.
   *

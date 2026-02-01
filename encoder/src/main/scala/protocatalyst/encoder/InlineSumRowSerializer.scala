@@ -1,8 +1,6 @@
 package protocatalyst.encoder
-
-import protocatalyst.types.*
+import scala.compiletime._
 import scala.deriving.Mirror
-import scala.compiletime.*
 
 /** Inline-specialized row serializer for sum types (sealed traits).
   *

@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
-import protocatalyst.encoder.{InternalTypeConverter, ProtoRow, GenericProtoRow}
-import protocatalyst.types.*
+import protocatalyst.encoder.{InternalTypeConverter, ProtoRow}
+import protocatalyst.types._
 
 /** Mock internal type converter that simulates Spark's type conversions.
   *

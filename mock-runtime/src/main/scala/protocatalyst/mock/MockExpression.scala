@@ -1,6 +1,6 @@
 package protocatalyst.mock
 
-import protocatalyst.mock.MockDataType.*
+import protocatalyst.mock.MockDataType._
 
 /** Mock Spark Expression hierarchy.
   *

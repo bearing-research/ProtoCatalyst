@@ -1,10 +1,11 @@
 package protocatalyst.encoder
 
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import scala.compiletime._
 import scala.deriving.Mirror
-import scala.compiletime.*
 import scala.reflect.{ClassTag, classTag}
+
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** Field descriptor for product type encoders. */
 case class FieldEncoder[T](

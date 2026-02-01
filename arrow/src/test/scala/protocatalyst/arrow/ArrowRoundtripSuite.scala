@@ -1,9 +1,11 @@
 package protocatalyst.arrow
 
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.*
-import org.apache.arrow.memory.RootAllocator
 import scala.compiletime.uninitialized
+
+import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.vector._
+
+import protocatalyst.encoder.ProtoEncoder
 
 // Additional test case classes for roundtrip testing
 case class RoundtripAllPrimitives(

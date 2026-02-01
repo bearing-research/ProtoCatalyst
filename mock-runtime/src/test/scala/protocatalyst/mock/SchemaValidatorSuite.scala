@@ -1,8 +1,8 @@
 package protocatalyst.mock
 
-import protocatalyst.dsl.*
-import protocatalyst.encoder.*
-import protocatalyst.types.*
+import protocatalyst.dsl._
+import protocatalyst.encoder._
+import protocatalyst.types._
 
 // Test case class that matches simpleUserSchema
 case class SimpleUser(name: String, age: Int, salary: Double) derives ProtoEncoder

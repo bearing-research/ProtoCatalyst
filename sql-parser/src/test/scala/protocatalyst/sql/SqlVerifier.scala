@@ -1,12 +1,12 @@
 package protocatalyst.sql
 
-import protocatalyst.sql.ast.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.sql.ast._
 import protocatalyst.sql.parser.SqlParser
-import protocatalyst.sql.transform.{AstToProtoTransform, TransformError}
-import protocatalyst.plan.*
-import protocatalyst.expr.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.sql.transform.AstToProtoTransform
+import protocatalyst.types._
 
 /** SQL verification utility for testing and debugging.
   *

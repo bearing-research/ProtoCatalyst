@@ -1,9 +1,9 @@
 package protocatalyst.mock
 
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.types.*
-import protocatalyst.schema.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 class ConverterSuite extends munit.FunSuite:
 

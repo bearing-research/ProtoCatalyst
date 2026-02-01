@@ -1,7 +1,7 @@
 package protocatalyst.expr
 
-import protocatalyst.types.*
-import protocatalyst.plan.*
+import protocatalyst.plan._
+import protocatalyst.types._
 
 class ProtoExprSuite extends munit.FunSuite:
 
@@ -307,7 +307,7 @@ class ProtoExprSuite extends munit.FunSuite:
     val str = ProtoExpr.lit("hello")
     val expr = ProtoExpr.StringLocate(substr, str, Some(ProtoExpr.lit(1)))
     expr match
-      case ProtoExpr.StringLocate(ss, s, Some(_)) => ()
+      case ProtoExpr.StringLocate(_, _, Some(_)) => ()
       case _                                      => fail(s"Expected StringLocate, got $expr")
 
   // === Aggregate Expressions ===

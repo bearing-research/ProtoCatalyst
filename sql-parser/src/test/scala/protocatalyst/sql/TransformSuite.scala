@@ -1,12 +1,12 @@
 package protocatalyst.sql
 
-import protocatalyst.plan.*
-import protocatalyst.expr.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
-import protocatalyst.sql.ast.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.sql.ast._
 import protocatalyst.sql.parser.SqlParser
 import protocatalyst.sql.transform.{AstToProtoTransform, TransformContext}
+import protocatalyst.types._
 
 class TransformSuite extends munit.FunSuite:
 
@@ -175,7 +175,7 @@ class TransformSuite extends munit.FunSuite:
       case other                     => fail(s"Expected IsNull expression, got $other")
 
   test("fails on unknown column"):
-    val stmt = asSelect(SqlParser.parse("SELECT unknown FROM users").toOption.get)
+    asSelect(SqlParser.parse("SELECT unknown FROM users").toOption.get)
     val ctx = TransformContext(Map("users" -> userSchema), userSchema)
 
     // The transform itself doesn't fail - validation happens separately
@@ -183,14 +183,14 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isLeft)
 
   test("transforms qualified column with table alias"):
-    val stmt = asSelect(SqlParser.parse("SELECT u.name FROM users u").toOption.get)
+    asSelect(SqlParser.parse("SELECT u.name FROM users u").toOption.get)
     val ctx = TransformContext(Map("u" -> userSchema), userSchema)
 
     val result = AstToProtoTransform.transformExpr(SqlExpr.ColumnRef("name", Some("u")), ctx)
     assert(result.isRight)
 
   test("fails on wrong table qualifier"):
-    val stmt = asSelect(SqlParser.parse("SELECT other.name FROM users").toOption.get)
+    asSelect(SqlParser.parse("SELECT other.name FROM users").toOption.get)
     val ctx = TransformContext(Map("users" -> userSchema), userSchema)
 
     val result = AstToProtoTransform.transformExpr(SqlExpr.ColumnRef("name", Some("other")), ctx)

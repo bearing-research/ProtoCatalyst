@@ -1,7 +1,7 @@
 package protocatalyst.encoder.codec
 
-import org.apache.fury.{Fury, ThreadSafeFury}
 import org.apache.fury.config.FuryBuilder
+import org.apache.fury.{Fury, ThreadSafeFury}
 
 /** A codec that uses Apache Fory (formerly Fury) for serialization. Up to 170x faster than Java
   * serialization with Scala 3 native support.

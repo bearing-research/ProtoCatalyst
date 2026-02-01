@@ -1,6 +1,6 @@
 package protocatalyst.mock
 
-import protocatalyst.types.*
+import protocatalyst.types._
 
 class MockSchemaConverterSuite extends munit.FunSuite:
 

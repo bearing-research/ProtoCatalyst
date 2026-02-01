@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
-import protocatalyst.encoder.*
-import protocatalyst.types.*
+import protocatalyst.encoder._
+import protocatalyst.types._
 
 // Test case classes (derive ProtoEncoder for nested type support)
 case class User(name: String, age: Int) derives ProtoEncoder

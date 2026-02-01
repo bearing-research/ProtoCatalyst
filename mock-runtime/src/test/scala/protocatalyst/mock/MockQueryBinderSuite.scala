@@ -1,9 +1,9 @@
 package protocatalyst.mock
 
-import protocatalyst.dsl.*
-import protocatalyst.encoder.*
-import protocatalyst.expr.*
-import protocatalyst.plan.*
+import protocatalyst.dsl._
+import protocatalyst.encoder._
+import protocatalyst.expr._
+import protocatalyst.plan._
 
 case class BinderTestUser(name: String, age: Int, salary: Double) derives ProtoEncoder
 
@@ -67,7 +67,7 @@ class MockQueryBinderSuite extends munit.FunSuite:
     MockQueryBinder.bind(compiled.artifact.plan, catalog) match
       case MockQueryBinder.BoundPlan(plan) =>
         plan match
-          case ProtoLogicalPlan.Aggregate(grouping, aggs, _) =>
+          case ProtoLogicalPlan.Aggregate(grouping, _, _) =>
             assert(grouping.forall(containsBoundRef), "Expected BoundRef in grouping")
           case _ => fail("Expected Aggregate plan")
       case MockQueryBinder.BindingError(msg, _) =>

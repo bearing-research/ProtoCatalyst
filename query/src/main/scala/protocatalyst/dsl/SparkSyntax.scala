@@ -1,10 +1,11 @@
 package protocatalyst.dsl
 
+import scala.language.implicitConversions
+
 import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.expr.ProtoExpr
-import protocatalyst.plan.{SortDirection, NullOrdering}
-import protocatalyst.types.*
-import scala.language.implicitConversions
+import protocatalyst.plan.{NullOrdering, SortDirection}
+import protocatalyst.types._
 
 /** Spark-compatible syntax extensions.
   *

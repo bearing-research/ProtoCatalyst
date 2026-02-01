@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.types.*
+import protocatalyst.types._
 
 /** Pre-built test fixtures for common testing scenarios.
   */

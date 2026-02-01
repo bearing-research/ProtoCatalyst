@@ -1,7 +1,6 @@
 package protocatalyst.mock
 
 import java.nio.{ByteBuffer, ByteOrder}
-import scala.collection.mutable.ArrayBuffer
 
 /** Mock implementation of Spark's UnsafeRow binary format.
   *

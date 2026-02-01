@@ -1,9 +1,9 @@
 package protocatalyst.mock
 
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.expr.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** Bidirectional converter between ProtoLogicalPlan and MockLogicalPlan.
   *

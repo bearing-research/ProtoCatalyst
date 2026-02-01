@@ -2,7 +2,7 @@ package protocatalyst.dsl
 
 import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.expr.ProtoExpr
-import protocatalyst.types.*
+import protocatalyst.types._
 
 /** Type-safe column reference.
   *

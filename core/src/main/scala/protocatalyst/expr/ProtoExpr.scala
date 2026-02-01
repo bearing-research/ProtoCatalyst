@@ -1,7 +1,8 @@
 package protocatalyst.expr
 
-import protocatalyst.types.*
 import java.io.Serializable
+
+import protocatalyst.types._
 
 /** Compile-time expression representation. */
 enum ProtoExpr extends Serializable:

@@ -1,6 +1,6 @@
 package protocatalyst.sql
 
-import protocatalyst.sql.ast.*
+import protocatalyst.sql.ast._
 import protocatalyst.sql.parser.SqlParser
 
 class ParserSuite extends munit.FunSuite:

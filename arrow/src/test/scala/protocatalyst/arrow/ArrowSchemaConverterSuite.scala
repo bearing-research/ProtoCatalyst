@@ -1,10 +1,10 @@
 package protocatalyst.arrow
 
-import protocatalyst.types.*
-import protocatalyst.schema.*
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.types.*
-import org.apache.arrow.vector.types.pojo.*
+import org.apache.arrow.vector.types._
+import org.apache.arrow.vector.types.pojo._
+
+import protocatalyst.schema._
+import protocatalyst.types._
 
 class ArrowSchemaConverterSuite extends munit.FunSuite:
 

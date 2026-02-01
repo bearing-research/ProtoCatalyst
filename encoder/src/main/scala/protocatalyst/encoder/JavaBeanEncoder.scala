@@ -1,10 +1,11 @@
 package protocatalyst.encoder
 
-import protocatalyst.schema.*
-import protocatalyst.types.*
-import scala.reflect.ClassTag
 import java.beans.{Introspector, PropertyDescriptor}
-import java.lang.reflect.Method
+
+import scala.reflect.ClassTag
+
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** Runtime encoder for Java Beans.
   *

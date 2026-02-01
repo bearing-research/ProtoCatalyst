@@ -1,12 +1,15 @@
 package protocatalyst.bench
 
-import org.openjdk.jmh.annotations.*
-import java.util.concurrent.TimeUnit
-import scala.compiletime.uninitialized
-import protocatalyst.arrow.*
-import org.apache.arrow.vector.*
-import org.apache.arrow.memory.RootAllocator
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.TimeUnit
+
+import scala.compiletime.uninitialized
+
+import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.vector._
+import org.openjdk.jmh.annotations._
+
+import protocatalyst.arrow._
 
 /** Benchmarks for compile-time Arrow serialization.
   *

@@ -1,9 +1,8 @@
 package protocatalyst.mock
 
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.types._
 
 /** Binds ColumnRef expressions to BoundRef with ordinal positions. Simulates Spark's attribute
   * resolution phase.

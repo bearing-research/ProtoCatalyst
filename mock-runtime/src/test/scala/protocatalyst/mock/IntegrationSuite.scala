@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
-import protocatalyst.dsl.*
-import protocatalyst.encoder.*
+import protocatalyst.dsl._
+import protocatalyst.encoder._
 import protocatalyst.query.CompiledQuery
 
 case class IntegrationUser(name: String, age: Int, salary: Double) derives ProtoEncoder

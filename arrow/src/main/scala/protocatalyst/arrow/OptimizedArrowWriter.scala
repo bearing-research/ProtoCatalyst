@@ -1,14 +1,13 @@
 package protocatalyst.arrow
-
-import protocatalyst.types.*
-import protocatalyst.schema.*
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.*
-import org.apache.arrow.vector.complex.*
-import org.apache.arrow.vector.types.pojo.Schema
-import scala.deriving.Mirror
-import scala.compiletime.*
 import java.nio.charset.StandardCharsets
+
+import scala.compiletime._
+import scala.deriving.Mirror
+
+import org.apache.arrow.vector._
+import org.apache.arrow.vector.types.pojo.Schema
+
+import protocatalyst.encoder.ProtoEncoder
 
 /** Optimized Arrow writer with vector caching.
   *

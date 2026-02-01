@@ -1,7 +1,8 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.*
 import scala.reflect.{ClassTag, classTag}
+
+import protocatalyst.types._
 
 // Test case classes with derived encoders for use with summon
 case class Person(name: String, age: Int) derives ProtoEncoder
@@ -805,7 +806,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     ProtoUDT.clearRegistry()
 
     // Creating encoder should register the UDT
-    val enc = ProtoEncoder.fromUDT(TestUDTs.PointUDT)
+    ProtoEncoder.fromUDT(TestUDTs.PointUDT)
 
     // Lookup by UDT class name
     val byClassName = ProtoUDT.lookup(TestUDTs.PointUDT.getClass.getName)

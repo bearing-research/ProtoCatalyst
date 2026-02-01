@@ -1,8 +1,11 @@
 package protocatalyst.bench
 
-import org.openjdk.jmh.annotations.*
 import java.util.concurrent.TimeUnit
+
 import scala.compiletime.uninitialized
+
+import org.openjdk.jmh.annotations._
+
 import protocatalyst.encoder.TransformingEncoder
 
 /** Benchmarks for comparing codec performance: Java vs Kryo vs Fory.

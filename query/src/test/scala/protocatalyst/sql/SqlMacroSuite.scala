@@ -1,7 +1,7 @@
 package protocatalyst.sql
 
-import protocatalyst.encoder.*
-import protocatalyst.plan.*
+import protocatalyst.encoder._
+import protocatalyst.plan._
 import protocatalyst.query.CompiledQuery
 
 case class SqlTestUser(name: String, age: Int, salary: Double) derives ProtoEncoder

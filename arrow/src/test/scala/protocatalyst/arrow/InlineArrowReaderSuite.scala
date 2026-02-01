@@ -1,10 +1,8 @@
 package protocatalyst.arrow
-
-import protocatalyst.encoder.ProtoEncoder
-import org.apache.arrow.vector.*
-import org.apache.arrow.memory.RootAllocator
-import java.nio.charset.StandardCharsets
 import scala.compiletime.uninitialized
+
+import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.vector._
 
 class InlineArrowReaderSuite extends munit.FunSuite:
 

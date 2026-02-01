@@ -1,7 +1,8 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.ProtoType
 import scala.reflect.ClassTag
+
+import protocatalyst.types.ProtoType
 
 /** User-Defined Type (UDT) for ProtoCatalyst.
   *

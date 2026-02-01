@@ -1,10 +1,10 @@
 package protocatalyst.sql.transform
 
-import protocatalyst.sql.ast.*
-import protocatalyst.plan.*
-import protocatalyst.expr.*
-import protocatalyst.types.*
-import protocatalyst.schema.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.sql.ast._
+import protocatalyst.types._
 
 /** Transforms SQL AST to ProtoLogicalPlan and ProtoExpr. */
 object AstToProtoTransform:
@@ -57,7 +57,7 @@ object AstToProtoTransform:
             transformStmt(cteQuery, schema, tableName).map { ctePlan =>
               // Wrap with SubqueryAlias if needed and apply column aliases
               val aliasedPlan = columnAliases match
-                case Some(aliases) =>
+                case Some(_) =>
                   // Create a Project with renamed columns if column aliases are specified
                   // For now, just use SubqueryAlias (proper column renaming would need type analysis)
                   ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
@@ -590,8 +590,8 @@ object AstToProtoTransform:
   private def transformFrame(
       frame: protocatalyst.sql.ast.WindowFrame
   ): protocatalyst.expr.WindowFrame =
-    import protocatalyst.sql.ast.{FrameType as SFT, FrameBound as SFB}
-    import protocatalyst.expr.{FrameType as PFT, FrameBound as PFB}
+    import protocatalyst.sql.ast.{FrameType as SFT}
+    import protocatalyst.expr.{FrameType as PFT}
     val frameType = frame.frameType match
       case SFT.Rows  => PFT.Rows
       case SFT.Range => PFT.Range

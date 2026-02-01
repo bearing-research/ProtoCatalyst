@@ -1,9 +1,8 @@
 package protocatalyst.mock
-
-import protocatalyst.types.*
-import protocatalyst.encoder.*
+import scala.compiletime._
 import scala.deriving.Mirror
-import scala.compiletime.*
+
+import protocatalyst.encoder._
 
 /** Serializes/deserializes case classes to/from UnsafeRow binary format.
   *

@@ -1,6 +1,6 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.{ProtoType, ProtoStructField}
+import protocatalyst.types.{ProtoStructField, ProtoType}
 
 /** Test UDTs for ProtoEncoder UDT support testing.
   */

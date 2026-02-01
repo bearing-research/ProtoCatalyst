@@ -1,7 +1,8 @@
 package protocatalyst.arrow
 
-import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
 import scala.util.Using
+
+import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
 
 /** Memory allocator management for Arrow operations.
   *

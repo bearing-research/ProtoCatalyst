@@ -1,11 +1,12 @@
 package protocatalyst.codec
 
-import protocatalyst.artifact.*
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
-import upickle.default.*
+import upickle.default._
+
+import protocatalyst.artifact._
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** JSON serialization codec using uPickle.
   *

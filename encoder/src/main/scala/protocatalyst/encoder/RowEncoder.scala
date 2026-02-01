@@ -1,7 +1,7 @@
 package protocatalyst.encoder
 
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.types.*
+import protocatalyst.types._
 
 /** Encoder for ProtoRow (generic, schema-less row type).
   *

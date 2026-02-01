@@ -127,8 +127,8 @@ class LiteralValueSuite extends munit.FunSuite:
     val posInf = LiteralValue.FloatValue(Float.PositiveInfinity)
     val negInf = LiteralValue.FloatValue(Float.NegativeInfinity)
     val nan = LiteralValue.FloatValue(Float.NaN)
-    val minVal = LiteralValue.FloatValue(Float.MinValue)
-    val maxVal = LiteralValue.FloatValue(Float.MaxValue)
+    LiteralValue.FloatValue(Float.MinValue)
+    LiteralValue.FloatValue(Float.MaxValue)
 
     posInf match
       case LiteralValue.FloatValue(v) => assert(v.isPosInfinity)
@@ -144,8 +144,8 @@ class LiteralValueSuite extends munit.FunSuite:
     val posInf = LiteralValue.DoubleValue(Double.PositiveInfinity)
     val negInf = LiteralValue.DoubleValue(Double.NegativeInfinity)
     val nan = LiteralValue.DoubleValue(Double.NaN)
-    val minVal = LiteralValue.DoubleValue(Double.MinValue)
-    val maxVal = LiteralValue.DoubleValue(Double.MaxValue)
+    LiteralValue.DoubleValue(Double.MinValue)
+    LiteralValue.DoubleValue(Double.MaxValue)
 
     posInf match
       case LiteralValue.DoubleValue(v) => assert(v.isPosInfinity)
@@ -161,7 +161,7 @@ class LiteralValueSuite extends munit.FunSuite:
     val empty = LiteralValue.StringValue("")
     val unicode = LiteralValue.StringValue("hello 世界 🌍")
     val newlines = LiteralValue.StringValue("line1\nline2\r\n")
-    val nullChar = LiteralValue.StringValue("with\u0000null")
+    val withNull = LiteralValue.StringValue("with\u0000null")
 
     empty match
       case LiteralValue.StringValue(v) => assertEquals(v, "")
@@ -171,6 +171,9 @@ class LiteralValueSuite extends munit.FunSuite:
       case _                           => fail("Expected StringValue")
     newlines match
       case LiteralValue.StringValue(v) => assertEquals(v, "line1\nline2\r\n")
+      case _                           => fail("Expected StringValue")
+    withNull match
+      case LiteralValue.StringValue(v) => assert(v.contains('\u0000'))
       case _                           => fail("Expected StringValue")
 
   test("BinaryValue with various content"):
@@ -193,7 +196,7 @@ class LiteralValueSuite extends munit.FunSuite:
 
   test("DecimalValue with various precision"):
     val small = LiteralValue.DecimalValue(BigDecimal("0.001"))
-    val large = LiteralValue.DecimalValue(BigDecimal("999999999999999999.999999999999999999"))
+    LiteralValue.DecimalValue(BigDecimal("999999999999999999.999999999999999999"))
     val negative = LiteralValue.DecimalValue(BigDecimal("-123.456"))
     val zero = LiteralValue.DecimalValue(BigDecimal("0"))
 
@@ -291,7 +294,7 @@ class LiteralValueSuite extends munit.FunSuite:
     )
 
     // Each value should have a different type
-    val types = values.map(LiteralValue.typeOf)
+    values.map(LiteralValue.typeOf)
     // Note: Some share the same type (IntValue, ShortValue, etc. when value is 1)
     // But the literal values themselves are different enum cases
     for i <- values.indices; j <- values.indices if i != j do

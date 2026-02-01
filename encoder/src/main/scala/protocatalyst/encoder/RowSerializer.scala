@@ -1,9 +1,10 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.*
+import scala.compiletime._
 import scala.deriving.Mirror
-import scala.compiletime.*
 import scala.reflect.ClassTag
+
+import protocatalyst.types._
 
 /** Serializes/deserializes case classes to/from row format.
   *
@@ -118,9 +119,8 @@ object RowSerializer:
     * variant.
     */
   inline def derivedSum[T](using m: Mirror.SumOf[T]): RowSerializer[T] =
-    val encoder = ProtoEncoder.derived[T].asInstanceOf[ProtoEncoder.SumEncoder[T]]
     val inlineSerializer = InlineSumRowSerializer.derived[T]
-    InlineBackedSumRowSerializer[T](encoder, inlineSerializer)
+    InlineBackedSumRowSerializer[T](inlineSerializer)
 
   /** Derive field schemas from tuple types */
   private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](
@@ -166,7 +166,6 @@ object RowSerializer:
     * information while delegating to the optimized inline version. Public for inline access.
     */
   class InlineBackedSumRowSerializer[T](
-      encoder: ProtoEncoder.SumEncoder[T],
       inlineSerializer: InlineSumRowSerializer[T]
   ) extends RowSerializer[T]:
 
@@ -254,7 +253,7 @@ object RowSerializer:
     def serialize(value: T)(using conv: InternalTypeConverter): Array[Any] =
       val variant = encoder.variantFor(value)
       val variantData = variant.encoder match
-        case Some(enc) =>
+        case Some(_) =>
           // Serialize the variant's data (case class fields)
           value match
             case p: Product =>

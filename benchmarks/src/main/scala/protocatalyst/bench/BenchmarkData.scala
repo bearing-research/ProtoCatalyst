@@ -1,6 +1,7 @@
 package protocatalyst.bench
 
-import java.time.*
+import java.time._
+
 import protocatalyst.encoder.ProtoEncoder
 
 /** Test data classes for benchmarking.

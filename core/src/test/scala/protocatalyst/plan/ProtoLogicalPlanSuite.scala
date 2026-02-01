@@ -1,8 +1,8 @@
 package protocatalyst.plan
 
-import protocatalyst.expr.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 class ProtoLogicalPlanSuite extends munit.FunSuite:
 

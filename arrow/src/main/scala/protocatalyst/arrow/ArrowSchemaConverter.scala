@@ -1,10 +1,12 @@
 package protocatalyst.arrow
 
-import protocatalyst.types.*
-import protocatalyst.schema.*
-import org.apache.arrow.vector.types.*
-import org.apache.arrow.vector.types.pojo.*
-import scala.jdk.CollectionConverters.*
+import scala.jdk.CollectionConverters._
+
+import org.apache.arrow.vector.types._
+import org.apache.arrow.vector.types.pojo._
+
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** Bidirectional conversion between ProtoCatalyst schema types and Apache Arrow schema types.
   *

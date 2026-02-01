@@ -1,6 +1,6 @@
 package protocatalyst.encoder
 
-import protocatalyst.types.*
+import protocatalyst.types._
 
 // ========== Test Case Classes for Nested Type Support ==========
 

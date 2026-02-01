@@ -1,9 +1,9 @@
 package protocatalyst.plan
 
-import protocatalyst.expr.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
 import java.io.Serializable
+
+import protocatalyst.expr._
+import protocatalyst.schema._
 
 /** Minimal logical plan nodes for compiled queries. */
 enum ProtoLogicalPlan extends Serializable:

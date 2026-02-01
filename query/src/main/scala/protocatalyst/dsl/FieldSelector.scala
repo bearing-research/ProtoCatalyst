@@ -1,8 +1,8 @@
 package protocatalyst.dsl
 
-import protocatalyst.encoder.*
-import protocatalyst.types.*
 import scala.language.dynamics
+
+import protocatalyst.encoder._
 
 /** Dynamic field selector that provides typed column access.
   *

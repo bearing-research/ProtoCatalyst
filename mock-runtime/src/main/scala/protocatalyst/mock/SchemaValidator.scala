@@ -1,8 +1,8 @@
 package protocatalyst.mock
 
 import protocatalyst.query.CompiledQuery
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** Validates schema contracts against actual table schemas. This is the mock equivalent of
   * spark/QueryBinder.validate().

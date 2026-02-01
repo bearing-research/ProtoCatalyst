@@ -1,9 +1,9 @@
 package protocatalyst.dsl
 
-import protocatalyst.encoder.*
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.types.*
+import protocatalyst.encoder._
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.types._
 
 // Test case classes
 case class User(name: String, age: Int, salary: Double) derives ProtoEncoder
@@ -47,7 +47,7 @@ class DslSuite extends munit.FunSuite:
   test("literal expressions"):
     val intLit = Expr.lit(42)
     val strLit = Expr.lit("hello")
-    val boolLit = Expr.lit(true)
+    Expr.lit(true)
 
     intLit.toProtoExpr match
       case ProtoExpr.Literal(LiteralValue.IntValue(42)) => () // ok
@@ -62,8 +62,8 @@ class DslSuite extends munit.FunSuite:
     val age = users.col[Int]("age")
 
     val gt = age > Expr.lit(18)
-    val lt = age < Expr.lit(65)
-    val eq = age === Expr.lit(30)
+    age < Expr.lit(65)
+    age === Expr.lit(30)
 
     gt.toProtoExpr match
       case ProtoExpr.Gt(_, ProtoExpr.Literal(LiteralValue.IntValue(18))) => () // ok
@@ -191,10 +191,10 @@ class DslSuite extends munit.FunSuite:
 
     // Just test that they compile and produce correct ProtoExpr types
     val cnt = functions.count
-    val sm = functions.sumDouble(salary)
+    functions.sumDouble(salary)
     val av = functions.avg(salary)
-    val mn = functions.min(salary)
-    val mx = functions.max(salary)
+    functions.min(salary)
+    functions.max(salary)
 
     cnt.toProtoExpr match
       case ProtoExpr.Count(_, false) => () // ok
@@ -283,7 +283,7 @@ class DslSuite extends munit.FunSuite:
       .orderBy(salary.desc, age.asc)
       .limit(100)
 
-    val compiled = query.compile
+    query.compile
 
     // Verify structure
     query.plan match

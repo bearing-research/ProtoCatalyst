@@ -1,11 +1,8 @@
 package protocatalyst.dsl
 
-import protocatalyst.encoder.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
-import scala.deriving.Mirror
-import scala.compiletime.*
+import protocatalyst.encoder._
+import protocatalyst.plan._
+import protocatalyst.schema._
 
 /** Entry point for building type-safe queries.
   *

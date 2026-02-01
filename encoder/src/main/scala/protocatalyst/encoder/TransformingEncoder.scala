@@ -1,18 +1,13 @@
 package protocatalyst.encoder
 
-import protocatalyst.encoder.codec.{
-  BinaryCodec,
-  JavaSerializationCodec,
-  KryoSerializationCodec,
-  KryoCodecImpl,
-  ForySerializationCodec,
-  ForyCodecImpl
-}
+import scala.reflect.ClassTag
+
 import com.esotericsoftware.kryo.Kryo
 import org.apache.fury.config.FuryBuilder
+
+import protocatalyst.encoder.codec.{BinaryCodec, ForyCodecImpl, ForySerializationCodec, JavaSerializationCodec, KryoCodecImpl, KryoSerializationCodec}
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.types.ProtoType
-import scala.reflect.ClassTag
 
 /** Encoder that uses a codec for types that cannot be encoded natively. The value is serialized to
   * bytes and stored as BinaryType.

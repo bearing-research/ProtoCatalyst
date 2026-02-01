@@ -1,13 +1,11 @@
 package protocatalyst.codec
 
 import protocatalyst.artifact.{ArtifactVersion, CompiledArtifact, SourceInfo}
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
-
-// Import the codec-package ArtifactCodec explicitly for serializeWithHeader/deserializeWithHeader
-import protocatalyst.codec.{ArtifactCodec as CodecImpl}
+import protocatalyst.codec.{ArtifactCodec => CodecImpl}
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 class ArtifactCodecSuite extends munit.FunSuite:
 

@@ -1,8 +1,11 @@
 package protocatalyst.bench
 
-import org.openjdk.jmh.annotations._
 import java.util.concurrent.TimeUnit
+
 import scala.compiletime.uninitialized
+
+import org.openjdk.jmh.annotations._
+
 import protocatalyst.encoder.{InlineRowSerializer, InternalTypeConverter}
 
 /** Benchmarks to measure how performance scales with batch size.

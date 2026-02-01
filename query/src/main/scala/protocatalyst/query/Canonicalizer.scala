@@ -1,8 +1,8 @@
 package protocatalyst.query
 
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.types._
 
 /** Canonicalization transforms for plan stability. */
 object Canonicalizer:

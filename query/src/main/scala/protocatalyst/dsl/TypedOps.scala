@@ -1,8 +1,8 @@
 package protocatalyst.dsl
 
-import protocatalyst.encoder.*
-import protocatalyst.types.*
-import scala.quoted.*
+import scala.quoted._
+
+import protocatalyst.encoder._
 
 /** Macro-based typed operations for field access.
   *
@@ -70,7 +70,7 @@ object TypedOps:
     import quotes.reflect.*
 
     fieldName.value match
-      case Some(name) =>
+      case Some(_) =>
         // We can't check at macro time without the encoder value,
         // but we emit code that will fail fast at runtime
         '{

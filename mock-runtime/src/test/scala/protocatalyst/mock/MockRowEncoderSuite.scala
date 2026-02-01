@@ -1,8 +1,9 @@
 package protocatalyst.mock
 
 import munit.FunSuite
-import protocatalyst.encoder.*
-import protocatalyst.types.*
+
+import protocatalyst.encoder._
+import protocatalyst.types._
 
 class MockRowEncoderSuite extends FunSuite:
 

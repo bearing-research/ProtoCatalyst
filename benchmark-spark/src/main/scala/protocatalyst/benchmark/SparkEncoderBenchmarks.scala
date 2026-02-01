@@ -1,9 +1,10 @@
 package protocatalyst.benchmark
 
-import org.openjdk.jmh.annotations._
 import java.util.concurrent.TimeUnit
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.openjdk.jmh.annotations._
 
 /** Benchmarks for Spark's ExpressionEncoder.
   *

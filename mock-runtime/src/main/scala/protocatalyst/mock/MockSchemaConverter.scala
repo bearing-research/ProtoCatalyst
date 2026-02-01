@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.types.*
+import protocatalyst.types._
 
 /** Bidirectional conversion between ProtoType and MockDataType. Mirrors the real
   * spark/SchemaConverter.scala implementation.
