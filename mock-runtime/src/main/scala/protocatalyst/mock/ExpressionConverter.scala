@@ -453,6 +453,12 @@ object TypeConverter:
       ))
       case UDTType(_, sqlType) => toMock(sqlType) // UDT uses underlying SQL type
       case UnresolvedType(hint) => MDT.StringType // Fallback
+      case SumType(discriminator, _) =>
+        // Convert SumType to a struct with discriminator and ordinal
+        MDT.StructType(Vector(
+          MockStructField(discriminator, MDT.StringType, nullable = false),
+          MockStructField("_ordinal", MDT.IntegerType, nullable = false)
+        ))
 
   def fromMock(mdt: MockDataType): ProtoType =
     import MockDataType as MDT

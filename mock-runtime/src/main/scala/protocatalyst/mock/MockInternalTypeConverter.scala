@@ -111,6 +111,19 @@ object MockInternalTypeConverter extends InternalTypeConverter:
       case ProtoType.UDTType(_, sqlType) =>
         toInternal(value, sqlType)
 
+      // Sum types (sealed traits) - convert discriminator and variant data
+      case ProtoType.SumType(discriminatorField, variants) =>
+        // For sum types, the value should be an Array[Any] with [discriminator, ordinal, variantData]
+        value match
+          case arr: Array[Any @unchecked] if arr.length >= 2 =>
+            MockRow(Vector(
+              toInternal(arr(0), ProtoType.StringType),  // discriminator
+              toInternal(arr(1), ProtoType.IntType)      // ordinal
+            ))
+          case other => throw IllegalArgumentException(
+            s"SumType expects Array[Any] with [discriminator, ordinal, ...], got: ${other.getClass}"
+          )
+
       case ProtoType.UnresolvedType(hint) =>
         throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")
 
@@ -172,6 +185,10 @@ object MockInternalTypeConverter extends InternalTypeConverter:
       // UDT types - convert using the underlying SQL type
       case ProtoType.UDTType(_, sqlType) =>
         fromInternal(value, sqlType)
+
+      // Sum types (sealed traits) - return as-is for now
+      case ProtoType.SumType(_, _) =>
+        value
 
       case ProtoType.UnresolvedType(hint) =>
         throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")

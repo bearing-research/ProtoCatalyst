@@ -24,12 +24,20 @@ enum ProtoType extends Serializable:
   case StructType(fields: Vector[ProtoStructField])
   case UDTType(udtClassName: String, sqlType: ProtoType)
   case UnresolvedType(hint: String)
+  case SumType(discriminatorField: String, variants: Vector[SumVariant])
 
 case class ProtoStructField(
     name: String,
     dataType: ProtoType,
     nullable: Boolean,
     metadata: Map[String, String] = Map.empty
+) extends Serializable
+
+/** Variant descriptor for sum types (sealed traits/ADTs) */
+case class SumVariant(
+    name: String,
+    ordinal: Int,
+    dataType: Option[ProtoType] // None for case objects (no data)
 ) extends Serializable
 
 enum Nullability extends Serializable:

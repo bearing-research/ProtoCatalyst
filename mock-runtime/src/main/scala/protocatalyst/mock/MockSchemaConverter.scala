@@ -38,6 +38,13 @@ object MockSchemaConverter:
       toMockType(sqlType)
     case ProtoType.UnresolvedType(hint) =>
       throw IllegalArgumentException(s"Cannot convert unresolved type: $hint")
+    case ProtoType.SumType(discriminator, variants) =>
+      // Convert SumType to a struct with discriminator and ordinal fields
+      val fields = Vector(
+        MockStructField(discriminator, MockDataType.StringType, nullable = false),
+        MockStructField("_ordinal", MockDataType.IntegerType, nullable = false)
+      )
+      MockDataType.StructType(fields)
 
   def toMockField(f: ProtoStructField): MockStructField =
     MockStructField(f.name, toMockType(f.dataType), f.nullable, f.metadata)

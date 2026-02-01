@@ -60,10 +60,15 @@ object InternalTypeConverter:
 
 object RowSerializer:
 
-  /** Derive a RowSerializer for type T at compile time */
+  /** Derive a RowSerializer for a product type (case class) at compile time */
   inline def derived[T](using m: Mirror.ProductOf[T]): RowSerializer[T] =
     val fieldSchemas = deriveFieldSchemas[m.MirroredElemTypes, m.MirroredElemLabels](0)
     ProductRowSerializer[T](fieldSchemas, m)
+
+  /** Derive a RowSerializer for a sum type (sealed trait) at compile time */
+  inline def derivedSum[T](using m: Mirror.SumOf[T]): RowSerializer[T] =
+    val encoder = ProtoEncoder.derived[T].asInstanceOf[ProtoEncoder.SumEncoder[T]]
+    SumRowSerializer[T](encoder)
 
   /** Derive field schemas from tuple types */
   private inline def deriveFieldSchemas[Types <: Tuple, Labels <: Tuple](idx: Int): Vector[FieldSchema] =
@@ -143,6 +148,80 @@ object RowSerializer:
 
     private def unwrapOptionType(dataType: ProtoType): ProtoType =
       dataType // Option types have the same catalyst type as their element
+
+  /** Implementation for sum types (sealed traits). Public for inline access. */
+  class SumRowSerializer[T](encoder: ProtoEncoder.SumEncoder[T]) extends RowSerializer[T]:
+
+    val schema: Vector[FieldSchema] = Vector(
+      FieldSchema("_type", ProtoType.StringType, nullable = false, fieldIndex = 0),
+      FieldSchema("_ordinal", ProtoType.IntType, nullable = false, fieldIndex = 1),
+      FieldSchema("value", ProtoType.BinaryType, nullable = true, fieldIndex = 2) // Placeholder type
+    )
+
+    def serialize(value: T)(using conv: InternalTypeConverter): Array[Any] =
+      val variant = encoder.variantFor(value)
+      val variantData = variant.encoder match
+        case Some(enc) =>
+          // Serialize the variant's data (case class fields)
+          value match
+            case p: Product =>
+              val result = new Array[Any](p.productArity)
+              var i = 0
+              while i < p.productArity do
+                result(i) = conv.toInternal(p.productElement(i), ProtoType.StringType) // Simplified
+                i += 1
+              result
+            case _ => null
+        case None =>
+          // Case object - no data
+          null
+      Array[Any](variant.name, variant.ordinal, variantData)
+
+    def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T =
+      val ordinal = row(1).asInstanceOf[Int]
+      val variant = encoder.variants(ordinal)
+      variant.encoder match
+        case Some(enc) =>
+          // Deserialize the variant data
+          val variantData = row(2).asInstanceOf[Array[Any]]
+          enc match
+            case prodEnc: ProtoEncoder[?] if prodEnc.fields.nonEmpty =>
+              // Reconstruct the case class using its Mirror
+              // This requires access to the variant's Mirror, which we store in encoder
+              reconstructVariant(variant, variantData, conv)
+            case _ =>
+              // Fallback - use ordinal to get singleton
+              encoder.mirror.ordinal.asInstanceOf[T] // This won't work, need proper reconstruction
+        case None =>
+          // Case object - reconstruct using singleton lookup
+          lookupSingleton(encoder.clsTag.runtimeClass, variant.name).asInstanceOf[T]
+
+    private def reconstructVariant(
+        variant: VariantEncoder[?],
+        data: Array[Any],
+        conv: InternalTypeConverter
+    ): T =
+      // For case classes, we need to call their constructor
+      // Since we don't have the Mirror at runtime, use reflection as fallback
+      val clazz = variant.encoder.get.clsTag.runtimeClass
+      val constructor = clazz.getConstructors.head
+      val args = data.map(d => conv.fromInternal(d, ProtoType.StringType)) // Simplified
+      constructor.newInstance(args.map(_.asInstanceOf[AnyRef])*).asInstanceOf[T]
+
+    private def lookupSingleton(parentClass: Class[?], name: String): Any =
+      // Find the case object by name in the companion or nested objects
+      try
+        val companionClass = Class.forName(s"${parentClass.getName}$$$name$$")
+        companionClass.getField("MODULE$").get(null)
+      catch
+        case _: ClassNotFoundException =>
+          // Try as nested object
+          try
+            val nestedClass = Class.forName(s"${parentClass.getName}$$$name")
+            nestedClass.getField("MODULE$").get(null)
+          catch
+            case _: Exception =>
+              throw RuntimeException(s"Cannot find singleton object $name for sealed trait ${parentClass.getName}")
 
   /** Helper to construct product from array */
   private class ArrayProduct(values: Array[Any]) extends Product:

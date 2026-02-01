@@ -13,6 +13,14 @@ case class FieldEncoder[T](
     nullable: Boolean
 )
 
+/** Variant descriptor for sum type (sealed trait) encoders. */
+case class VariantEncoder[T](
+    name: String,
+    ordinal: Int,
+    encoder: Option[ProtoEncoder[?]], // None for case objects (singleton)
+    isSingleton: Boolean
+)
+
 /** Compile-time derived encoder for Spark. */
 trait ProtoEncoder[T]:
   def schema: ProtoSchema
@@ -22,6 +30,9 @@ trait ProtoEncoder[T]:
 
   /** For product types, the field encoders. Empty for primitives. */
   def fields: Vector[FieldEncoder[?]] = Vector.empty
+
+  /** For sum types (sealed traits), the variant encoders. Empty for non-sum types. */
+  def variants: Vector[VariantEncoder[?]] = Vector.empty
 
 object ProtoEncoder:
 
@@ -46,19 +57,91 @@ object ProtoEncoder:
     }
     makeProductEncoder[T](fieldEncoders, ProtoSchema(structFields), ct)
 
-  // === Enum (sum type) derivation ===
+  // === Sum type (enum/sealed trait) derivation ===
 
   private inline def deriveEnum[T](m: Mirror.SumOf[T], ct: ClassTag[T]): ProtoEncoder[T] =
-    // Enums are stored as StringType (by name)
-    // This matches Spark's EnumEncoder behavior
-    makeEnumEncoder[T](ct)
+    // Derive variant encoders for each case of the sealed trait/enum
+    val variantEncoders = deriveVariants[m.MirroredElemTypes, m.MirroredElemLabels](0)
+    // Check if all variants are singletons (simple enum) or have data (sealed trait)
+    val allSingletons = variantEncoders.forall(_.isSingleton)
+    if allSingletons then
+      // Simple enum - store as StringType (matches Spark's EnumEncoder behavior)
+      makeEnumEncoder[T](ct)
+    else
+      // Sealed trait with data-carrying variants - use SumType
+      makeSumEncoder[T](m, variantEncoders, ct)
 
-  /** Factory method for enum encoders. */
+  /** Derive variant encoders for each case of a sum type. */
+  private inline def deriveVariants[Types <: Tuple, Labels <: Tuple](ordinal: Int): Vector[VariantEncoder[?]] =
+    inline (erasedValue[Types], erasedValue[Labels]) match
+      case (_: EmptyTuple, _: EmptyTuple) =>
+        Vector.empty
+      case (_: (t *: ts), _: (l *: ls)) =>
+        val name = constValue[l].toString
+        val variantEnc = deriveVariantEncoder[t](name, ordinal)
+        variantEnc +: deriveVariants[ts, ls](ordinal + 1)
+
+  /** Derive encoder for a single variant (case class or case object). */
+  private inline def deriveVariantEncoder[T](name: String, ordinal: Int): VariantEncoder[T] =
+    summonFrom {
+      case m: Mirror.ProductOf[T] =>
+        // Check if it has any fields by looking at MirroredElemTypes
+        inline erasedValue[m.MirroredElemTypes] match
+          case _: EmptyTuple =>
+            // Zero fields = case object (singleton)
+            VariantEncoder[T](name, ordinal, None, isSingleton = true)
+          case _ =>
+            // Has fields = case class with data
+            val enc = derived[T]
+            VariantEncoder[T](name, ordinal, Some(enc), isSingleton = false)
+      case _ =>
+        // No Mirror.ProductOf at all = singleton
+        VariantEncoder[T](name, ordinal, None, isSingleton = true)
+    }
+
+  /** Factory method for simple enum encoders (all singletons). */
   def makeEnumEncoder[T](ct: ClassTag[T]): ProtoEncoder[T] = new ProtoEncoder[T]:
     def schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.StringType  // Enums stored as strings
     val nullable: Boolean = false
     val clsTag: ClassTag[T] = ct
+
+  /** Factory method for sealed trait (sum type) encoders with data-carrying variants. */
+  def makeSumEncoder[T](
+      mirror: Mirror.SumOf[T],
+      variantEncoders: Vector[VariantEncoder[?]],
+      ct: ClassTag[T]
+  ): ProtoEncoder[T] =
+    // Build SumType with variant information
+    val sumVariants = variantEncoders.map { ve =>
+      SumVariant(ve.name, ve.ordinal, ve.encoder.map(_.catalystType))
+    }
+    val sumType = ProtoType.SumType("_type", sumVariants)
+    new SumEncoder[T](mirror, variantEncoders, sumType, ct)
+
+  /** Encoder implementation for sealed traits with data-carrying variants. */
+  class SumEncoder[T](
+      val mirror: Mirror.SumOf[T],
+      variantEncoders: Vector[VariantEncoder[?]],
+      val catalystType: ProtoType,
+      val clsTag: ClassTag[T]
+  ) extends ProtoEncoder[T]:
+    val schema: ProtoSchema = catalystType match
+      case ProtoType.SumType(_, variants) =>
+        // Schema represents the discriminated union structure
+        val fields = Vector(
+          ProtoStructField("_type", ProtoType.StringType, nullable = false),
+          ProtoStructField("_ordinal", ProtoType.IntType, nullable = false)
+        )
+        ProtoSchema(fields)
+      case _ => ProtoSchema(Vector.empty)
+    val nullable: Boolean = false
+    override def variants: Vector[VariantEncoder[?]] = variantEncoders
+
+    /** Get the variant encoder for a given value at runtime. */
+    def variantFor(value: T): VariantEncoder[?] =
+      val ordinal = mirror.ordinal(value)
+      variantEncoders(ordinal)
 
   private inline def deriveFields[Types <: Tuple, Labels <: Tuple]: Vector[FieldEncoder[?]] =
     inline (erasedValue[Types], erasedValue[Labels]) match
@@ -87,6 +170,7 @@ object ProtoEncoder:
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
             "  - Products: case classes, tuples\n" +
             "  - Enums: Scala 3 enums, Java enums\n" +
+            "  - Sealed traits: ADTs with case classes and case objects\n" +
             "  - UDTs: Types with a ProtoUDT[T] in scope\n\n" +
             "For custom types, either:\n" +
             "  1. Define a case class and use ProtoEncoder.derived[YourType]\n" +

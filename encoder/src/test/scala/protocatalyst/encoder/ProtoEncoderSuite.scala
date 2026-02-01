@@ -20,6 +20,26 @@ enum Status derives ProtoEncoder:
 // Case class containing enum
 case class Task(name: String, status: Status) derives ProtoEncoder
 
+// === Test sealed traits (ADTs) ===
+
+// Simple sealed trait with case objects only (should behave like enum)
+sealed trait SimpleColor derives ProtoEncoder
+case object Red extends SimpleColor
+case object Green extends SimpleColor
+case object Blue extends SimpleColor
+
+// Sealed trait with data-carrying variants
+sealed trait Event derives ProtoEncoder
+case class Click(x: Int, y: Int) extends Event derives ProtoEncoder
+case class View(page: String) extends Event derives ProtoEncoder
+case object Close extends Event
+
+// Sealed trait with nested case class
+sealed trait Message derives ProtoEncoder
+case object Ping extends Message
+case class Pong(id: Long) extends Message derives ProtoEncoder
+case class Data(payload: Array[Byte]) extends Message derives ProtoEncoder
+
 class ProtoEncoderSuite extends munit.FunSuite:
 
   // === Primitive encoder tests ===
@@ -822,3 +842,117 @@ class ProtoEncoderSuite extends munit.FunSuite:
     val enc = summon[ProtoEncoder[String]]
     val extracted = ProtoEncoder.extractUDT(enc)
     assert(extracted.isEmpty)
+
+  // === Sealed trait (ADT) encoder tests ===
+
+  test("sealed trait with case objects only uses StringType (enum-like)"):
+    val enc = ProtoEncoder.derived[SimpleColor]
+    // All case objects = treated as simple enum
+    assertEquals(enc.catalystType, ProtoType.StringType)
+    assertEquals(enc.nullable, false)
+
+  test("sealed trait with data-carrying variants uses SumType"):
+    val enc = ProtoEncoder.derived[Event]
+    // Has data-carrying variants = SumType
+    enc.catalystType match
+      case ProtoType.SumType(discriminator, variants) =>
+        assertEquals(discriminator, "_type")
+        assertEquals(variants.size, 3)
+        assertEquals(variants(0).name, "Click")
+        assertEquals(variants(0).ordinal, 0)
+        assertEquals(variants(1).name, "View")
+        assertEquals(variants(1).ordinal, 1)
+        assertEquals(variants(2).name, "Close")
+        assertEquals(variants(2).ordinal, 2)
+        // Click and View have data, Close is singleton
+        assert(variants(0).dataType.isDefined)
+        assert(variants(1).dataType.isDefined)
+        assert(variants(2).dataType.isEmpty) // case object
+      case other =>
+        fail(s"Expected SumType, got $other")
+
+  test("sealed trait encoder has variants populated"):
+    val enc = ProtoEncoder.derived[Event]
+    assertEquals(enc.variants.size, 3)
+    assertEquals(enc.variants(0).name, "Click")
+    assertEquals(enc.variants(0).isSingleton, false)
+    assertEquals(enc.variants(1).name, "View")
+    assertEquals(enc.variants(1).isSingleton, false)
+    assertEquals(enc.variants(2).name, "Close")
+    assertEquals(enc.variants(2).isSingleton, true)
+
+  test("sealed trait variant encoders have correct types"):
+    val enc = ProtoEncoder.derived[Event]
+
+    // Click variant encoder
+    enc.variants(0).encoder match
+      case Some(clickEnc) =>
+        clickEnc.catalystType match
+          case ProtoType.StructType(fields) =>
+            assertEquals(fields.size, 2)
+            assertEquals(fields(0).name, "x")
+            assertEquals(fields(0).dataType, ProtoType.IntType)
+            assertEquals(fields(1).name, "y")
+            assertEquals(fields(1).dataType, ProtoType.IntType)
+          case other =>
+            fail(s"Expected StructType for Click, got $other")
+      case None =>
+        fail("Click should have an encoder")
+
+    // View variant encoder
+    enc.variants(1).encoder match
+      case Some(viewEnc) =>
+        viewEnc.catalystType match
+          case ProtoType.StructType(fields) =>
+            assertEquals(fields.size, 1)
+            assertEquals(fields(0).name, "page")
+            assertEquals(fields(0).dataType, ProtoType.StringType)
+          case other =>
+            fail(s"Expected StructType for View, got $other")
+      case None =>
+        fail("View should have an encoder")
+
+    // Close is a case object - no encoder
+    assertEquals(enc.variants(2).encoder, None)
+
+  test("sealed trait encoder has correct ClassTag"):
+    val enc = ProtoEncoder.derived[Event]
+    assertEquals(enc.clsTag.runtimeClass, classOf[Event])
+
+  test("sealed trait with mixed case objects and classes"):
+    val enc = ProtoEncoder.derived[Message]
+    enc.catalystType match
+      case ProtoType.SumType(_, variants) =>
+        assertEquals(variants.size, 3)
+        assertEquals(variants(0).name, "Ping")
+        assert(variants(0).dataType.isEmpty) // case object
+        assertEquals(variants(1).name, "Pong")
+        assert(variants(1).dataType.isDefined) // case class
+        assertEquals(variants(2).name, "Data")
+        assert(variants(2).dataType.isDefined) // case class
+      case ProtoType.StringType =>
+        // If all singletons, becomes StringType (shouldn't happen here)
+        fail("Expected SumType, not StringType")
+      case other =>
+        fail(s"Expected SumType, got $other")
+
+  test("SumEncoder can determine variant at runtime"):
+    val enc = ProtoEncoder.derived[Event].asInstanceOf[ProtoEncoder.SumEncoder[Event]]
+
+    val click: Event = Click(10, 20)
+    val view: Event = View("home")
+    val close: Event = Close
+
+    assertEquals(enc.variantFor(click).name, "Click")
+    assertEquals(enc.variantFor(click).ordinal, 0)
+    assertEquals(enc.variantFor(view).name, "View")
+    assertEquals(enc.variantFor(view).ordinal, 1)
+    assertEquals(enc.variantFor(close).name, "Close")
+    assertEquals(enc.variantFor(close).ordinal, 2)
+
+  test("sealed trait can be summoned via given"):
+    val enc = summon[ProtoEncoder[Event]]
+    enc.catalystType match
+      case ProtoType.SumType(_, _) => () // ok
+      case other =>
+        fail(s"Expected SumType, got $other")
