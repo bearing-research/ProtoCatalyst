@@ -39,6 +39,13 @@ case class ParityWithPeriod(name: String, period: Period) derives InlineRowSeria
 case class ParityWithBigInt(name: String, value: BigInt) derives InlineRowSerializer
 case class ParityWithBigDecimal(name: String, value: BigDecimal) derives InlineRowSerializer
 
+// Tuple tests
+case class ParityWithTuple2(label: String, pair: (Int, String)) derives InlineRowSerializer
+case class ParityWithTuple3(label: String, triple: (String, Int, Double))
+    derives InlineRowSerializer
+case class ParityWithTuple5(label: String, tuple: (String, Int, Double, Boolean, Long))
+    derives InlineRowSerializer
+
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
   val simple: ParitySimple = ParitySimple("Alice", 30)
@@ -87,6 +94,12 @@ object ParityTestData:
   val withBigInt: ParityWithBigInt = ParityWithBigInt("large", BigInt("12345678901234567890"))
   val withBigDecimal: ParityWithBigDecimal =
     ParityWithBigDecimal("precise", BigDecimal("123.456789012345678901"))
+
+  // Tuple test data - must match benchmark-spark BenchmarkData
+  val withTuple2: ParityWithTuple2 = ParityWithTuple2("pair", (42, "answer"))
+  val withTuple3: ParityWithTuple3 = ParityWithTuple3("triple", ("hello", 123, 3.14))
+  val withTuple5: ParityWithTuple5 =
+    ParityWithTuple5("quintet", ("test", 1, 2.5, true, 9999999999L))
 
 /** Spark parity tests using golden files.
   *
@@ -307,3 +320,12 @@ class SparkParitySuite extends munit.FunSuite:
 
   test("WithBigDecimal (DecimalType) parity with Spark"):
     runParityTest("with_bigdecimal", ParityTestData.withBigDecimal)
+
+  test("WithTuple2 (Tuple2) parity with Spark"):
+    runParityTest("with_tuple2", ParityTestData.withTuple2)
+
+  test("WithTuple3 (Tuple3) parity with Spark"):
+    runParityTest("with_tuple3", ParityTestData.withTuple3)
+
+  test("WithTuple5 (Tuple5) parity with Spark"):
+    runParityTest("with_tuple5", ParityTestData.withTuple5)

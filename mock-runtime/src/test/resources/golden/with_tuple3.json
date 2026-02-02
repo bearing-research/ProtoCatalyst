@@ -1,0 +1,12 @@
+{
+  "typeName": "WithTuple3",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T19:04:36.597918Z",
+  "schema": {"fields":[{"name":"label","type":"StringType","nullable":true},{"name":"triple","type":"StructType(_1:StringType,_2:IntType,_3:DoubleType)","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"label":{"type":"UTF8String","base64":"dHJpcGxl"},"triple":{"type":"InternalRow","fields":{"_1":{"type":"UTF8String","base64":"aGVsbG8="},"_2":{"type":"Int","value":123},"_3":{"type":"Double","value":3.14}}}}
+    }
+  ]
+}

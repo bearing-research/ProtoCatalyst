@@ -301,6 +301,33 @@ object GoldenFileGenerator {
     writeFile(new File(outputDir, "with_bigdecimal.json"), withBigDecimalJson)
     println("  ✓ with_bigdecimal.json")
 
+    // WithTuple2 (Tuple2)
+    val withTuple2Json = generate(
+      "WithTuple2",
+      ExpressionEncoder[WithTuple2](),
+      Seq(("standard", BenchmarkData.withTuple2))
+    )
+    writeFile(new File(outputDir, "with_tuple2.json"), withTuple2Json)
+    println("  ✓ with_tuple2.json")
+
+    // WithTuple3 (Tuple3)
+    val withTuple3Json = generate(
+      "WithTuple3",
+      ExpressionEncoder[WithTuple3](),
+      Seq(("standard", BenchmarkData.withTuple3))
+    )
+    writeFile(new File(outputDir, "with_tuple3.json"), withTuple3Json)
+    println("  ✓ with_tuple3.json")
+
+    // WithTuple5 (Tuple5)
+    val withTuple5Json = generate(
+      "WithTuple5",
+      ExpressionEncoder[WithTuple5](),
+      Seq(("standard", BenchmarkData.withTuple5))
+    )
+    writeFile(new File(outputDir, "with_tuple5.json"), withTuple5Json)
+    println("  ✓ with_tuple5.json")
+
     println("\nDone! Copy these files to mock-runtime/src/test/resources/golden/")
   }
 

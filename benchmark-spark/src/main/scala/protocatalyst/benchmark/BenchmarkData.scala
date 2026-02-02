@@ -41,6 +41,11 @@ case class Complex(
     nested: Option[Person]
 )
 
+// Tuple tests - wrap tuples in case classes for ExpressionEncoder
+case class WithTuple2(label: String, pair: (Int, String))
+case class WithTuple3(label: String, triple: (String, Int, Double))
+case class WithTuple5(label: String, tuple: (String, Int, Double, Boolean, Long))
+
 /** Factory for creating test data instances */
 object BenchmarkData {
   val simple: Simple = Simple("Alice", 30)
@@ -88,4 +93,10 @@ object BenchmarkData {
   val withBigInt: WithBigInt = WithBigInt("large", BigInt("12345678901234567890"))
   val withBigDecimal: WithBigDecimal =
     WithBigDecimal("precise", BigDecimal("123.456789012345678901"))
+
+  // Tuple test data
+  val withTuple2: WithTuple2 = WithTuple2("pair", (42, "answer"))
+  val withTuple3: WithTuple3 = WithTuple3("triple", ("hello", 123, 3.14))
+  val withTuple5: WithTuple5 =
+    WithTuple5("quintet", ("test", 1, 2.5, true, 9999999999L))
 }
