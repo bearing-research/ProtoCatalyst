@@ -1,0 +1,12 @@
+{
+  "typeName": "WithBigInt",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T08:09:48.096858Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"value","type":"DecimalType(38,0)","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"bGFyZ2U="},"value":{"type":"Decimal","value":"12345678901234567890","precision":38,"scale":0}}
+    }
+  ]
+}

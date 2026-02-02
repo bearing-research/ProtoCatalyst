@@ -59,6 +59,9 @@ object MockDataType:
   case object VariantType extends MockDataType:
     def typeName = "variant"
 
+  case object NullType extends MockDataType:
+    def typeName = "null"
+
   case class CharType(length: Int) extends MockDataType:
     def typeName = s"char($length)"
 

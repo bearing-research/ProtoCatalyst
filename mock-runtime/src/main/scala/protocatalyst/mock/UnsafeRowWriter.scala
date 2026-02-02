@@ -204,6 +204,9 @@ class UnsafeRowWriter(numFields: Int):
           throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
         case MockDataType.VariantType =>
           throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+        case MockDataType.NullType =>
+          // NullType should never have non-null values
+          throw IllegalArgumentException("NullType should only contain null values")
         case _: MockDataType.CharType | _: MockDataType.VarcharType =>
           value match
             case s: String         => write(ordinal, s)

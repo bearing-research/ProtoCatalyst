@@ -26,6 +26,7 @@ object MockSchemaConverter:
     case ProtoType.TimeType(precision)   => MockDataType.TimeType(precision)
     case ProtoType.CalendarIntervalType  => MockDataType.CalendarIntervalType
     case ProtoType.VariantType           => MockDataType.VariantType
+    case ProtoType.NullType              => MockDataType.NullType
     case ProtoType.CharType(length)      => MockDataType.CharType(length)
     case ProtoType.VarcharType(length)   => MockDataType.VarcharType(length)
     case ProtoType.DecimalType(p, s)     =>
@@ -74,6 +75,7 @@ object MockSchemaConverter:
     case MockDataType.TimeType(precision)   => ProtoType.TimeType(precision)
     case MockDataType.CalendarIntervalType  => ProtoType.CalendarIntervalType
     case MockDataType.VariantType           => ProtoType.VariantType
+    case MockDataType.NullType              => ProtoType.NullType
     case MockDataType.CharType(length)      => ProtoType.CharType(length)
     case MockDataType.VarcharType(length)   => ProtoType.VarcharType(length)
     case MockDataType.DecimalType(p, s)     =>

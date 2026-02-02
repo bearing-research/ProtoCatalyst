@@ -275,6 +275,22 @@ object ProtoEncoder:
   given javaBigIntegerEncoder: ProtoEncoder[java.math.BigInteger] =
     BoxedPrimitiveEncoder(ProtoType.DecimalType(38, 0), classTag[java.math.BigInteger])
 
+  // Null type (java.lang.Void) - for null-only columns
+  given voidEncoder: ProtoEncoder[java.lang.Void] =
+    PrimitiveEncoder(ProtoType.NullType, classTag[java.lang.Void])
+
+  // === Char(n) and Varchar(n) encoders ===
+  // These are String at runtime but with length constraints in the schema.
+  // Use these factory functions when you need to specify the max length.
+
+  /** Create a String encoder with Char(n) type (fixed-length string). */
+  def charEncoder(length: Int): ProtoEncoder[String] =
+    PrimitiveEncoder(ProtoType.CharType(length), classTag[String])
+
+  /** Create a String encoder with Varchar(n) type (variable-length string with max). */
+  def varcharEncoder(length: Int): ProtoEncoder[String] =
+    PrimitiveEncoder(ProtoType.VarcharType(length), classTag[String])
+
   // === Option encoder ===
 
   given optionEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Option[T]] =

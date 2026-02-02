@@ -21,6 +21,7 @@ enum ProtoType extends Serializable:
   case TimeType(precision: Int) // For java.time.LocalTime (microseconds since midnight)
   case CalendarIntervalType // For CalendarInterval (months, days, microseconds)
   case VariantType // For semi-structured data (JSON-like)
+  case NullType // For null-only columns (java.lang.Void)
   case CharType(length: Int) // Fixed-length string
   case VarcharType(length: Int) // Variable-length string with max
   case DecimalType(precision: Int, scale: Int)

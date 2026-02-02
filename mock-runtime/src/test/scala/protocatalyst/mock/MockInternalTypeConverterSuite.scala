@@ -512,3 +512,33 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
 
     assertEquals(deserialized.name, original.name)
     assertEquals(deserialized.period.toTotalMonths, original.period.toTotalMonths)
+
+  // === NullType tests ===
+
+  test("NullType toInternal handles null value"):
+    val result = MockInternalTypeConverter.toInternal(null, ProtoType.NullType)
+    assertEquals(result, null)
+
+  test("NullType toInternal throws on non-null value"):
+    intercept[IllegalArgumentException] {
+      MockInternalTypeConverter.toInternal("not null", ProtoType.NullType)
+    }
+
+  test("NullType fromInternal handles null value"):
+    val result = MockInternalTypeConverter.fromInternal(null, ProtoType.NullType)
+    assertEquals(result, null)
+
+  test("NullType fromInternal throws on non-null value"):
+    intercept[IllegalArgumentException] {
+      MockInternalTypeConverter.fromInternal("not null", ProtoType.NullType)
+    }
+
+  // === Schema converter tests for NullType ===
+
+  test("MockSchemaConverter converts NullType to MockDataType.NullType"):
+    val result = MockSchemaConverter.toMockType(ProtoType.NullType)
+    assertEquals(result, MockDataType.NullType)
+
+  test("MockSchemaConverter converts MockDataType.NullType to ProtoType.NullType"):
+    val result = MockSchemaConverter.toProtoType(MockDataType.NullType)
+    assertEquals(result, ProtoType.NullType)

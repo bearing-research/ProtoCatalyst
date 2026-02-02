@@ -25,6 +25,14 @@ case class WithCollections(items: List[String], scores: Map[String, Double]) der
 // Temporal types - tests date/time encoding
 case class Temporal(date: LocalDate, time: Instant) derives ProtoEncoder
 
+// Duration (DayTimeIntervalType) and Period (YearMonthIntervalType) tests
+case class WithDuration(name: String, duration: Duration) derives ProtoEncoder
+case class WithPeriod(name: String, period: Period) derives ProtoEncoder
+
+// BigInt/BigDecimal tests (DecimalType)
+case class WithBigInt(name: String, value: BigInt) derives ProtoEncoder
+case class WithBigDecimal(name: String, value: BigDecimal) derives ProtoEncoder
+
 // Collections of custom types - tests nested struct serialization in arrays/maps
 case class Team(name: String, members: List[Person]) derives ProtoEncoder
 case class Directory(name: String, personByName: Map[String, Person]) derives ProtoEncoder
@@ -131,3 +139,12 @@ object BenchmarkData:
   )
 
   val complexWithoutNested: Complex = complex.copy(nested = None)
+
+  // Duration/Period test data
+  val withDuration: WithDuration = WithDuration("task", Duration.ofHours(2).plusMinutes(30))
+  val withPeriod: WithPeriod = WithPeriod("subscription", Period.of(1, 6, 0))
+
+  // BigInt/BigDecimal test data
+  val withBigInt: WithBigInt = WithBigInt("large", BigInt("12345678901234567890"))
+  val withBigDecimal: WithBigDecimal =
+    WithBigDecimal("precise", BigDecimal("123.456789012345678901"))

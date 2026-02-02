@@ -10,6 +10,14 @@ import java.time._
 // Simple case class - baseline benchmark
 case class Simple(name: String, age: Int)
 
+// Duration (DayTimeIntervalType) and Period (YearMonthIntervalType) test
+case class WithDuration(name: String, duration: Duration)
+case class WithPeriod(name: String, period: Period)
+
+// BigInt/BigDecimal test
+case class WithBigInt(name: String, value: BigInt)
+case class WithBigDecimal(name: String, value: BigDecimal)
+
 // Address for nested structures
 case class Address(street: String, city: String, zip: String)
 
@@ -62,4 +70,12 @@ object BenchmarkData {
     created = Instant.parse("2024-01-15T10:30:00Z"),
     nested = Some(person)
   )
+
+  // Duration/Period test data
+  val withDuration: WithDuration = WithDuration("task", Duration.ofHours(2).plusMinutes(30))
+  val withPeriod: WithPeriod = WithPeriod("subscription", Period.of(1, 6, 0))
+
+  // BigInt/BigDecimal test data
+  val withBigInt: WithBigInt = WithBigInt("large", BigInt("12345678901234567890"))
+  val withBigDecimal: WithBigDecimal = WithBigDecimal("precise", BigDecimal("123.456789012345678901"))
 }

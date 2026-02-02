@@ -470,6 +470,7 @@ object TypeConverter:
       case TimeType(precision)                    => MDT.TimeType(precision)
       case CalendarIntervalType                   => MDT.CalendarIntervalType
       case VariantType                            => MDT.VariantType
+      case NullType                               => MDT.NullType
       case CharType(length)                       => MDT.CharType(length)
       case VarcharType(length)                    => MDT.VarcharType(length)
       case DecimalType(p, s)                      => MDT.DecimalType(p, s)
@@ -511,6 +512,7 @@ object TypeConverter:
       case MDT.TimeType(precision)                    => PT.TimeType(precision)
       case MDT.CalendarIntervalType                   => PT.CalendarIntervalType
       case MDT.VariantType                            => PT.VariantType
+      case MDT.NullType                               => PT.NullType
       case MDT.CharType(length)                       => PT.CharType(length)
       case MDT.VarcharType(length)                    => PT.VarcharType(length)
       case MDT.DecimalType(p, s)                      => PT.DecimalType(p, s)

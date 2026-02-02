@@ -138,6 +138,9 @@ object UnsafeRowSerializer:
       case MockDataType.VariantType =>
         // Variant is stored as binary
         throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+      case MockDataType.NullType =>
+        // NullType should never have non-null values
+        throw IllegalArgumentException("NullType should only contain null values")
       case _: MockDataType.CharType | _: MockDataType.VarcharType =>
         // Char/Varchar are stored as strings
         writer.write(ordinal, value.asInstanceOf[String].getBytes("UTF-8"))
@@ -199,6 +202,9 @@ object UnsafeRowSerializer:
         throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
       case MockDataType.VariantType =>
         throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+      case MockDataType.NullType =>
+        // NullType should never have non-null values
+        throw IllegalArgumentException("NullType should only contain null values")
       case _: MockDataType.CharType | _: MockDataType.VarcharType => row.getString(ordinal)
       case _: MockDataType.DecimalType                            => row.getDecimal(ordinal)
       case st: MockDataType.StructType                            =>

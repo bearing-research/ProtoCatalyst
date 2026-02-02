@@ -124,6 +124,13 @@ object MockInternalTypeConverter extends InternalTypeConverter:
           // Variant stored as binary blob - pass through
           value
 
+        case ProtoType.NullType =>
+          // NullType always represents null - should only receive null values
+          // If we get a non-null value, it's an error condition
+          throw IllegalArgumentException(
+            s"NullType should only contain null values, got: ${value.getClass}"
+          )
+
         case _: ProtoType.CharType | _: ProtoType.VarcharType =>
           // Char/Varchar are treated as strings internally
           MockUTF8String(value.asInstanceOf[String])
@@ -243,6 +250,13 @@ object MockInternalTypeConverter extends InternalTypeConverter:
         case ProtoType.VariantType =>
           // Pass through
           value
+
+        case ProtoType.NullType =>
+          // NullType always returns null - should only contain null values
+          // If we get a non-null value, it's an error condition
+          throw IllegalArgumentException(
+            s"NullType should only contain null values, got: ${value.getClass}"
+          )
 
         case _: ProtoType.CharType | _: ProtoType.VarcharType =>
           // Convert back to String

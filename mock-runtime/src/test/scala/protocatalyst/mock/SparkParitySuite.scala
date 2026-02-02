@@ -1,6 +1,6 @@
 package protocatalyst.mock
 
-import java.time.Instant
+import java.time.{Duration, Instant, Period}
 import java.util.Base64
 
 import scala.io.Source
@@ -28,6 +28,14 @@ case class ParityComplex(
     created: Instant,
     nested: Option[ParityPerson]
 ) derives InlineRowSerializer
+
+// Duration (DayTimeIntervalType) and Period (YearMonthIntervalType) tests
+case class ParityWithDuration(name: String, duration: Duration) derives InlineRowSerializer
+case class ParityWithPeriod(name: String, period: Period) derives InlineRowSerializer
+
+// BigInt/BigDecimal tests (DecimalType)
+case class ParityWithBigInt(name: String, value: BigInt) derives InlineRowSerializer
+case class ParityWithBigDecimal(name: String, value: BigDecimal) derives InlineRowSerializer
 
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
@@ -59,6 +67,16 @@ object ParityTestData:
     created = Instant.parse("2024-01-15T10:30:00Z"),
     nested = Some(person)
   )
+
+  // Duration/Period test data - must match benchmark-spark BenchmarkData
+  val withDuration: ParityWithDuration =
+    ParityWithDuration("task", Duration.ofHours(2).plusMinutes(30))
+  val withPeriod: ParityWithPeriod = ParityWithPeriod("subscription", Period.of(1, 6, 0))
+
+  // BigInt/BigDecimal test data - must match benchmark-spark BenchmarkData
+  val withBigInt: ParityWithBigInt = ParityWithBigInt("large", BigInt("12345678901234567890"))
+  val withBigDecimal: ParityWithBigDecimal =
+    ParityWithBigDecimal("precise", BigDecimal("123.456789012345678901"))
 
 /** Spark parity tests using golden files.
   *
@@ -123,6 +141,43 @@ class SparkParitySuite extends munit.FunSuite:
 
       case "Timestamp" =>
         assertEquals(actual, expected("micros").num.toLong, s"Timestamp mismatch at $path")
+
+      case "DayTimeInterval" =>
+        // Duration stored as microseconds (Long)
+        assertEquals(actual, expected("micros").num.toLong, s"DayTimeInterval mismatch at $path")
+
+      case "YearMonthInterval" =>
+        // Period stored as total months (Int)
+        assertEquals(actual, expected("months").num.toInt, s"YearMonthInterval mismatch at $path")
+
+      case "Decimal" =>
+        // BigInt/BigDecimal stored as Spark Decimal
+        val expectedValue = BigDecimal(expected("value").str)
+        actual match
+          case bd: java.math.BigDecimal =>
+            assertEquals(
+              BigDecimal(bd),
+              expectedValue,
+              s"Decimal mismatch at $path"
+            )
+          case bd: BigDecimal =>
+            assertEquals(bd, expectedValue, s"Decimal mismatch at $path")
+          case bi: BigInt =>
+            assertEquals(
+              BigDecimal(bi),
+              expectedValue,
+              s"Decimal mismatch at $path"
+            )
+          case bi: java.math.BigInteger =>
+            assertEquals(
+              BigDecimal(BigInt(bi)),
+              expectedValue,
+              s"Decimal mismatch at $path"
+            )
+          case other =>
+            fail(s"Expected Decimal type at $path, got ${
+                if other == null then "null" else other.getClass.getName
+              }")
 
       case "ArrayData" =>
         actual match
@@ -227,3 +282,15 @@ class SparkParitySuite extends munit.FunSuite:
 
   test("Complex (Option, Instant, nested) parity with Spark"):
     runParityTest("complex", ParityTestData.complex)
+
+  test("WithDuration (DayTimeIntervalType) parity with Spark"):
+    runParityTest("with_duration", ParityTestData.withDuration)
+
+  test("WithPeriod (YearMonthIntervalType) parity with Spark"):
+    runParityTest("with_period", ParityTestData.withPeriod)
+
+  test("WithBigInt (DecimalType) parity with Spark"):
+    runParityTest("with_bigint", ParityTestData.withBigInt)
+
+  test("WithBigDecimal (DecimalType) parity with Spark"):
+    runParityTest("with_bigdecimal", ParityTestData.withBigDecimal)

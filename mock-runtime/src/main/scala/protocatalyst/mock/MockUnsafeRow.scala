@@ -187,6 +187,9 @@ class MockUnsafeRow private (
           throw UnsupportedOperationException("CalendarIntervalType not yet supported in UnsafeRow")
         case MockDataType.VariantType =>
           throw UnsupportedOperationException("VariantType not yet supported in UnsafeRow")
+        case MockDataType.NullType =>
+          // NullType should never have non-null values - but we handle isNullAt above
+          throw IllegalArgumentException("NullType should only contain null values")
         case _: MockDataType.CharType | _: MockDataType.VarcharType => getUTF8String(ordinal)
         case _: MockDataType.DecimalType                            => getDecimal(ordinal)
         case st: MockDataType.StructType => getStruct(ordinal, st.fields.size)

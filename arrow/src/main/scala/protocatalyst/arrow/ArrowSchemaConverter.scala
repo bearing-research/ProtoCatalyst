@@ -58,6 +58,9 @@ object ArrowSchemaConverter:
     case ProtoType.VariantType =>
       // Variant is semi-structured data - store as binary
       ArrowType.LargeBinary.INSTANCE
+    case ProtoType.NullType =>
+      // Null type represents null-only columns
+      ArrowType.Null.INSTANCE
     case ProtoType.CharType(_) | ProtoType.VarcharType(_) =>
       // Char/Varchar are stored as UTF8 strings
       ArrowType.Utf8.INSTANCE
@@ -223,7 +226,7 @@ object ArrowSchemaConverter:
       ProtoType.StructType(children.map(fromArrowField).toVector)
 
     case ArrowType.Null.INSTANCE =>
-      ProtoType.UnresolvedType("null")
+      ProtoType.NullType
 
     case other =>
       ProtoType.UnresolvedType(other.toString)

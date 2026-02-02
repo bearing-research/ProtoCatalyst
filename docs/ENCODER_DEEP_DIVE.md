@@ -386,6 +386,10 @@ When serializing, certain types need conversion to their "internal" format:
 | `String` | `UTF8String` | UTF-8 is more compact than UTF-16 |
 | `LocalDate` | `Int` | Days since 1970-01-01 |
 | `Instant` | `Long` | Microseconds since 1970-01-01 |
+| `Duration` | `Long` | Microseconds (DayTimeIntervalType) |
+| `Period` | `Int` | Total months (YearMonthIntervalType) |
+| `BigInt` | `Decimal` | DecimalType(38,0) |
+| `BigDecimal` | `Decimal` | DecimalType(38,18) |
 | `List[T]` | `ArrayData` | Optimized array wrapper |
 | Nested case class | Nested `Array[Any]` | Recursive structure |
 
@@ -519,10 +523,13 @@ inline def derived[T](using m: Mirror.ProductOf[T]): ProtoEncoder[T] =
 |------|-------|---------------|
 | Primitives (Int, Long, etc.) | ✅ | ✅ |
 | String, Binary | ✅ | ✅ |
-| BigDecimal | ✅ | ✅ |
-| java.time types | ✅ | ✅ |
+| BigDecimal, BigInt | ✅ | ✅ |
+| java.time.LocalDate, Instant | ✅ | ✅ |
+| java.time.Duration (DayTimeInterval) | ✅ | ✅ |
+| java.time.Period (YearMonthInterval) | ✅ | ✅ |
 | Option[T] | ✅ | ✅ |
 | Collections (List, Map, etc.) | ✅ | ✅ |
+| Tuples (Tuple2-Tuple22) | ✅ | ✅ |
 | Case classes | ✅ | ✅ |
 | Nested structs | ✅ | ✅ |
 | Java enums | ✅ | ✅ |

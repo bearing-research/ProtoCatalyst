@@ -68,6 +68,14 @@ object GoldenFileGenerator {
           // Stored as microseconds (Long)
           s"""{"type":"TimestampNTZ","micros":${value.asInstanceOf[Long]}}"""
 
+        case DayTimeIntervalType(_, _) =>
+          // Stored as microseconds (Long)
+          s"""{"type":"DayTimeInterval","micros":${value.asInstanceOf[Long]}}"""
+
+        case YearMonthIntervalType(_, _) =>
+          // Stored as total months (Int)
+          s"""{"type":"YearMonthInterval","months":${value.asInstanceOf[Int]}}"""
+
         case ArrayType(elementType, _) =>
           val arr = value.asInstanceOf[ArrayData]
           val elements = (0 until arr.numElements()).map { i =>
@@ -163,6 +171,8 @@ object GoldenFileGenerator {
     case DateType          => "DateType"
     case TimestampType     => "TimestampType"
     case TimestampNTZType  => "TimestampNTZType"
+    case DayTimeIntervalType(_, _) => "DayTimeIntervalType"
+    case YearMonthIntervalType(_, _) => "YearMonthIntervalType"
     case ArrayType(et, cn) =>
       s"ArrayType(${dataTypeToString(et)},$cn)"
     case MapType(kt, vt, vcn) =>
@@ -175,12 +185,19 @@ object GoldenFileGenerator {
   }
 
   def main(args: Array[String]): Unit = {
-    // Use class location to find the correct resource path
-    val classLocation = getClass.getProtectionDomain.getCodeSource.getLocation.getPath
-    val projectRoot = new File(
-      classLocation
-    ).getParentFile.getParentFile.getParentFile.getParentFile
-    val outputDir = new File(projectRoot, "src/main/resources/golden")
+    // Allow override via args or env, otherwise use class location
+    val outputDir = if (args.nonEmpty) {
+      new File(args(0))
+    } else {
+      sys.env.get("GOLDEN_OUTPUT_DIR").map(new File(_)).getOrElse {
+        // Use class location to find the correct resource path
+        val classLocation = getClass.getProtectionDomain.getCodeSource.getLocation.getPath
+        val projectRoot = new File(
+          classLocation
+        ).getParentFile.getParentFile.getParentFile.getParentFile
+        new File(projectRoot, "src/main/resources/golden")
+      }
+    }
     outputDir.mkdirs()
 
     println(s"Generating golden files to: ${outputDir.getAbsolutePath}")
@@ -238,6 +255,42 @@ object GoldenFileGenerator {
     )
     writeFile(new File(outputDir, "complex.json"), complexJson)
     println("  ✓ complex.json")
+
+    // WithDuration (DayTimeIntervalType)
+    val withDurationJson = generate(
+      "WithDuration",
+      ExpressionEncoder[WithDuration](),
+      Seq(("standard", BenchmarkData.withDuration))
+    )
+    writeFile(new File(outputDir, "with_duration.json"), withDurationJson)
+    println("  ✓ with_duration.json")
+
+    // WithPeriod (YearMonthIntervalType)
+    val withPeriodJson = generate(
+      "WithPeriod",
+      ExpressionEncoder[WithPeriod](),
+      Seq(("standard", BenchmarkData.withPeriod))
+    )
+    writeFile(new File(outputDir, "with_period.json"), withPeriodJson)
+    println("  ✓ with_period.json")
+
+    // WithBigInt (DecimalType)
+    val withBigIntJson = generate(
+      "WithBigInt",
+      ExpressionEncoder[WithBigInt](),
+      Seq(("standard", BenchmarkData.withBigInt))
+    )
+    writeFile(new File(outputDir, "with_bigint.json"), withBigIntJson)
+    println("  ✓ with_bigint.json")
+
+    // WithBigDecimal (DecimalType)
+    val withBigDecimalJson = generate(
+      "WithBigDecimal",
+      ExpressionEncoder[WithBigDecimal](),
+      Seq(("standard", BenchmarkData.withBigDecimal))
+    )
+    writeFile(new File(outputDir, "with_bigdecimal.json"), withBigDecimalJson)
+    println("  ✓ with_bigdecimal.json")
 
     println("\nDone! Copy these files to mock-runtime/src/test/resources/golden/")
   }

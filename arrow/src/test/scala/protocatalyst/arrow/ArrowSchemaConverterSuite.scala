@@ -213,3 +213,15 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
       assertEquals(converted.name, original.name)
       assertEquals(converted.dataType, original.dataType)
       assertEquals(converted.nullable, original.nullable)
+
+  // === NullType tests ===
+
+  test("convert NullType to Arrow Null type"):
+    val arrowType = ArrowSchemaConverter.toArrowType(ProtoType.NullType)
+    assertEquals(arrowType, ArrowType.Null.INSTANCE)
+
+  test("convert Arrow Null type back to NullType"):
+    val protoSchema = ProtoSchema(Vector(ProtoStructField("empty", ProtoType.NullType, true)))
+    val arrowSchema = ArrowSchemaConverter.toArrowSchema(protoSchema)
+    val backToProto = ArrowSchemaConverter.fromArrowSchema(arrowSchema)
+    assertEquals(backToProto.fields.head.dataType, ProtoType.NullType)

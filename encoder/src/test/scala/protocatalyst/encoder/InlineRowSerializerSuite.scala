@@ -411,3 +411,17 @@ class InlineRowSerializerSuite extends munit.FunSuite:
     val deserialized = serializer.deserialize(serializer.serialize(original))
 
     assertEquals(deserialized, original)
+
+  // === Char/Varchar encoder factory tests ===
+
+  test("charEncoder creates String encoder with CharType"):
+    val enc = ProtoEncoder.charEncoder(20)
+    assertEquals(enc.catalystType, ProtoType.CharType(20))
+
+  test("varcharEncoder creates String encoder with VarcharType"):
+    val enc = ProtoEncoder.varcharEncoder(100)
+    assertEquals(enc.catalystType, ProtoType.VarcharType(100))
+
+  test("voidEncoder maps to NullType"):
+    val enc = summon[ProtoEncoder[java.lang.Void]]
+    assertEquals(enc.catalystType, ProtoType.NullType)

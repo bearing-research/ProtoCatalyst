@@ -1,0 +1,12 @@
+{
+  "typeName": "WithDuration",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T08:09:48.055162Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"duration","type":"DayTimeIntervalType","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"dGFzaw=="},"duration":{"type":"DayTimeInterval","micros":9000000000}}
+    }
+  ]
+}
