@@ -1,0 +1,12 @@
+{
+  "typeName": "Person",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T03:35:16.567165Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"age","type":"IntType","nullable":false},{"name":"address","type":"StructType(street:StringType,city:StringType,zip:StringType)","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"Qm9i"},"age":{"type":"Int","value":25},"address":{"type":"InternalRow","fields":{"street":{"type":"UTF8String","base64":"MTIzIE1haW4gU3Q="},"city":{"type":"UTF8String","base64":"TmV3IFlvcms="},"zip":{"type":"UTF8String","base64":"MTAwMDE="}}}}
+    }
+  ]
+}

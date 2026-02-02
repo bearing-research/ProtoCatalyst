@@ -1,0 +1,12 @@
+{
+  "typeName": "Simple",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T03:35:16.291319Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"age","type":"IntType","nullable":false}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"QWxpY2U="},"age":{"type":"Int","value":30}}
+    }
+  ]
+}

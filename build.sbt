@@ -180,5 +180,13 @@ lazy val benchmarkSpark = project
       "--add-opens=java.base/java.nio=ALL-UNNAMED",
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
-    Jmh / fork := true
+    Jmh / fork := true,
+    // Task to generate golden files for Spark parity testing
+    // Run with: sbt "benchmarkSpark/runMain protocatalyst.benchmark.GoldenFileGenerator"
+    run / javaOptions ++= Seq(
+      "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED"
+    ),
+    run / fork := true
   )

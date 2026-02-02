@@ -1,0 +1,12 @@
+{
+  "typeName": "Address",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T03:35:16.358527Z",
+  "schema": {"fields":[{"name":"street","type":"StringType","nullable":true},{"name":"city","type":"StringType","nullable":true},{"name":"zip","type":"StringType","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"street":{"type":"UTF8String","base64":"MTIzIE1haW4gU3Q="},"city":{"type":"UTF8String","base64":"TmV3IFlvcms="},"zip":{"type":"UTF8String","base64":"MTAwMDE="}}
+    }
+  ]
+}

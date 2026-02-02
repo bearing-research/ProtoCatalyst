@@ -1,0 +1,12 @@
+{
+  "typeName": "Complex",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T03:35:17.151149Z",
+  "schema": {"fields":[{"name":"id","type":"LongType","nullable":false},{"name":"name","type":"StringType","nullable":true},{"name":"scores","type":"ArrayType(DoubleType,false)","nullable":true},{"name":"metadata","type":"MapType(StringType,StringType,true)","nullable":true},{"name":"created","type":"TimestampType","nullable":true},{"name":"nested","type":"StructType(name:StringType,age:IntType,address:StructType(street:StringType,city:StringType,zip:StringType))","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"id":{"type":"Long","value":12345},"name":{"type":"UTF8String","base64":"VGVzdEVudGl0eQ=="},"scores":{"type":"ArrayData","elements":[{"type":"Double","value":1.0},{"type":"Double","value":2.0},{"type":"Double","value":3.0},{"type":"Double","value":4.0},{"type":"Double","value":5.0}]},"metadata":{"type":"MapData","keys":[{"type":"UTF8String","base64":"a2V5MQ=="},{"type":"UTF8String","base64":"a2V5Mg=="}],"values":[{"type":"UTF8String","base64":"dmFsdWUx"},{"type":"UTF8String","base64":"dmFsdWUy"}]},"created":{"type":"Timestamp","micros":1705314600000000},"nested":{"type":"InternalRow","fields":{"name":{"type":"UTF8String","base64":"Qm9i"},"age":{"type":"Int","value":25},"address":{"type":"InternalRow","fields":{"street":{"type":"UTF8String","base64":"MTIzIE1haW4gU3Q="},"city":{"type":"UTF8String","base64":"TmV3IFlvcms="},"zip":{"type":"UTF8String","base64":"MTAwMDE="}}}}}}
+    }
+  ]
+}
