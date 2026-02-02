@@ -1,0 +1,12 @@
+{
+  "typeName": "Directory",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T08:26:52.721358Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"personByName","type":"MapType(StringType,StructType(name:StringType,age:IntType,address:StructType(street:StringType,city:StringType,zip:StringType)),true)","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"U3RhZmY="},"personByName":{"type":"MapData","keys":[{"type":"UTF8String","base64":"YWxpY2U="},{"type":"UTF8String","base64":"Ym9i"}],"values":[{"type":"InternalRow","fields":{"name":{"type":"UTF8String","base64":"QWxpY2U="},"age":{"type":"Int","value":30},"address":{"type":"InternalRow","fields":{"street":{"type":"UTF8String","base64":"MTIzIE1haW4gU3Q="},"city":{"type":"UTF8String","base64":"TllD"},"zip":{"type":"UTF8String","base64":"MTAwMDE="}}}}},{"type":"InternalRow","fields":{"name":{"type":"UTF8String","base64":"Qm9i"},"age":{"type":"Int","value":25},"address":{"type":"InternalRow","fields":{"street":{"type":"UTF8String","base64":"NDU2IE9hayBBdmU="},"city":{"type":"UTF8String","base64":"TEE="},"zip":{"type":"UTF8String","base64":"OTAwMDE="}}}}}]}}
+    }
+  ]
+}

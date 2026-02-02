@@ -29,6 +29,7 @@ case class WithCollections(items: List[String], scores: Map[String, Double])
 
 // Collections of custom types - tests nested struct serialization in arrays/maps
 case class Team(name: String, members: List[Person])
+case class Directory(name: String, personByName: Map[String, Person])
 
 // Complex case class - comprehensive test
 case class Complex(
@@ -62,6 +63,14 @@ object BenchmarkData {
     )
   )
 
+  val directory: Directory = Directory(
+    name = "Staff",
+    personByName = Map(
+      "alice" -> Person("Alice", 30, Address("123 Main St", "NYC", "10001")),
+      "bob" -> Person("Bob", 25, Address("456 Oak Ave", "LA", "90001"))
+    )
+  )
+
   val complex: Complex = Complex(
     id = 12345L,
     name = "TestEntity",
@@ -77,5 +86,6 @@ object BenchmarkData {
 
   // BigInt/BigDecimal test data
   val withBigInt: WithBigInt = WithBigInt("large", BigInt("12345678901234567890"))
-  val withBigDecimal: WithBigDecimal = WithBigDecimal("precise", BigDecimal("123.456789012345678901"))
+  val withBigDecimal: WithBigDecimal =
+    WithBigDecimal("precise", BigDecimal("123.456789012345678901"))
 }

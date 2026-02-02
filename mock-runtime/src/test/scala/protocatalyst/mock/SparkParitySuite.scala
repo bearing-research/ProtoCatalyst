@@ -20,6 +20,8 @@ case class ParityPerson(name: String, age: Int, address: ParityAddress) derives 
 case class ParityWithCollections(items: List[String], scores: Map[String, Double])
     derives InlineRowSerializer
 case class ParityTeam(name: String, members: List[ParityPerson]) derives InlineRowSerializer
+case class ParityDirectory(name: String, personByName: Map[String, ParityPerson])
+    derives InlineRowSerializer
 case class ParityComplex(
     id: Long,
     name: String,
@@ -56,6 +58,14 @@ object ParityTestData:
       ParityPerson("Alice", 30, ParityAddress("123 Main St", "NYC", "10001")),
       ParityPerson("Bob", 25, ParityAddress("456 Oak Ave", "LA", "90001")),
       ParityPerson("Charlie", 35, ParityAddress("789 Pine Rd", "SF", "94102"))
+    )
+  )
+
+  val directory: ParityDirectory = ParityDirectory(
+    name = "Staff",
+    personByName = Map(
+      "alice" -> ParityPerson("Alice", 30, ParityAddress("123 Main St", "NYC", "10001")),
+      "bob" -> ParityPerson("Bob", 25, ParityAddress("456 Oak Ave", "LA", "90001"))
     )
   )
 
@@ -279,6 +289,9 @@ class SparkParitySuite extends munit.FunSuite:
 
   test("Team (List[Person]) parity with Spark"):
     runParityTest("team", ParityTestData.team)
+
+  test("Directory (Map[String, Person]) parity with Spark"):
+    runParityTest("directory", ParityTestData.directory)
 
   test("Complex (Option, Instant, nested) parity with Spark"):
     runParityTest("complex", ParityTestData.complex)

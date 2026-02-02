@@ -159,21 +159,21 @@ object GoldenFileGenerator {
   }
 
   def dataTypeToString(dt: DataType): String = dt match {
-    case StringType        => "StringType"
-    case IntegerType       => "IntType"
-    case LongType          => "LongType"
-    case DoubleType        => "DoubleType"
-    case FloatType         => "FloatType"
-    case BooleanType       => "BooleanType"
-    case ByteType          => "ByteType"
-    case ShortType         => "ShortType"
-    case BinaryType        => "BinaryType"
-    case DateType          => "DateType"
-    case TimestampType     => "TimestampType"
-    case TimestampNTZType  => "TimestampNTZType"
-    case DayTimeIntervalType(_, _) => "DayTimeIntervalType"
+    case StringType                  => "StringType"
+    case IntegerType                 => "IntType"
+    case LongType                    => "LongType"
+    case DoubleType                  => "DoubleType"
+    case FloatType                   => "FloatType"
+    case BooleanType                 => "BooleanType"
+    case ByteType                    => "ByteType"
+    case ShortType                   => "ShortType"
+    case BinaryType                  => "BinaryType"
+    case DateType                    => "DateType"
+    case TimestampType               => "TimestampType"
+    case TimestampNTZType            => "TimestampNTZType"
+    case DayTimeIntervalType(_, _)   => "DayTimeIntervalType"
     case YearMonthIntervalType(_, _) => "YearMonthIntervalType"
-    case ArrayType(et, cn) =>
+    case ArrayType(et, cn)           =>
       s"ArrayType(${dataTypeToString(et)},$cn)"
     case MapType(kt, vt, vcn) =>
       s"MapType(${dataTypeToString(kt)},${dataTypeToString(vt)},$vcn)"
@@ -246,6 +246,15 @@ object GoldenFileGenerator {
     )
     writeFile(new File(outputDir, "team.json"), teamJson)
     println("  ✓ team.json")
+
+    // Directory (Map[String, Person])
+    val directoryJson = generate(
+      "Directory",
+      ExpressionEncoder[Directory](),
+      Seq(("standard", BenchmarkData.directory))
+    )
+    writeFile(new File(outputDir, "directory.json"), directoryJson)
+    println("  ✓ directory.json")
 
     // Complex
     val complexJson = generate(
