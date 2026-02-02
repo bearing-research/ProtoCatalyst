@@ -1,7 +1,7 @@
 {
   "typeName": "WithDuration",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T08:09:48.055162Z",
+  "generatedAt": "2026-02-02T08:26:52.821496Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"duration","type":"DayTimeIntervalType","nullable":true}]},
   "testCases": [
     {

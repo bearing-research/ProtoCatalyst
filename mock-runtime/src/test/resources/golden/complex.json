@@ -1,7 +1,7 @@
 {
   "typeName": "Complex",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T03:35:17.151149Z",
+  "generatedAt": "2026-02-02T08:26:52.784525Z",
   "schema": {"fields":[{"name":"id","type":"LongType","nullable":false},{"name":"name","type":"StringType","nullable":true},{"name":"scores","type":"ArrayType(DoubleType,false)","nullable":true},{"name":"metadata","type":"MapType(StringType,StringType,true)","nullable":true},{"name":"created","type":"TimestampType","nullable":true},{"name":"nested","type":"StructType(name:StringType,age:IntType,address:StructType(street:StringType,city:StringType,zip:StringType))","nullable":true}]},
   "testCases": [
     {

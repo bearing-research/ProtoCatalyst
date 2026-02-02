@@ -1,7 +1,7 @@
 {
   "typeName": "Team",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T03:35:17.048822Z",
+  "generatedAt": "2026-02-02T08:26:52.677500Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"members","type":"ArrayType(StructType(name:StringType,age:IntType,address:StructType(street:StringType,city:StringType,zip:StringType)),true)","nullable":true}]},
   "testCases": [
     {
