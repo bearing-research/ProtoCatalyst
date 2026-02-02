@@ -128,10 +128,29 @@ object MockInternalTypeConverter extends InternalTypeConverter:
           // Char/Varchar are treated as strings internally
           MockUTF8String(value.asInstanceOf[String])
 
+        case ProtoType.DayTimeIntervalType =>
+          // Duration stored as Long microseconds
+          value match
+            case d: java.time.Duration => d.toNanos / 1000L // nanoseconds to microseconds
+            case micros: Long          => micros // Already internal representation
+            case other                 =>
+              throw IllegalArgumentException(
+                s"DayTimeIntervalType expects Duration or Long, got: ${other.getClass}"
+              )
+
+        case ProtoType.YearMonthIntervalType =>
+          // Period stored as Int total months
+          value match
+            case p: java.time.Period => p.toTotalMonths.toInt
+            case months: Int         => months // Already internal representation
+            case other               =>
+              throw IllegalArgumentException(
+                s"YearMonthIntervalType expects Period or Int, got: ${other.getClass}"
+              )
+
         // Other primitive types - no conversion needed
         case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntType |
             ProtoType.LongType | ProtoType.FloatType | ProtoType.DoubleType |
-            ProtoType.DayTimeIntervalType | ProtoType.YearMonthIntervalType |
             _: ProtoType.DecimalType =>
           value
 
@@ -235,10 +254,17 @@ object MockInternalTypeConverter extends InternalTypeConverter:
                 s"Expected MockUTF8String or String, got: ${other.getClass}"
               )
 
+        case ProtoType.DayTimeIntervalType =>
+          // Convert from Long microseconds back to Duration
+          java.time.Duration.ofNanos(value.asInstanceOf[Long] * 1000L)
+
+        case ProtoType.YearMonthIntervalType =>
+          // Convert from Int months back to Period
+          java.time.Period.ofMonths(value.asInstanceOf[Int])
+
         // Other primitive types - no conversion needed
         case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntType |
             ProtoType.LongType | ProtoType.FloatType | ProtoType.DoubleType |
-            ProtoType.DayTimeIntervalType | ProtoType.YearMonthIntervalType |
             _: ProtoType.DecimalType =>
           value
 

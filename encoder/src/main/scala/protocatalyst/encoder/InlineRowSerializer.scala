@@ -126,6 +126,11 @@ object InlineRowSerializer:
         result(idx) = conv.toInternal(product.productElement(idx), ProtoType.DecimalType(38, 18))
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
+      // === BigInt ===
+      case _: (BigInt *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.DecimalType(38, 0))
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
       // === Binary ===
       case _: (Array[Byte] *: ts) =>
         result(idx) = product.productElement(idx)
@@ -192,6 +197,14 @@ object InlineRowSerializer:
         result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimeType(6))
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
+      case _: (java.time.Duration *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.DayTimeIntervalType)
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
+      case _: (java.time.Period *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.YearMonthIntervalType)
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
       // === Fallback for other types (nested products, etc.) ===
       case _: (t *: ts) =>
         val fieldValue = product.productElement(idx)
@@ -241,10 +254,13 @@ object InlineRowSerializer:
       case _: Double                  => ProtoType.DoubleType
       case _: String                  => ProtoType.StringType
       case _: BigDecimal              => ProtoType.DecimalType(38, 18)
+      case _: BigInt                  => ProtoType.DecimalType(38, 0)
       case _: Array[Byte]             => ProtoType.BinaryType
       case _: java.time.LocalDate     => ProtoType.DateType
       case _: java.time.Instant       => ProtoType.TimestampType
       case _: java.time.LocalDateTime => ProtoType.TimestampNTZType
+      case _: java.time.Duration      => ProtoType.DayTimeIntervalType
+      case _: java.time.Period        => ProtoType.YearMonthIntervalType
       case _                          => getProtoTypeFromEncoder[T]
 
   /** Get ProtoType by summoning encoder - handles custom types like case classes */
@@ -306,6 +322,11 @@ object InlineRowSerializer:
       // === BigDecimal ===
       case _: (BigDecimal *: ts) =>
         values(idx) = conv.fromInternal(row(idx), ProtoType.DecimalType(38, 18))
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      // === BigInt ===
+      case _: (BigInt *: ts) =>
+        values(idx) = conv.fromInternal(row(idx), ProtoType.DecimalType(38, 0))
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       // === Binary ===
@@ -372,6 +393,14 @@ object InlineRowSerializer:
 
       case _: (java.time.LocalTime *: ts) =>
         values(idx) = conv.fromInternal(row(idx), ProtoType.TimeType(6))
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (java.time.Duration *: ts) =>
+        values(idx) = conv.fromInternal(row(idx), ProtoType.DayTimeIntervalType)
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (java.time.Period *: ts) =>
+        values(idx) = conv.fromInternal(row(idx), ProtoType.YearMonthIntervalType)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       // === Fallback for other types ===

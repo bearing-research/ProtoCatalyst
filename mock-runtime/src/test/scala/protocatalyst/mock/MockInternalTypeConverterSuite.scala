@@ -456,12 +456,59 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
       MockInternalTypeConverter.fromInternal(varcharInternal, ProtoType.VarcharType(100))
     assertEquals(varcharBack, original)
 
-  test("DayTimeIntervalType passes through Duration internal value"):
-    val durationNanos = 3600000000000L // 1 hour in nanos (but stored differently)
-    val result = MockInternalTypeConverter.toInternal(durationNanos, ProtoType.DayTimeIntervalType)
-    assertEquals(result, durationNanos)
+  test("DayTimeIntervalType converts Duration to microseconds"):
+    val duration = java.time.Duration.ofHours(1)
+    val result = MockInternalTypeConverter.toInternal(duration, ProtoType.DayTimeIntervalType)
+    // 1 hour = 3600 seconds = 3600000000 microseconds
+    assertEquals(result, 3600000000L)
 
-  test("YearMonthIntervalType passes through Period internal value"):
-    val months = 14 // 1 year 2 months
-    val result = MockInternalTypeConverter.toInternal(months, ProtoType.YearMonthIntervalType)
-    assertEquals(result, months)
+  test("DayTimeIntervalType converts microseconds back to Duration"):
+    val micros = 3600000000L // 1 hour in microseconds
+    val result = MockInternalTypeConverter.fromInternal(micros, ProtoType.DayTimeIntervalType)
+    assertEquals(result, java.time.Duration.ofHours(1))
+
+  test("DayTimeIntervalType roundtrip Duration"):
+    val original = java.time.Duration.ofMinutes(90).plusSeconds(30)
+    val internal = MockInternalTypeConverter.toInternal(original, ProtoType.DayTimeIntervalType)
+    val result = MockInternalTypeConverter.fromInternal(internal, ProtoType.DayTimeIntervalType)
+    assertEquals(result.asInstanceOf[java.time.Duration].toSeconds, original.toSeconds)
+
+  test("YearMonthIntervalType converts Period to months"):
+    val period = java.time.Period.of(1, 2, 0) // 1 year 2 months
+    val result = MockInternalTypeConverter.toInternal(period, ProtoType.YearMonthIntervalType)
+    assertEquals(result, 14) // 12 + 2 = 14 months
+
+  test("YearMonthIntervalType converts months back to Period"):
+    val months = 14
+    val result = MockInternalTypeConverter.fromInternal(months, ProtoType.YearMonthIntervalType)
+    assertEquals(result.asInstanceOf[java.time.Period].toTotalMonths, 14L)
+
+  test("YearMonthIntervalType roundtrip Period"):
+    val original = java.time.Period.ofMonths(18)
+    val internal = MockInternalTypeConverter.toInternal(original, ProtoType.YearMonthIntervalType)
+    val result = MockInternalTypeConverter.fromInternal(internal, ProtoType.YearMonthIntervalType)
+    assertEquals(result.asInstanceOf[java.time.Period].toTotalMonths, original.toTotalMonths)
+
+  // === InlineRowSerializer integration with Duration/Period ===
+
+  case class WithDuration(name: String, duration: java.time.Duration)
+
+  test("InlineRowSerializer roundtrip with Duration field"):
+    val serializer = InlineRowSerializer.derived[WithDuration]
+    val original = WithDuration("task", java.time.Duration.ofMinutes(90))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized.name, original.name)
+    assertEquals(deserialized.duration.toSeconds, original.duration.toSeconds)
+
+  case class WithPeriod(name: String, period: java.time.Period)
+
+  test("InlineRowSerializer roundtrip with Period field"):
+    val serializer = InlineRowSerializer.derived[WithPeriod]
+    val original = WithPeriod("subscription", java.time.Period.ofMonths(6))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized.name, original.name)
+    assertEquals(deserialized.period.toTotalMonths, original.period.toTotalMonths)

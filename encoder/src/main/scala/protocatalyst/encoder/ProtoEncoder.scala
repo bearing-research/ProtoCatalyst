@@ -217,6 +217,8 @@ object ProtoEncoder:
   given ProtoEncoder[Array[Byte]] = PrimitiveEncoder(ProtoType.BinaryType, classTag[Array[Byte]])
   given ProtoEncoder[BigDecimal] =
     PrimitiveEncoder(ProtoType.DecimalType(38, 18), classTag[BigDecimal])
+  given scalaBigIntEncoder: ProtoEncoder[BigInt] =
+    PrimitiveEncoder(ProtoType.DecimalType(38, 0), classTag[BigInt])
 
   // java.time types
   given ProtoEncoder[java.time.LocalDate] =
@@ -346,6 +348,618 @@ object ProtoEncoder:
         FieldEncoder("_5", encE, encE.nullable)
       ),
       ClassTag(classOf[Tuple5[?, ?, ?, ?, ?]])
+    )
+
+  given tuple6Encoder[A, B, C, D, E, F](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F]
+  ): ProtoEncoder[(A, B, C, D, E, F)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable)
+      ),
+      ClassTag(classOf[Tuple6[?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple7Encoder[A, B, C, D, E, F, G](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G]
+  ): ProtoEncoder[(A, B, C, D, E, F, G)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable)
+      ),
+      ClassTag(classOf[Tuple7[?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple8Encoder[A, B, C, D, E, F, G, H](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable)
+      ),
+      ClassTag(classOf[Tuple8[?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple9Encoder[A, B, C, D, E, F, G, H, I](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable)
+      ),
+      ClassTag(classOf[Tuple9[?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple10Encoder[A, B, C, D, E, F, G, H, I, J](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable)
+      ),
+      ClassTag(classOf[Tuple10[?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple11Encoder[A, B, C, D, E, F, G, H, I, J, K](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable)
+      ),
+      ClassTag(classOf[Tuple11[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple12Encoder[A, B, C, D, E, F, G, H, I, J, K, L](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable)
+      ),
+      ClassTag(classOf[Tuple12[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple13Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable)
+      ),
+      ClassTag(classOf[Tuple13[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple14Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable)
+      ),
+      ClassTag(classOf[Tuple14[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple15Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable)
+      ),
+      ClassTag(classOf[Tuple15[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple16Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable)
+      ),
+      ClassTag(classOf[Tuple16[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple17Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P],
+      encQ: ProtoEncoder[Q]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable),
+        FieldEncoder("_17", encQ, encQ.nullable)
+      ),
+      ClassTag(classOf[Tuple17[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple18Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P],
+      encQ: ProtoEncoder[Q],
+      encR: ProtoEncoder[R]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable),
+        FieldEncoder("_17", encQ, encQ.nullable),
+        FieldEncoder("_18", encR, encR.nullable)
+      ),
+      ClassTag(classOf[Tuple18[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple19Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P],
+      encQ: ProtoEncoder[Q],
+      encR: ProtoEncoder[R],
+      encS: ProtoEncoder[S]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable),
+        FieldEncoder("_17", encQ, encQ.nullable),
+        FieldEncoder("_18", encR, encR.nullable),
+        FieldEncoder("_19", encS, encS.nullable)
+      ),
+      ClassTag(classOf[Tuple19[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple20Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P],
+      encQ: ProtoEncoder[Q],
+      encR: ProtoEncoder[R],
+      encS: ProtoEncoder[S],
+      encT: ProtoEncoder[T]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable),
+        FieldEncoder("_17", encQ, encQ.nullable),
+        FieldEncoder("_18", encR, encR.nullable),
+        FieldEncoder("_19", encS, encS.nullable),
+        FieldEncoder("_20", encT, encT.nullable)
+      ),
+      ClassTag(classOf[Tuple20[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple21Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P],
+      encQ: ProtoEncoder[Q],
+      encR: ProtoEncoder[R],
+      encS: ProtoEncoder[S],
+      encT: ProtoEncoder[T],
+      encU: ProtoEncoder[U]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable),
+        FieldEncoder("_17", encQ, encQ.nullable),
+        FieldEncoder("_18", encR, encR.nullable),
+        FieldEncoder("_19", encS, encS.nullable),
+        FieldEncoder("_20", encT, encT.nullable),
+        FieldEncoder("_21", encU, encU.nullable)
+      ),
+      ClassTag(classOf[Tuple21[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
+    )
+
+  given tuple22Encoder[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V](using
+      encA: ProtoEncoder[A],
+      encB: ProtoEncoder[B],
+      encC: ProtoEncoder[C],
+      encD: ProtoEncoder[D],
+      encE: ProtoEncoder[E],
+      encF: ProtoEncoder[F],
+      encG: ProtoEncoder[G],
+      encH: ProtoEncoder[H],
+      encI: ProtoEncoder[I],
+      encJ: ProtoEncoder[J],
+      encK: ProtoEncoder[K],
+      encL: ProtoEncoder[L],
+      encM: ProtoEncoder[M],
+      encN: ProtoEncoder[N],
+      encO: ProtoEncoder[O],
+      encP: ProtoEncoder[P],
+      encQ: ProtoEncoder[Q],
+      encR: ProtoEncoder[R],
+      encS: ProtoEncoder[S],
+      encT: ProtoEncoder[T],
+      encU: ProtoEncoder[U],
+      encV: ProtoEncoder[V]
+  ): ProtoEncoder[(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V)] =
+    makeTupleEncoder(
+      Vector(
+        FieldEncoder("_1", encA, encA.nullable),
+        FieldEncoder("_2", encB, encB.nullable),
+        FieldEncoder("_3", encC, encC.nullable),
+        FieldEncoder("_4", encD, encD.nullable),
+        FieldEncoder("_5", encE, encE.nullable),
+        FieldEncoder("_6", encF, encF.nullable),
+        FieldEncoder("_7", encG, encG.nullable),
+        FieldEncoder("_8", encH, encH.nullable),
+        FieldEncoder("_9", encI, encI.nullable),
+        FieldEncoder("_10", encJ, encJ.nullable),
+        FieldEncoder("_11", encK, encK.nullable),
+        FieldEncoder("_12", encL, encL.nullable),
+        FieldEncoder("_13", encM, encM.nullable),
+        FieldEncoder("_14", encN, encN.nullable),
+        FieldEncoder("_15", encO, encO.nullable),
+        FieldEncoder("_16", encP, encP.nullable),
+        FieldEncoder("_17", encQ, encQ.nullable),
+        FieldEncoder("_18", encR, encR.nullable),
+        FieldEncoder("_19", encS, encS.nullable),
+        FieldEncoder("_20", encT, encT.nullable),
+        FieldEncoder("_21", encU, encU.nullable),
+        FieldEncoder("_22", encV, encV.nullable)
+      ),
+      ClassTag(classOf[Tuple22[?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]])
     )
 
   private def makeTupleEncoder[T](

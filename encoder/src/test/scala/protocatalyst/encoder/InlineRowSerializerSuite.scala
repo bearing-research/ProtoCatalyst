@@ -322,3 +322,92 @@ class InlineRowSerializerSuite extends munit.FunSuite:
     val deserialized = serializer.deserialize(serializer.serialize(original))
 
     assertEquals(deserialized, original)
+
+  // === BigInt tests ===
+
+  case class InlineWithBigInt(name: String, value: BigInt)
+
+  test("roundtrip BigInt"):
+    val serializer = InlineRowSerializer.derived[InlineWithBigInt]
+    val original = InlineWithBigInt("test", BigInt("12345678901234567890"))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip BigInt with negative value"):
+    val serializer = InlineRowSerializer.derived[InlineWithBigInt]
+    val original = InlineWithBigInt("negative", BigInt("-99999999999999999999"))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  // === Duration tests ===
+
+  case class InlineWithDuration(name: String, duration: java.time.Duration)
+
+  test("roundtrip Duration"):
+    val serializer = InlineRowSerializer.derived[InlineWithDuration]
+    val original = InlineWithDuration("task", java.time.Duration.ofHours(2))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip Duration with minutes and seconds"):
+    val serializer = InlineRowSerializer.derived[InlineWithDuration]
+    val original = InlineWithDuration("meeting", java.time.Duration.ofMinutes(90).plusSeconds(30))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  // === Period tests ===
+
+  case class InlineWithPeriod(name: String, period: java.time.Period)
+
+  test("roundtrip Period"):
+    val serializer = InlineRowSerializer.derived[InlineWithPeriod]
+    val original = InlineWithPeriod("subscription", java.time.Period.ofMonths(3))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip Period with years and months"):
+    val serializer = InlineRowSerializer.derived[InlineWithPeriod]
+    val original = InlineWithPeriod("contract", java.time.Period.of(2, 6, 0))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    // Note: Period comparison is by total months, so days are lost
+    assertEquals(deserialized.name, original.name)
+    assertEquals(deserialized.period.toTotalMonths, original.period.toTotalMonths)
+
+  // === Extended Tuple tests ===
+
+  test("roundtrip Tuple6"):
+    val serializer = InlineRowSerializer.derived[(Int, Int, Int, Int, Int, Int)]
+    val original = (1, 2, 3, 4, 5, 6)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip Tuple10"):
+    val serializer = InlineRowSerializer.derived[(Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)]
+    val original = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip Tuple with mixed types"):
+    val serializer =
+      InlineRowSerializer.derived[(String, Int, Double, Boolean, Long, String, Int, Double)]
+    val original = ("hello", 42, 3.14, true, 100L, "world", 99, 2.718)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
