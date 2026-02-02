@@ -77,7 +77,7 @@ This conversion happens billions of times in real applications. **Efficiency mat
 
 ## 2. What is an Encoder?
 
-An **Encoder** is the component that converts between objects and row format:
+An **Encoder** is the component that converts between objects and row format. In Spark, this conversion layer is implemented by Catalyst's `ExpressionEncoder`, which translates JVM objects to Spark's internal row format. ProtoCatalyst provides a faster, compile-time alternative.
 
 ```
 ┌─────────────────┐       Encoder        ┌─────────────────┐
@@ -86,6 +86,8 @@ An **Encoder** is the component that converts between objects and row format:
 │           30)   │ ◀─────────────────   │                 │
 └─────────────────┘   deserialize()      └─────────────────┘
 ```
+
+> **Note for Spark users**: Throughout this guide, we use `Array[Any]` as a conceptual stand-in for Spark's internal row representations (`InternalRow`, `UnsafeRow`). The ideas are the same even though the concrete data structures differ.
 
 ### The Three Jobs of an Encoder
 
@@ -104,6 +106,8 @@ An **Encoder** is the component that converts between objects and row format:
    ```scala
    Array("Alice", 30) → Person("Alice", 30)
    ```
+
+> **Schema vs Encoder**: A *schema* describes what the data looks like (field names and types); an *encoder* describes how to move data between representations. ProtoCatalyst derives both from the same type information.
 
 ### Why Not Just Use JSON?
 
@@ -168,6 +172,8 @@ Person as Row:
 
 Total: ~13 bytes in one contiguous block
 ```
+
+> *Note: Spark's actual `UnsafeRow` layout includes offsets, length prefixes, and null bitmaps. The example focuses on payload size to illustrate the core benefit—real rows have slightly more overhead but remain far more compact than Java objects.*
 
 **Why this matters:**
 - **Less memory**: 5-6x reduction means more data fits in RAM
@@ -330,7 +336,7 @@ This all happens **before your program runs**. Zero runtime overhead for schema 
 
 ### 5.2 Scala 3's Mirror System
 
-Scala 3 provides a mechanism called `Mirror` that gives compile-time access to type information:
+Scala 3 provides a mechanism called `Mirror` that gives compile-time access to type information. You can think of Mirror as the compiler handing you a compile-time AST of your data type, with field names and types already extracted.
 
 ```scala
 import scala.deriving.Mirror
@@ -392,6 +398,8 @@ def toInternal(value: Any, dataType: ProtoType): Any = dataType match
   case DateType => value.asInstanceOf[LocalDate].toEpochDay.toInt
   // ...
 ```
+
+> *Note: This pattern match is a conceptual API boundary for pluggable backends. In practice, ProtoCatalyst's `inline` serializers specialize these conversions at compile time, so the match does not appear in generated code for concrete types.*
 
 ---
 
@@ -551,7 +559,7 @@ All benchmarks run on JDK 21, Apple Silicon, using JMH 1.37.
 ### 8.3 Why ProtoCatalyst is Faster
 
 1. **No runtime type dispatch**: Code is specialized at compile time
-2. **No expression interpretation**: Spark interprets Catalyst expression trees
+2. **No runtime expression evaluation**: Spark builds Catalyst expression trees and may interpret or JIT-compile them at runtime; ProtoCatalyst emits direct, specialized JVM code at compile time
 3. **Better JIT optimization**: Simpler code structure
 
 ### 8.4 Batch Processing Scaling
