@@ -1,7 +1,7 @@
 {
   "typeName": "WithCollections",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T08:26:52.628160Z",
+  "generatedAt": "2026-02-02T19:04:36.244977Z",
   "schema": {"fields":[{"name":"items","type":"ArrayType(StringType,true)","nullable":true},{"name":"scores","type":"MapType(StringType,DoubleType,false)","nullable":true}]},
   "testCases": [
     {

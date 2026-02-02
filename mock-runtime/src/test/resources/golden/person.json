@@ -1,7 +1,7 @@
 {
   "typeName": "Person",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T08:26:52.486855Z",
+  "generatedAt": "2026-02-02T19:04:36.118851Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"age","type":"IntType","nullable":false},{"name":"address","type":"StructType(street:StringType,city:StringType,zip:StringType)","nullable":true}]},
   "testCases": [
     {

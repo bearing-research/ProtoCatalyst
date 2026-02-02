@@ -1,7 +1,7 @@
 {
   "typeName": "WithBigInt",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T08:26:52.866343Z",
+  "generatedAt": "2026-02-02T19:04:36.550074Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"value","type":"DecimalType(38,0)","nullable":true}]},
   "testCases": [
     {
