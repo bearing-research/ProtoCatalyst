@@ -257,17 +257,6 @@ class InlineRowSerializerSuite extends munit.FunSuite:
 
     assertEquals(roundtripped, users)
 
-  // === Comparison with RowSerializer ===
-
-  test("InlineRowSerializer produces same output as RowSerializer for simple types"):
-    val inlineSerializer = InlineRowSerializer.derived[InlineUser]
-    val rowSerializer = RowSerializer.derived[RowUser]
-
-    val inlineResult = inlineSerializer.serialize(InlineUser("Test", 42))
-    val rowResult = rowSerializer.serialize(RowUser("Test", 42))
-
-    assertEquals(inlineResult.toSeq, rowResult.toSeq)
-
   // === Collections of custom types ===
 
   test("serialize List[CustomType]"):

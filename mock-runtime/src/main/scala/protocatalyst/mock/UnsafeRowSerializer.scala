@@ -6,8 +6,8 @@ import protocatalyst.encoder._
 
 /** Serializes/deserializes case classes to/from UnsafeRow binary format.
   *
-  * This provides the same functionality as RowSerializer but produces the optimized binary format
-  * used by Spark for efficient execution:
+  * This provides the same functionality as InlineRowSerializer but produces the optimized binary
+  * format used by Spark for efficient execution:
   *   - Zero-copy serialization
   *   - Cache-friendly memory layout
   *   - 8-byte aligned fields

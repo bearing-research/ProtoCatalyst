@@ -202,59 +202,41 @@ println(person.age)                      // Definitely an Int
 
 ## 4. Getting Started with ProtoCatalyst
 
-### 4.1 Your First Encoder
+### 4.1 Serialization (The Main Use Case)
 
 Here's the simplest way to use ProtoCatalyst:
 
 ```scala
 import protocatalyst.encoder.*
 
-// Step 1: Define your case class with "derives ProtoEncoder"
-case class Person(name: String, age: Int) derives ProtoEncoder
+// Step 1: Define a plain case class
+case class Person(name: String, age: Int)
 
-// Step 2: Get the encoder (it's created at compile time!)
-val encoder = summon[ProtoEncoder[Person]]
+// Step 2: Create a serializer (generated at compile time!)
+val serializer = InlineRowSerializer.derived[Person]
 
-// Step 3: See the schema it derived
-println(encoder.schema)
-// Output: Vector(ProtoStructField(name,StringType,false), ProtoStructField(age,IntType,false))
-```
-
-That's it! The `derives ProtoEncoder` clause tells the Scala compiler to automatically generate an encoder for your case class.
-
-### 4.2 Serialization and Deserialization
-
-To actually convert objects to/from row format:
-
-```scala
-import protocatalyst.encoder.*
-
-case class Person(name: String, age: Int) derives ProtoEncoder
-
-// Get a serializer
-val serializer = RowSerializer.derived[Person]
-
-// Serialize: Object → Row
+// Step 3: Serialize and deserialize
 val alice = Person("Alice", 30)
 val row: Array[Any] = serializer.serialize(alice)
 // row = Array("Alice", 30)
 
-// Deserialize: Row → Object
 val restored: Person = serializer.deserialize(row)
 // restored = Person("Alice", 30)
 
 assert(alice == restored)  // They're equal!
 ```
 
-### 4.3 Nested Types
+That's it! `InlineRowSerializer.derived[T]` generates a specialized serializer at compile time. No annotations or `derives` clauses needed on your case class.
 
-Encoders handle nested case classes automatically:
+### 4.2 Nested Types
+
+Serializers handle nested case classes automatically:
 
 ```scala
-case class Address(street: String, city: String) derives ProtoEncoder
-case class Person(name: String, address: Address) derives ProtoEncoder
+case class Address(street: String, city: String)
+case class Person(name: String, address: Address)
 
-val serializer = RowSerializer.derived[Person]
+val serializer = InlineRowSerializer.derived[Person]
 val alice = Person("Alice", Address("123 Main St", "NYC"))
 
 val row = serializer.serialize(alice)
@@ -266,28 +248,28 @@ val restored = serializer.deserialize(row)
 assert(restored == alice)
 ```
 
-### 4.4 Collections
+### 4.3 Collections
 
 Lists, Sets, Maps, and Arrays all work:
 
 ```scala
-case class Team(name: String, members: List[String]) derives ProtoEncoder
+case class Team(name: String, members: List[String])
 
-val serializer = RowSerializer.derived[Team]
+val serializer = InlineRowSerializer.derived[Team]
 val team = Team("Engineers", List("Alice", "Bob", "Charlie"))
 
 val row = serializer.serialize(team)
 // row = Array("Engineers", List("Alice", "Bob", "Charlie"))
 ```
 
-### 4.5 Optional Values
+### 4.4 Optional Values
 
 Use `Option[T]` for fields that might be missing:
 
 ```scala
-case class User(name: String, email: Option[String]) derives ProtoEncoder
+case class User(name: String, email: Option[String])
 
-val serializer = RowSerializer.derived[User]
+val serializer = InlineRowSerializer.derived[User]
 
 // With email
 val user1 = User("Alice", Some("alice@example.com"))
@@ -300,39 +282,57 @@ val row2 = serializer.serialize(user2)
 // row2 = Array("Bob", null)
 ```
 
+### 4.5 Schema Inspection
+
+If you need to inspect the schema (field names and types) without serializing:
+
+```scala
+case class Person(name: String, age: Int)
+
+val encoder = ProtoEncoder.derived[Person]
+println(encoder.schema)
+// Output: Vector(ProtoStructField(name,StringType,false), ProtoStructField(age,IntType,false))
+```
+
+> **Note**: `ProtoEncoder` provides schema information only. `InlineRowSerializer` provides serialization. They are independent—use whichever you need.
+
 ### 4.6 Enums and Sealed Traits
 
 ProtoCatalyst handles Scala 3 enums and sealed traits (sum types):
 
 ```scala
 // Simple enum
-enum Color derives ProtoEncoder:
+enum Color:
   case Red, Green, Blue
 
 // Sealed trait with data
-sealed trait Event derives ProtoEncoder
-case class Click(x: Int, y: Int) extends Event derives ProtoEncoder
-case class View(page: String) extends Event derives ProtoEncoder
+sealed trait Event
+case class Click(x: Int, y: Int) extends Event
+case class View(page: String) extends Event
 case object Close extends Event
 
 // Both can be serialized
-val colorSerializer = RowSerializer.derived[Color]
-val eventSerializer = RowSerializer.derivedSum[Event]
+val colorSerializer = InlineRowSerializer.derived[Color]
+val eventSerializer = InlineSumRowSerializer.derived[Event]
 ```
 
 ---
 
 ## 5. How It Works Under the Hood
 
-### 5.1 The Magic of "derives"
+### 5.1 Compile-Time Derivation
 
-When you write `case class Person(name: String, age: Int) derives ProtoEncoder`, the Scala 3 compiler:
+When you call `InlineRowSerializer.derived[Person]`, the Scala 3 compiler:
 
 1. **Analyzes the type at compile time** - Finds all fields and their types
-2. **Generates specialized code** - Creates a custom encoder for `Person`
-3. **Stores it as a given instance** - Makes it available via `summon[ProtoEncoder[Person]]`
+2. **Generates specialized code** - Creates a custom serializer for `Person`
+3. **Inlines the code at the call site** - No virtual dispatch, no reflection
 
-This all happens **before your program runs**. Zero runtime overhead for schema discovery.
+This all happens **before your program runs**. Zero runtime overhead for type discovery.
+
+> **Alternative: The `derives` clause**
+>
+> You can also write `case class Person(...) derives InlineRowSerializer` to create a given instance automatically. Then use `summon[InlineRowSerializer[Person]]` to access it. This is useful when you want the serializer available implicitly throughout your codebase.
 
 ### 5.2 Scala 3's Mirror System
 

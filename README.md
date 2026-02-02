@@ -49,7 +49,7 @@ val encoder = summon[ProtoEncoder[Person]]
 println(encoder.schema)  // Vector(name: String, age: Int, address: Struct)
 
 // Serialize to row format (Spark-compatible)
-val serializer = RowSerializer.derived[Person]
+val serializer = InlineRowSerializer.derived[Person]
 val row: Array[Any] = serializer.serialize(Person("Alice", 30, address))
 val restored: Person = serializer.deserialize(row)
 ```
@@ -60,7 +60,7 @@ val restored: Person = serializer.deserialize(row)
 case class User(name: String, age: Int) derives ProtoEncoder
 case class Team(name: String, members: List[User]) derives ProtoEncoder
 
-val serializer = RowSerializer.derived[Team]
+val serializer = InlineRowSerializer.derived[Team]
 val team = Team("Engineering", List(User("Alice", 30), User("Bob", 25)))
 val row = serializer.serialize(team)  // Correctly handles nested List[User]
 ```

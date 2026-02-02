@@ -149,10 +149,10 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     val result = MockInternalTypeConverter.fromInternal(null, ProtoType.StringType)
     assertEquals(result, null)
 
-  // === RowSerializer integration ===
+  // === InlineRowSerializer integration ===
 
-  test("RowSerializer with MockInternalTypeConverter - simple case class"):
-    val serializer = RowSerializer.derived[User]
+  test("InlineRowSerializer with MockInternalTypeConverter - simple case class"):
+    val serializer = InlineRowSerializer.derived[User]
     val user = User("Bob", 25)
 
     val serialized = serializer.serialize(user)
@@ -162,8 +162,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     assertEquals(serialized(0).asInstanceOf[MockUTF8String].toString, "Bob")
     assertEquals(serialized(1), 25)
 
-  test("RowSerializer roundtrip with MockInternalTypeConverter"):
-    val serializer = RowSerializer.derived[User]
+  test("InlineRowSerializer roundtrip with MockInternalTypeConverter"):
+    val serializer = InlineRowSerializer.derived[User]
     val original = User("Charlie", 42)
 
     val serialized = serializer.serialize(original)
@@ -171,8 +171,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
 
     assertEquals(deserialized, original)
 
-  test("RowSerializer with optional fields"):
-    val serializer = RowSerializer.derived[Address]
+  test("InlineRowSerializer with optional fields"):
+    val serializer = InlineRowSerializer.derived[Address]
 
     // With Some value
     val addr1 = Address("123 Main St", "NYC", Some(10001))
@@ -192,8 +192,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     assertEquals(deserialized1, addr1)
     assertEquals(deserialized2, addr2)
 
-  test("RowSerializer with nested structs and collections"):
-    val serializer = RowSerializer.derived[Person]
+  test("InlineRowSerializer with nested structs and collections"):
+    val serializer = InlineRowSerializer.derived[Person]
     val person = Person(
       user = User("Diana", 28),
       address = Address("789 Pine Rd", "SF", Some(94102)),
@@ -232,8 +232,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
 
   // === MockRow interop ===
 
-  test("MockRow can be created from RowSerializer output"):
-    val serializer = RowSerializer.derived[User]
+  test("MockRow can be created from InlineRowSerializer output"):
+    val serializer = InlineRowSerializer.derived[User]
     val user = User("Eve", 35)
 
     val serialized = serializer.serialize(user)
@@ -245,8 +245,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
 
   // === Temporal type integration tests ===
 
-  test("RowSerializer roundtrip with LocalDate field"):
-    val serializer = RowSerializer.derived[Event]
+  test("InlineRowSerializer roundtrip with LocalDate field"):
+    val serializer = InlineRowSerializer.derived[Event]
     val date = java.time.LocalDate.of(2024, 1, 15)
     val event = Event("Conference", date)
 
@@ -262,8 +262,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     val deserialized = serializer.deserialize(serialized)
     assertEquals(deserialized, event)
 
-  test("RowSerializer roundtrip with Instant field"):
-    val serializer = RowSerializer.derived[LogEntry]
+  test("InlineRowSerializer roundtrip with Instant field"):
+    val serializer = InlineRowSerializer.derived[LogEntry]
     val instant = java.time.Instant.parse("2024-01-15T10:30:00Z")
     val log = LogEntry("Test message", instant)
 
@@ -280,8 +280,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     assertEquals(deserialized.msg, log.msg)
     assertEquals(deserialized.timestamp.toEpochMilli, log.timestamp.toEpochMilli)
 
-  test("RowSerializer roundtrip with LocalDateTime field"):
-    val serializer = RowSerializer.derived[Appointment]
+  test("InlineRowSerializer roundtrip with LocalDateTime field"):
+    val serializer = InlineRowSerializer.derived[Appointment]
     val ldt = java.time.LocalDateTime.of(2024, 1, 15, 10, 30, 0)
     val appt = Appointment("Meeting", ldt)
 
@@ -294,8 +294,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
 
   // === Collections of custom types ===
 
-  test("RowSerializer with List[CustomType]"):
-    val serializer = RowSerializer.derived[Team]
+  test("InlineRowSerializer with List[CustomType]"):
+    val serializer = InlineRowSerializer.derived[Team]
     val team = Team("Engineering", List(User("Alice", 30), User("Bob", 25)))
 
     val serialized = serializer.serialize(team)
@@ -324,16 +324,16 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
       case other =>
         fail(s"Expected MockArrayData for List[User], got $other")
 
-  test("RowSerializer roundtrip with List[CustomType]"):
-    val serializer = RowSerializer.derived[Team]
+  test("InlineRowSerializer roundtrip with List[CustomType]"):
+    val serializer = InlineRowSerializer.derived[Team]
     val original = Team("Engineering", List(User("Alice", 30), User("Bob", 25)))
 
     val deserialized = serializer.deserialize(serializer.serialize(original))
 
     assertEquals(deserialized, original)
 
-  test("RowSerializer with Map[String, CustomType]"):
-    val serializer = RowSerializer.derived[Directory]
+  test("InlineRowSerializer with Map[String, CustomType]"):
+    val serializer = InlineRowSerializer.derived[Directory]
     val dir = Directory("Staff", Map("alice" -> User("Alice", 30), "bob" -> User("Bob", 25)))
 
     val serialized = serializer.serialize(dir)
@@ -351,8 +351,8 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
       case other =>
         fail(s"Expected MockMapData for Map[String, User], got $other")
 
-  test("RowSerializer roundtrip with Map[String, CustomType]"):
-    val serializer = RowSerializer.derived[Directory]
+  test("InlineRowSerializer roundtrip with Map[String, CustomType]"):
+    val serializer = InlineRowSerializer.derived[Directory]
     val original = Directory("Staff", Map("alice" -> User("Alice", 30), "bob" -> User("Bob", 25)))
 
     val deserialized = serializer.deserialize(serializer.serialize(original))

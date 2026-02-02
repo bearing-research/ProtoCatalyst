@@ -84,7 +84,9 @@ object GoldenFileGenerator {
           val values = (0 until map.numElements()).map { i =>
             extractValue(map.valueArray().get(i, valueType), valueType)
           }
-          s"""{"type":"MapData","keys":[${keys.mkString(",")}],"values":[${values.mkString(",")}]}"""
+          s"""{"type":"MapData","keys":[${keys.mkString(",")}],"values":[${values.mkString(
+              ","
+            )}]}"""
 
         case st: StructType =>
           val row = value.asInstanceOf[InternalRow]
@@ -141,24 +143,26 @@ object GoldenFileGenerator {
   /** Convert Spark schema to JSON */
   def schemaToJson(schema: StructType): String = {
     val fields = schema.fields.map { field =>
-      s"""{"name":"${field.name}","type":"${dataTypeToString(field.dataType)}","nullable":${field.nullable}}"""
+      s"""{"name":"${field.name}","type":"${dataTypeToString(
+          field.dataType
+        )}","nullable":${field.nullable}}"""
     }
     s"""{"fields":[${fields.mkString(",")}]}"""
   }
 
   def dataTypeToString(dt: DataType): String = dt match {
-    case StringType      => "StringType"
-    case IntegerType     => "IntType"
-    case LongType        => "LongType"
-    case DoubleType      => "DoubleType"
-    case FloatType       => "FloatType"
-    case BooleanType     => "BooleanType"
-    case ByteType        => "ByteType"
-    case ShortType       => "ShortType"
-    case BinaryType      => "BinaryType"
-    case DateType        => "DateType"
-    case TimestampType   => "TimestampType"
-    case TimestampNTZType => "TimestampNTZType"
+    case StringType        => "StringType"
+    case IntegerType       => "IntType"
+    case LongType          => "LongType"
+    case DoubleType        => "DoubleType"
+    case FloatType         => "FloatType"
+    case BooleanType       => "BooleanType"
+    case ByteType          => "ByteType"
+    case ShortType         => "ShortType"
+    case BinaryType        => "BinaryType"
+    case DateType          => "DateType"
+    case TimestampType     => "TimestampType"
+    case TimestampNTZType  => "TimestampNTZType"
     case ArrayType(et, cn) =>
       s"ArrayType(${dataTypeToString(et)},$cn)"
     case MapType(kt, vt, vcn) =>
@@ -167,13 +171,15 @@ object GoldenFileGenerator {
       val fields = st.fields.map(f => s"${f.name}:${dataTypeToString(f.dataType)}").mkString(",")
       s"StructType($fields)"
     case dt: DecimalType => s"DecimalType(${dt.precision},${dt.scale})"
-    case other => other.typeName
+    case other           => other.typeName
   }
 
   def main(args: Array[String]): Unit = {
     // Use class location to find the correct resource path
     val classLocation = getClass.getProtectionDomain.getCodeSource.getLocation.getPath
-    val projectRoot = new File(classLocation).getParentFile.getParentFile.getParentFile.getParentFile
+    val projectRoot = new File(
+      classLocation
+    ).getParentFile.getParentFile.getParentFile.getParentFile
     val outputDir = new File(projectRoot, "src/main/resources/golden")
     outputDir.mkdirs()
 

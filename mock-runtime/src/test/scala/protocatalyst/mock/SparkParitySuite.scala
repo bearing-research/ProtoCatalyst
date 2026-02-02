@@ -14,19 +14,12 @@ import protocatalyst.encoder._
   *
   * Named with Parity prefix to avoid conflicts with other test classes in this package.
   */
-case class ParitySimple(name: String, age: Int) derives ProtoEncoder, InlineRowSerializer
-case class ParityAddress(street: String, city: String, zip: String)
-    derives ProtoEncoder,
-      InlineRowSerializer
-case class ParityPerson(name: String, age: Int, address: ParityAddress)
-    derives ProtoEncoder,
-      InlineRowSerializer
+case class ParitySimple(name: String, age: Int) derives InlineRowSerializer
+case class ParityAddress(street: String, city: String, zip: String) derives InlineRowSerializer
+case class ParityPerson(name: String, age: Int, address: ParityAddress) derives InlineRowSerializer
 case class ParityWithCollections(items: List[String], scores: Map[String, Double])
-    derives ProtoEncoder,
-      InlineRowSerializer
-case class ParityTeam(name: String, members: List[ParityPerson])
-    derives ProtoEncoder,
-      InlineRowSerializer
+    derives InlineRowSerializer
+case class ParityTeam(name: String, members: List[ParityPerson]) derives InlineRowSerializer
 case class ParityComplex(
     id: Long,
     name: String,
@@ -34,7 +27,7 @@ case class ParityComplex(
     metadata: Map[String, String],
     created: Instant,
     nested: Option[ParityPerson]
-) derives ProtoEncoder, InlineRowSerializer
+) derives InlineRowSerializer
 
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
@@ -79,8 +72,7 @@ class SparkParitySuite extends munit.FunSuite:
   /** Load a golden file from test resources */
   def loadGolden(name: String): ujson.Value =
     val stream = getClass.getResourceAsStream(s"/golden/$name.json")
-    if stream == null then
-      throw new RuntimeException(s"Golden file not found: /golden/$name.json")
+    if stream == null then throw new RuntimeException(s"Golden file not found: /golden/$name.json")
     val content = Source.fromInputStream(stream, "UTF-8").mkString
     stream.close()
     ujson.read(content)
@@ -102,8 +94,10 @@ class SparkParitySuite extends munit.FunSuite:
               s"UTF8String bytes mismatch at $path: expected '${new String(expectedBytes)}', got '${utf8.toString}'"
             )
           case other =>
-            fail(s"Expected MockUTF8String at $path, got ${if other == null then "null"
-              else other.getClass.getName}")
+            fail(s"Expected MockUTF8String at $path, got ${
+                if other == null then "null"
+                else other.getClass.getName
+              }")
 
       case "Int" =>
         assertEquals(actual, expected("value").num.toInt, s"Int mismatch at $path")
@@ -115,7 +109,11 @@ class SparkParitySuite extends munit.FunSuite:
         assertEquals(actual, expected("value").num, s"Double mismatch at $path")
 
       case "Float" =>
-        assertEquals(actual.asInstanceOf[Float], expected("value").num.toFloat, s"Float mismatch at $path")
+        assertEquals(
+          actual.asInstanceOf[Float],
+          expected("value").num.toFloat,
+          s"Float mismatch at $path"
+        )
 
       case "Boolean" =>
         assertEquals(actual, expected("value").bool, s"Boolean mismatch at $path")
@@ -139,8 +137,10 @@ class SparkParitySuite extends munit.FunSuite:
               compareValue(elem, arr.get(i), s"$path[$i]")
             }
           case other =>
-            fail(s"Expected MockArrayData at $path, got ${if other == null then "null"
-              else other.getClass.getName}")
+            fail(s"Expected MockArrayData at $path, got ${
+                if other == null then "null"
+                else other.getClass.getName
+              }")
 
       case "MapData" =>
         actual match
@@ -159,8 +159,10 @@ class SparkParitySuite extends munit.FunSuite:
               compareValue(value, map.values(i), s"$path.values[$i]")
             }
           case other =>
-            fail(s"Expected MockMapData at $path, got ${if other == null then "null"
-              else other.getClass.getName}")
+            fail(s"Expected MockMapData at $path, got ${
+                if other == null then "null"
+                else other.getClass.getName
+              }")
 
       case "InternalRow" =>
         actual match
@@ -176,8 +178,10 @@ class SparkParitySuite extends munit.FunSuite:
               compareValue(fieldValue, arr(i), s"$path.$fieldName")
             }
           case other =>
-            fail(s"Expected MockRow or Array at $path, got ${if other == null then "null"
-              else other.getClass.getName}")
+            fail(s"Expected MockRow or Array at $path, got ${
+                if other == null then "null"
+                else other.getClass.getName
+              }")
 
       case other =>
         fail(s"Unknown type '$other' at $path")
@@ -193,9 +197,11 @@ class SparkParitySuite extends munit.FunSuite:
     val serialized = serializer.serialize(data)
 
     // Find the matching test case
-    val testCase = golden("testCases").arr.find(_("name").str == testCaseName).getOrElse(
-      fail(s"Test case '$testCaseName' not found in golden file '$goldenName'")
-    )
+    val testCase = golden("testCases").arr
+      .find(_("name").str == testCaseName)
+      .getOrElse(
+        fail(s"Test case '$testCaseName' not found in golden file '$goldenName'")
+      )
 
     val expectedFields = testCase("serialized").obj
     expectedFields.zipWithIndex.foreach { case ((fieldName, expected), i) =>

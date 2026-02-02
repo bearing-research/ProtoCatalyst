@@ -12,7 +12,7 @@ import protocatalyst.types._
   * for each field type at compile time. It uses the same `inline erasedValue[Types]` pattern as
   * ProtoEncoder derivation.
   *
-  * Benefits over RowSerializer:
+  * Key optimizations:
   *   - No runtime type matching in serializeField
   *   - No isInstanceOf[Option[?]] checks
   *   - Compile-time unrolling of field iteration

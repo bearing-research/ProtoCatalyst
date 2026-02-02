@@ -6,9 +6,9 @@ import scala.compiletime.uninitialized
 
 import org.openjdk.jmh.annotations._
 
-import protocatalyst.encoder.{InternalTypeConverter, ProtoEncoder, RowSerializer}
+import protocatalyst.encoder.{InlineRowSerializer, InternalTypeConverter, ProtoEncoder}
 
-/** Benchmarks for ProtoEncoder schema derivation and RowSerializer serialization.
+/** Benchmarks for ProtoEncoder schema derivation and InlineRowSerializer serialization.
   *
   * Tests compile-time encoder derivation and runtime serialization performance.
   */
@@ -23,10 +23,10 @@ class ProtoEncoderBenchmarks:
   given InternalTypeConverter = InternalTypeConverter.default
 
   // Pre-derived serializers for serialization benchmarks
-  val simpleSerializer: RowSerializer[Simple] = RowSerializer.derived[Simple]
-  val personSerializer: RowSerializer[Person] = RowSerializer.derived[Person]
-  val complexSerializer: RowSerializer[Complex] = RowSerializer.derived[Complex]
-  val wideSerializer: RowSerializer[Wide] = RowSerializer.derived[Wide]
+  val simpleSerializer: InlineRowSerializer[Simple] = InlineRowSerializer.derived[Simple]
+  val personSerializer: InlineRowSerializer[Person] = InlineRowSerializer.derived[Person]
+  val complexSerializer: InlineRowSerializer[Complex] = InlineRowSerializer.derived[Complex]
+  val wideSerializer: InlineRowSerializer[Wide] = InlineRowSerializer.derived[Wide]
 
   // Test data
   val simpleData: Simple = BenchmarkData.simple

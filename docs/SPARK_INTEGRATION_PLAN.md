@@ -100,7 +100,7 @@ case class User(name: String, age: Int) derives ProtoEncoder
 | `StructType` | Runtime schema inference | `ProtoSchema` → `StructType` | ✅ Done |
 | `Expression` | Catalyst expressions | `ProtoExpr` → `Expression` | ✅ Done (mock) |
 | `LogicalPlan` | Catalyst plans | `ProtoLogicalPlan` → `LogicalPlan` | ✅ Done (mock) |
-| `InternalRow` | Row serialization | `RowSerializer[T]` derivation | ✅ Done |
+| `InternalRow` | Row serialization | `InlineRowSerializer[T]` derivation | ✅ Done |
 | `UnsafeRow` | Optimized row format | `UnsafeRowSerializer[T]` derivation | ✅ Done |
 
 ## Current ProtoCatalyst State
@@ -114,7 +114,7 @@ case class User(name: String, age: Int) derives ProtoEncoder
 | ProtoExpr (expressions) | 95% | `Expression` (50+ types) |
 | ProtoLogicalPlan | 95% | `LogicalPlan` (14 nodes) |
 | ProtoEncoder derivation | 100% | `Encoder[T]` derivation |
-| RowSerializer derivation | 100% | `InternalRow` serialization |
+| InlineRowSerializer derivation | 100% | `InternalRow` serialization |
 | UnsafeRowSerializer | 100% | `UnsafeRow` binary format |
 | Expression Mapping | 100% | `Expression` (bidirectional via mock) |
 | Plan Mapping | 100% | `LogicalPlan` (bidirectional via mock) |
@@ -132,19 +132,19 @@ case class User(name: String, age: Int) derives ProtoEncoder
 
 ## Row Serialization ✅
 
-Row serialization is now implemented via `RowSerializer[T]` derivation using Scala 3 mirrors.
+Row serialization is now implemented via `InlineRowSerializer[T]` derivation using Scala 3 mirrors.
 
 ### Implementation
 
 ```scala
-// encoder/src/main/scala/protocatalyst/encoder/RowSerializer.scala
-trait RowSerializer[T]:
-  def schema: Vector[FieldSchema]
+// encoder/src/main/scala/protocatalyst/encoder/InlineRowSerializer.scala
+trait InlineRowSerializer[T]:
+  def fieldCount: Int
   def serialize(value: T)(using conv: InternalTypeConverter): Array[Any]
   def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T
 
-object RowSerializer:
-  inline def derived[T](using m: Mirror.ProductOf[T]): RowSerializer[T] = ...
+object InlineRowSerializer:
+  inline def derived[T](using m: Mirror.ProductOf[T]): InlineRowSerializer[T] = ...
 ```
 
 ### Key Features
@@ -173,7 +173,7 @@ trait InternalTypeConverter:
 
 ```scala
 case class User(name: String, age: Int)
-val serializer = RowSerializer.derived[User]
+val serializer = InlineRowSerializer.derived[User]
 
 // Serialize
 val user = User("Alice", 30)
@@ -370,22 +370,15 @@ Total: 32 bytes (8-byte aligned)
 #### 1.1 Row Serializer Derivation
 
 ```scala
-// encoder/src/main/scala/protocatalyst/encoder/RowSerializer.scala
-trait RowSerializer[T]:
-  def serialize(value: T): InternalRow
-  def deserialize(row: InternalRow): T
+// encoder/src/main/scala/protocatalyst/encoder/InlineRowSerializer.scala
+trait InlineRowSerializer[T]:
+  def fieldCount: Int
+  def serialize(value: T)(using conv: InternalTypeConverter): Array[Any]
+  def deserialize(row: Array[Any])(using conv: InternalTypeConverter): T
 
-object RowSerializer:
-  // Derive using Scala 3 mirrors
-  inline def derived[T](using m: Mirror.ProductOf[T]): RowSerializer[T] =
-    new RowSerializer[T]:
-      def serialize(value: T): InternalRow =
-        val values = Tuple.fromProductTyped(value).toArray
-        new GenericInternalRow(values.map(convertToInternal))
-
-      def deserialize(row: InternalRow): T =
-        val values = (0 until row.numFields).map(i => row.get(i, ???))
-        m.fromProduct(Tuple.fromArray(values.toArray))
+object InlineRowSerializer:
+  // Derive using Scala 3 mirrors with compile-time type specialization
+  inline def derived[T](using m: Mirror.ProductOf[T]): InlineRowSerializer[T] = ...
 ```
 
 #### 1.2 Type-Specific Converters
@@ -423,11 +416,11 @@ object InternalTypeConverter:
 // This would live in Spark's codebase, using ProtoCatalyst
 package org.apache.spark.sql.catalyst.encoders
 
-import protocatalyst.encoder.{ProtoEncoder, RowSerializer}
+import protocatalyst.encoder.{ProtoEncoder, InlineRowSerializer}
 
 class ProtoBasedEncoder[T](
   proto: ProtoEncoder[T],
-  serializer: RowSerializer[T]
+  serializer: InlineRowSerializer[T]
 ) extends Encoder[T]:
 
   override val schema: StructType =
@@ -448,7 +441,7 @@ object Encoders:
   // New Scala 3 API using ProtoCatalyst
   inline def derived[T](using m: Mirror.ProductOf[T]): Encoder[T] =
     val proto = ProtoEncoder.derived[T]
-    val serializer = RowSerializer.derived[T]
+    val serializer = InlineRowSerializer.derived[T]
     new ProtoBasedEncoder(proto, serializer)
 
   // Replaces the old Scala 2 API:
@@ -744,7 +737,7 @@ spark/
 │   │   │   ├── encoders/
 │   │   │   │   ├── ExpressionEncoder.scala     # Existing (Scala 2)
 │   │   │   │   ├── ProtoBasedEncoder.scala     # NEW: Uses ProtoCatalyst
-│   │   │   │   └── RowSerializer.scala         # NEW: From ProtoCatalyst
+│   │   │   │   └── InlineRowSerializer.scala   # NEW: From ProtoCatalyst
 │   │   │   ├── expressions/
 │   │   │   │   └── ... (existing Catalyst expressions)
 │   │   │   └── proto/                          # NEW: ProtoCatalyst IR
@@ -789,7 +782,7 @@ While developing outside Spark, we structure for easy integration:
 ```
 protocatalyst/                    → Eventually merged into spark/sql/catalyst/proto/
 ├── core/                         → ProtoType, ProtoExpr, ProtoLogicalPlan, ProtoSchema
-├── encoder/                      → ProtoEncoder derivation, RowSerializer
+├── encoder/                      → ProtoEncoder derivation, InlineRowSerializer
 ├── query/                        → Query DSL (optional, for typed queries)
 ├── sql-parser/                   → SQL parsing (could complement SparkSqlParser)
 └── mock-runtime/                 → Testing without full Spark

@@ -151,10 +151,9 @@ Tests ProtoCatalyst's compile-time specialized serializer:
 
 | Benchmark | Description |
 |-----------|-------------|
-| `inlineSerialize*` | Serialize case class to Array[Any] |
-| `inlineDeserialize*` | Deserialize Array[Any] to case class |
-| `inlineRoundtrip*` | Full serialize→deserialize cycle |
-| `currentSerialize*` | RowSerializer (uses InlineRowSerializer internally) |
+| `serialize*` | Serialize case class to Array[Any] |
+| `deserialize*` | Deserialize Array[Any] to case class |
+| `roundtrip*` | Full serialize→deserialize cycle |
 
 ### ScalingBenchmarks
 

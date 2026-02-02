@@ -5,8 +5,8 @@ import scala.deriving.Mirror
 /** Inline-specialized row serializer for sum types (sealed traits).
   *
   * Uses compile-time code generation to serialize/deserialize each variant with type-specialized
-  * field handling. This eliminates the runtime reflection and placeholder types used in the legacy
-  * SumRowSerializer.
+  * field handling. This eliminates runtime reflection by generating specialized code at compile
+  * time.
   *
   * Row format: [variantName: String, ordinal: Int, variantData: Array[Any] | null]
   *

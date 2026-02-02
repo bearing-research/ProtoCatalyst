@@ -27,7 +27,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
   // === Basic serialization tests ===
 
   test("serialize case class variant with Int fields"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val click: SumEvent = SumClick(10, 20)
 
     val row = serializer.serialize(click)
@@ -41,7 +41,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(data(1), 20)
 
   test("serialize case class variant with String field"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val view: SumEvent = SumView("homepage")
 
     val row = serializer.serialize(view)
@@ -53,7 +53,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(data(0), "homepage")
 
   test("serialize case object variant"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val close: SumEvent = SumClose
 
     val row = serializer.serialize(close)
@@ -65,7 +65,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
   // === Deserialization tests ===
 
   test("deserialize case class variant"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val row = Array[Any]("SumClick", 0, Array[Any](100, 200))
 
     val event = serializer.deserialize(row)
@@ -73,7 +73,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(event, SumClick(100, 200))
 
   test("deserialize case object variant"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val row = Array[Any]("SumClose", 2, null)
 
     val event = serializer.deserialize(row)
@@ -83,7 +83,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
   // === Roundtrip tests ===
 
   test("roundtrip case class with Int fields"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val original: SumEvent = SumClick(42, 84)
 
     val row = serializer.serialize(original)
@@ -92,7 +92,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized, original)
 
   test("roundtrip case class with String field"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val original: SumEvent = SumView("products/123")
 
     val row = serializer.serialize(original)
@@ -101,7 +101,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized, original)
 
   test("roundtrip case object"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val original: SumEvent = SumClose
 
     val row = serializer.serialize(original)
@@ -110,7 +110,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized, original)
 
   test("roundtrip all variants"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val events: List[SumEvent] = List(
       SumClick(1, 2),
       SumClick(0, 0),
@@ -127,7 +127,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
   // === Mixed case object/class tests ===
 
   test("roundtrip mixed sealed trait - case object"):
-    val serializer = RowSerializer.derivedSum[SumMessage]
+    val serializer = InlineSumRowSerializer.derived[SumMessage]
     val original: SumMessage = SumPing
 
     val row = serializer.serialize(original)
@@ -136,7 +136,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized, original)
 
   test("roundtrip mixed sealed trait - case class with Long"):
-    val serializer = RowSerializer.derivedSum[SumMessage]
+    val serializer = InlineSumRowSerializer.derived[SumMessage]
     val original: SumMessage = SumPong(123456789L)
 
     val row = serializer.serialize(original)
@@ -145,7 +145,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized, original)
 
   test("roundtrip mixed sealed trait - case class with multiple fields"):
-    val serializer = RowSerializer.derivedSum[SumMessage]
+    val serializer = InlineSumRowSerializer.derived[SumMessage]
     val original: SumMessage = SumData("hello world", 11)
 
     val row = serializer.serialize(original)
@@ -156,7 +156,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
   // === Nested variant fields ===
 
   test("roundtrip variant with nested case class"):
-    val serializer = RowSerializer.derivedSum[SumPerson]
+    val serializer = InlineSumRowSerializer.derived[SumPerson]
     val original: SumPerson = SumEmployee("Alice", SumAddress("123 Main St", "NYC"))
 
     val row = serializer.serialize(original)
@@ -165,7 +165,7 @@ class SumRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized, original)
 
   test("roundtrip variant with simple field"):
-    val serializer = RowSerializer.derivedSum[SumPerson]
+    val serializer = InlineSumRowSerializer.derived[SumPerson]
     val original: SumPerson = SumContractor("Acme Corp")
 
     val row = serializer.serialize(original)
@@ -173,22 +173,10 @@ class SumRowSerializerSuite extends munit.FunSuite:
 
     assertEquals(deserialized, original)
 
-  // === Schema tests ===
-
-  test("schema has correct structure"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
-
-    assertEquals(serializer.schema.length, 3)
-    assertEquals(serializer.schema(0).name, "_type")
-    assertEquals(serializer.schema(0).dataType, ProtoType.StringType)
-    assertEquals(serializer.schema(1).name, "_ordinal")
-    assertEquals(serializer.schema(1).dataType, ProtoType.IntType)
-    assertEquals(serializer.schema(2).name, "value")
-
   // === Bulk test ===
 
   test("roundtrip 1000 mixed variants"):
-    val serializer = RowSerializer.derivedSum[SumEvent]
+    val serializer = InlineSumRowSerializer.derived[SumEvent]
     val events = (1 to 1000).map { i =>
       i % 3 match
         case 0 => SumClick(i, i * 2)

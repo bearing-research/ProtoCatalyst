@@ -282,7 +282,7 @@ class UnsafeRowSuite extends munit.FunSuite:
   test("UnsafeRowSerializer handles flat structs with multiple fields"):
     // Note: Nested case class deserialization returns Product, not the original type.
     // This is expected behavior for UnsafeRow - nested structs are accessed via getStruct().
-    // For full case class reconstruction, use RowSerializer with proper type encoders.
+    // For full case class reconstruction, use InlineRowSerializer with proper type encoders.
     val ser = UnsafeRowSerializer.derived[PersonWithAddress]
     val original = PersonWithAddress("Alice", "NYC", "10001")
 

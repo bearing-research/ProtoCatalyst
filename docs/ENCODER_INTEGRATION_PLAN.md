@@ -137,11 +137,11 @@ object ProtoEncoder:
 | `ScalaEnumEncoder` | `makeEnumEncoder[T](clsTag)` → StringType |
 | `JavaEnumEncoder` | `javaEnumEncoder[E <: Enum[E]]` → StringType |
 
-### 2.2 RowSerializer (InternalRow Serialization)
+### 2.2 InlineRowSerializer (InternalRow Serialization)
 
 ```scala
-trait RowSerializer[T]:
-  def schema: Vector[FieldSchema]
+trait InlineRowSerializer[T]:
+  def fieldCount: Int
   def serialize(value: T)(using InternalTypeConverter): Array[Any]
   def deserialize(row: Array[Any])(using InternalTypeConverter): T
 ```
@@ -174,7 +174,7 @@ trait UnsafeRowSerializer[T]:
 | Collections | Seq, List, Vector, Set, Array, Map | ✅ |
 | Tuples | Tuple2 through Tuple5 | ✅ |
 | Nested structs | Recursive derivation | ✅ |
-| Row serialization | `RowSerializer[T]` with InternalTypeConverter | ✅ |
+| Row serialization | `InlineRowSerializer[T]` with InternalTypeConverter | ✅ |
 | UnsafeRow format | `UnsafeRowSerializer[T]` with binary layout | ✅ |
 | **ClassTag support** | `clsTag: ClassTag[T]` via `summonInline[ClassTag[T]]` | ✅ |
 | **Scala 3 enum support** | `Mirror.SumOf[T]` → `StringType` encoding | ✅ |
@@ -217,7 +217,7 @@ ProtoEncoder derivation logic    →     ScalaReflection.scala (rewritten)
 ProtoType                        →     Works alongside existing DataType
   - Type mapping logic                   - Conversion utilities
 
-RowSerializer                    →     ExpressionEncoder internals
+InlineRowSerializer              →     ExpressionEncoder internals
   - serialize/deserialize                - InternalRow conversion
 
 UnsafeRowSerializer              →     UnsafeRow codegen paths
@@ -510,7 +510,7 @@ case class Person(name: String, age: Int) derives Encoder
 
 ## Appendix: Spark's Expression Patterns (Reference)
 
-When porting RowSerializer logic, these are the Catalyst expressions used:
+When porting InlineRowSerializer logic, these are the Catalyst expressions used:
 
 ### A.1 Serializer Expression Examples
 
@@ -594,7 +594,7 @@ These features are **not required** for Spark 4.0 compatibility but could provid
 
 | Feature | Description | Use Case |
 |---------|-------------|----------|
-| **Inline Type Specialization** ✅ | **IMPLEMENTED** - Uses Scala 3 `inline` to generate type-specialized serialization code at compile-time. See `InlineRowSerializer` which is now the default in `RowSerializer.derived`. Achieves 2.8x-8.7x speedup over generic serialization. | High-throughput pipelines where serialization is a bottleneck; see [ADR-001](decisions/ADR-001-no-runtime-codegen.md) |
+| **Inline Type Specialization** ✅ | **IMPLEMENTED** - Uses Scala 3 `inline` to generate type-specialized serialization code at compile-time. See `InlineRowSerializer.derived[T]`. Achieves 2.8x-8.7x speedup over generic serialization. | High-throughput pipelines where serialization is a bottleneck; see [ADR-001](decisions/ADR-001-no-runtime-codegen.md) |
 | **Columnar Encoding** | Bulk serialize/deserialize arrays of rows in columnar format | Analytics workloads; memory-efficient batch processing; better cache utilization |
 | **Lazy Deserialization** | Deserialize only accessed fields from binary data | Wide rows where only a few fields are needed; projection pushdown |
 | **Compression Support** | Optional field-level compression (gzip, snappy, zstd) | Network transfer optimization; storage-constrained environments |
@@ -606,7 +606,7 @@ These features are **not required** for Spark 4.0 compatibility but could provid
 |---------|-------------|----------|
 | **Custom Serialization Annotations** | `@serialize`, `@deserialize` method annotations | Complex types requiring custom logic (e.g., encryption, normalization) |
 | **Field Transformers** | Define transformation pipelines during serialization | Data masking, normalization, computed fields |
-| **Polymorphic Encoding** ✅ | **IMPLEMENTED** - Type-safe encoding of sealed hierarchies using `InlineSumRowSerializer`. Supports case classes and case objects with compile-time type specialization. See `RowSerializer.derivedSum`. | ADTs with data (e.g., `sealed trait Event { case class Click(...); case class View(...) }`) |
+| **Polymorphic Encoding** ✅ | **IMPLEMENTED** - Type-safe encoding of sealed hierarchies using `InlineSumRowSerializer`. Supports case classes and case objects with compile-time type specialization. See `InlineSumRowSerializer.derived[T]`. | ADTs with data (e.g., `sealed trait Event { case class Click(...); case class View(...) }`) |
 | **Circular Reference Handling** | Detect and handle circular references in object graphs | Graph-structured data; ORM entities with bidirectional relations |
 | **Binary Versioning** | Write schema version bytes to enable future format changes | Long-term storage where format may evolve |
 
