@@ -18,6 +18,7 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Lateral(_, alias)      => alias
     case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
     case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+    case FromClause.LateralView(source, spec) => spec.tableAlias
 
   // Helper to extract simple GROUP BY expressions
   def extractSimpleGroupBy(gb: Option[GroupByClause]): Vector[SqlExpr] = gb match
@@ -31,6 +32,7 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Lateral(_, alias)      => Some(alias)
     case FromClause.Pivot(_, _, alias)     => alias
     case FromClause.Unpivot(_, _, alias)   => alias
+    case FromClause.LateralView(_, spec)   => Some(spec.tableAlias)
 
   test("parses simple SELECT"):
     val result = SqlParser.parse("SELECT name FROM users")
@@ -1611,3 +1613,117 @@ class ParserSuite extends munit.FunSuite:
       case FromClause.Join(left, right, _, _) => countLateral(left) + countLateral(right)
       case _ => 0
     assertEquals(countLateral(stmt.from), 2)
+
+  // === Phase 15: LATERAL VIEW Tests ===
+
+  test("parses simple LATERAL VIEW EXPLODE"):
+    val result = SqlParser.parse("""
+      SELECT name, tag
+      FROM users
+      LATERAL VIEW EXPLODE(tags) t AS tag
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.LateralView(FromClause.Table(TableRef("users", None)), spec) =>
+        assertEquals(spec.outer, false)
+        assertEquals(spec.tableAlias, "t")
+        assertEquals(spec.columnAliases, Vector("tag"))
+        spec.generator match
+          case SqlExpr.FunctionCall("EXPLODE", args, false) =>
+            assertEquals(args.size, 1)
+          case _ => fail(s"Expected EXPLODE function, got ${spec.generator}")
+      case other => fail(s"Expected LateralView, got $other")
+
+  test("parses LATERAL VIEW OUTER EXPLODE"):
+    val result = SqlParser.parse("""
+      SELECT name, tag
+      FROM users
+      LATERAL VIEW OUTER EXPLODE(tags) t AS tag
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.LateralView(_, spec) =>
+        assertEquals(spec.outer, true)
+        assertEquals(spec.tableAlias, "t")
+      case other => fail(s"Expected LateralView, got $other")
+
+  test("parses LATERAL VIEW with multiple column aliases"):
+    val result = SqlParser.parse("""
+      SELECT name, key, value
+      FROM users
+      LATERAL VIEW EXPLODE(attributes) t AS key, value
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.LateralView(_, spec) =>
+        assertEquals(spec.columnAliases, Vector("key", "value"))
+      case other => fail(s"Expected LateralView, got $other")
+
+  test("parses LATERAL VIEW with POSEXPLODE"):
+    val result = SqlParser.parse("""
+      SELECT name, pos, tag
+      FROM users
+      LATERAL VIEW POSEXPLODE(tags) t AS pos, tag
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.LateralView(_, spec) =>
+        assertEquals(spec.columnAliases, Vector("pos", "tag"))
+        spec.generator match
+          case SqlExpr.FunctionCall("POSEXPLODE", _, _) => () // ok
+          case _ => fail(s"Expected POSEXPLODE function")
+      case other => fail(s"Expected LateralView, got $other")
+
+  test("parses multiple LATERAL VIEWs"):
+    val result = SqlParser.parse("""
+      SELECT name, tag, item
+      FROM users
+      LATERAL VIEW EXPLODE(tags) t1 AS tag
+      LATERAL VIEW EXPLODE(items) t2 AS item
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    // Should have nested LateralViews
+    def countLateralViews(from: FromClause): Int = from match
+      case FromClause.LateralView(source, _) => 1 + countLateralViews(source)
+      case _ => 0
+    assertEquals(countLateralViews(stmt.from), 2)
+
+  test("parses LATERAL VIEW with table alias"):
+    val result = SqlParser.parse("""
+      SELECT u.name, t.tag
+      FROM users u
+      LATERAL VIEW EXPLODE(tags) t AS tag
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.LateralView(FromClause.Table(TableRef("users", Some("u"))), spec) =>
+        assertEquals(spec.tableAlias, "t")
+      case other => fail(s"Expected LateralView with table alias, got $other")
+
+  test("parses LATERAL VIEW with INLINE"):
+    val result = SqlParser.parse("""
+      SELECT name, col1, col2
+      FROM users
+      LATERAL VIEW INLINE(struct_array) t AS col1, col2
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.LateralView(_, spec) =>
+        spec.generator match
+          case SqlExpr.FunctionCall("INLINE", _, _) => () // ok
+          case _ => fail(s"Expected INLINE function")
+      case other => fail(s"Expected LateralView, got $other")

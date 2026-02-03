@@ -139,6 +139,9 @@ object MockQueryBinder:
           r <- collectSchemas(lateral, catalog)
         yield l ++ r
 
+      case Generate(_, _, _, child) =>
+        collectSchemas(child, catalog)
+
   private def bindPlan(plan: ProtoLogicalPlan, ctx: BindingContext): BindingResult =
     import ProtoLogicalPlan.*
     plan match
@@ -268,6 +271,13 @@ object MockQueryBinder:
             BoundPlan(LateralJoin(boundLeft, boundLateral, boundCond))
           case (err: BindingError, _) => err
           case (_, err: BindingError) => err
+
+      case Generate(generator, output, outer, child) =>
+        bindPlan(child, ctx) match
+          case BoundPlan(boundChild) =>
+            val boundGenerator = bindExpr(generator, ctx)
+            BoundPlan(Generate(boundGenerator, output, outer, boundChild))
+          case err => err
 
   private def bindExpr(expr: ProtoExpr, ctx: BindingContext): ProtoExpr =
     import ProtoExpr.*
@@ -411,6 +421,12 @@ object MockQueryBinder:
 
       // Grouping function
       case Grouping(children)      => Grouping(children.map(bindExpr(_, ctx)))
+
+      // Generator functions
+      case Explode(child)          => Explode(bindExpr(child, ctx))
+      case PosExplode(child)       => PosExplode(bindExpr(child, ctx))
+      case Inline(child)           => Inline(bindExpr(child, ctx))
+      case Stack(numRows, children) => Stack(bindExpr(numRows, ctx), children.map(bindExpr(_, ctx)))
 
       // Leaf nodes that don't need binding
       case lit: Literal  => lit

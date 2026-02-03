@@ -222,6 +222,14 @@ object Canonicalizer:
           condition.map(exprTransform)
         )
 
+      case Generate(generator, output, outer, child) =>
+        Generate(
+          exprTransform(generator),
+          output,
+          outer,
+          transformPlan(child, exprTransform)
+        )
+
       case r: RelationRef => r
 
   private def transformExpr(

@@ -182,6 +182,13 @@ object ExpressionConverter:
       case Grouping(columns) =>
         ME.Grouping(columns.map(toMock))
 
+      // === Generator Functions ===
+      // Generator functions produce multiple rows - used with LATERAL VIEW
+      case Explode(child)            => ME.UnresolvedFunction("EXPLODE", Seq(toMock(child)))
+      case PosExplode(child)         => ME.UnresolvedFunction("POSEXPLODE", Seq(toMock(child)))
+      case Inline(child)             => ME.UnresolvedFunction("INLINE", Seq(toMock(child)))
+      case Stack(numRows, children)  => ME.UnresolvedFunction("STACK", toMock(numRows) +: children.map(toMock))
+
       // === Opaque Function ===
       case OpaqueCall(name, args, returnType, deterministic) =>
         ME.UnresolvedFunction(name, args.map(toMock))

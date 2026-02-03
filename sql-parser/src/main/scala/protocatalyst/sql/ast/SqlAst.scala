@@ -50,6 +50,8 @@ enum FromClause:
   case Lateral(stmt: SqlStatement.SelectStatement, alias: String)
   case Pivot(source: FromClause, spec: PivotSpec, alias: Option[String])
   case Unpivot(source: FromClause, spec: UnpivotSpec, alias: Option[String])
+  /** LATERAL VIEW: applies a generator function to produce multiple rows from each input row */
+  case LateralView(source: FromClause, spec: LateralViewSpec)
 
 /** PIVOT specification. */
 case class PivotSpec(
@@ -89,6 +91,18 @@ case class UnpivotSpec(
 case class UnpivotColumn(
     column: SqlExpr,
     alias: Option[String]
+)
+
+/** LATERAL VIEW specification. */
+case class LateralViewSpec(
+    /** Whether OUTER is specified (preserves rows when generator produces empty results) */
+    outer: Boolean,
+    /** The generator function call (e.g., EXPLODE(array)) */
+    generator: SqlExpr,
+    /** Table alias for the generator output */
+    tableAlias: String,
+    /** Column aliases for the generated columns */
+    columnAliases: Vector[String]
 )
 
 /** Join types. */

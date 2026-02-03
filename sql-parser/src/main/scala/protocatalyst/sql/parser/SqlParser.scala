@@ -233,15 +233,8 @@ class SqlParser(tokens: Vector[Token]):
         else Left(ParseError.SyntaxError("Expected SELECT in subquery", currentPosition))
       else parseTableRef().map(FromClause.Table(_))
 
-    // Check for PIVOT or UNPIVOT after the base item
-    baseItem.flatMap { source =>
-      if check(Token.PIVOT) then
-        parsePivot(source)
-      else if check(Token.UNPIVOT) then
-        parseUnpivot(source)
-      else
-        Right(source)
-    }
+    // Check for PIVOT, UNPIVOT, or LATERAL VIEW after the base item
+    baseItem.flatMap(parseTableModifiers)
 
   private def parseRequiredAlias(): Either[ParseError, String] =
     if check(Token.AS) then advance()
@@ -251,6 +244,69 @@ class SqlParser(tokens: Vector[Token]):
         Right(name)
       case _ =>
         Left(ParseError.SyntaxError("Subquery in FROM clause requires an alias", currentPosition))
+
+  /** Parse table modifiers: PIVOT, UNPIVOT, LATERAL VIEW (can stack) */
+  private def parseTableModifiers(source: FromClause): Either[ParseError, FromClause] =
+    if check(Token.PIVOT) then
+      parsePivot(source).flatMap(parseTableModifiers)
+    else if check(Token.UNPIVOT) then
+      parseUnpivot(source).flatMap(parseTableModifiers)
+    else if check(Token.LATERAL) && peekIsView() then
+      parseLateralView(source).flatMap(parseTableModifiers)
+    else
+      Right(source)
+
+  /** Check if the next token after LATERAL is VIEW. */
+  private def peekIsView(): Boolean =
+    pos + 1 < tokens.length && tokens(pos + 1) == Token.VIEW
+
+  /** Parse LATERAL VIEW [OUTER] generator(args) table_alias AS col1 [, col2, ...] */
+  private def parseLateralView(source: FromClause): Either[ParseError, FromClause] =
+    advance() // consume LATERAL
+    advance() // consume VIEW
+    // Check for optional OUTER keyword
+    val outer = if check(Token.OUTER) then
+      advance()
+      true
+    else false
+    // Parse generator function call
+    for
+      generator <- parsePrimary() // This should be a function call like EXPLODE(arr)
+      tableAlias <- parseIdentifier("table alias")
+      _ <- expect(Token.AS, "AS")
+      columnAliases <- parseColumnAliases()
+    yield FromClause.LateralView(source, LateralViewSpec(outer, generator, tableAlias, columnAliases))
+
+  /** Parse comma-separated column aliases for LATERAL VIEW. */
+  private def parseColumnAliases(): Either[ParseError, Vector[String]] =
+    current match
+      case Token.Identifier(name) =>
+        advance()
+        parseRestOfColumnAliases(Vector(name))
+      case t =>
+        Left(ParseError.UnexpectedToken(t, "column alias", currentPosition))
+
+  /** Parse remaining column aliases after the first one. */
+  private def parseRestOfColumnAliases(acc: Vector[String]): Either[ParseError, Vector[String]] =
+    // Only continue if comma and the next token is an identifier that's not a keyword
+    if check(Token.Comma) then
+      // Peek to see if next is a valid column alias (not a keyword or join keyword)
+      if pos + 1 < tokens.length then
+        tokens(pos + 1) match
+          case Token.Identifier(name) if !isKeyword(name) && !isJoinKeyword(name) && !isClauseKeyword(name) =>
+            advance() // consume comma
+            advance() // consume identifier
+            parseRestOfColumnAliases(acc :+ name)
+          case _ => Right(acc)
+      else Right(acc)
+    else Right(acc)
+
+  /** Check if a name is a SQL clause keyword that ends column aliases. */
+  private def isClauseKeyword(name: String): Boolean =
+    val upper = name.toUpperCase
+    upper == "WHERE" || upper == "GROUP" || upper == "HAVING" || upper == "ORDER" ||
+    upper == "LIMIT" || upper == "UNION" || upper == "INTERSECT" || upper == "EXCEPT" ||
+    upper == "LATERAL" || upper == "PIVOT" || upper == "UNPIVOT"
 
   /** Parse LATERAL (SELECT ...) alias */
   private def parseLateralSubquery(): Either[ParseError, FromClause] =

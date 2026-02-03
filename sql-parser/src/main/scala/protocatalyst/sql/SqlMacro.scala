@@ -90,12 +90,13 @@ object SqlMacro:
   /** Extract the primary table name from a FROM clause. */
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref)             => ref.name
-      case FromClause.Join(left, _, _, _)    => extractTableName(left)
-      case FromClause.Subquery(_, alias)     => alias
-      case FromClause.Lateral(_, alias)      => alias
-      case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
-      case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+      case FromClause.Table(ref)                  => ref.name
+      case FromClause.Join(left, _, _, _)         => extractTableName(left)
+      case FromClause.Subquery(_, alias)          => alias
+      case FromClause.Lateral(_, alias)           => alias
+      case FromClause.Pivot(source, _, alias)     => alias.getOrElse(extractTableName(source))
+      case FromClause.Unpivot(source, _, alias)   => alias.getOrElse(extractTableName(source))
+      case FromClause.LateralView(source, spec)   => spec.tableAlias
 
   /** Convert SqlStatement to Expr for runtime use. */
   private def sqlStmtToExpr(stmt: SqlStatement)(using Quotes): Expr[SqlStatement] =
@@ -190,6 +191,15 @@ object SqlMacro:
           case Some(a) => '{ Some(${ Expr(a) }) }
           case None    => '{ None }
         '{ FromClause.Unpivot($sourceExpr, $specExpr, $aliasExpr) }
+      case FromClause.LateralView(source, spec) =>
+        val sourceExpr = fromClauseToExpr(source)
+        val specExpr = lateralViewSpecToExpr(spec)
+        '{ FromClause.LateralView($sourceExpr, $specExpr) }
+
+  private def lateralViewSpecToExpr(spec: LateralViewSpec)(using Quotes): Expr[LateralViewSpec] =
+    val generatorExpr = sqlExprToExpr(spec.generator)
+    val columnAliasesExpr = Expr.ofSeq(spec.columnAliases.map(Expr(_)))
+    '{ LateralViewSpec(${ Expr(spec.outer) }, $generatorExpr, ${ Expr(spec.tableAlias) }, $columnAliasesExpr.toVector) }
 
   private def pivotSpecToExpr(spec: PivotSpec)(using Quotes): Expr[PivotSpec] =
     val aggregatesExpr = Expr.ofSeq(spec.aggregates.map(pivotAggregateToExpr))
@@ -451,6 +461,9 @@ object SqlMacro:
         case FromClause.Unpivot(source, spec, _) =>
           validateFromClause(source) ++
             spec.columns.flatMap(c => validateExpr(c.column))
+        case FromClause.LateralView(source, spec) =>
+          validateFromClause(source) ++
+            validateExpr(spec.generator)
 
     def validateGroupByClause(gb: GroupByClause): Vector[String] =
       gb match

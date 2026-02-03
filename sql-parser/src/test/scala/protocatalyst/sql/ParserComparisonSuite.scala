@@ -70,6 +70,8 @@ class ParserComparisonSuite extends FunSuite:
       extractTablesFromClause(source)
     case FromClause.Unpivot(source, _, _) =>
       extractTablesFromClause(source)
+    case FromClause.LateralView(source, _) =>
+      extractTablesFromClause(source)
 
   /** Extract table names from JSQLParser AST. */
   def extractTablesJSql(stmt: JStatement): Set[String] =

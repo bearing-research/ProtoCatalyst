@@ -119,6 +119,9 @@ object SqlVerifier:
       s"${prettyPrintFrom(source)} PIVOT (...)${alias.map(a => s" AS $a").getOrElse("")}"
     case FromClause.Unpivot(source, _, alias) =>
       s"${prettyPrintFrom(source)} UNPIVOT (...)${alias.map(a => s" AS $a").getOrElse("")}"
+    case FromClause.LateralView(source, spec) =>
+      val outerStr = if spec.outer then " OUTER" else ""
+      s"${prettyPrintFrom(source)} LATERAL VIEW$outerStr ${prettyPrintExpr(spec.generator)} ${spec.tableAlias} AS ${spec.columnAliases.mkString(", ")}"
 
   private def prettyPrintGroupBy(gb: GroupByClause): String = gb match
     case GroupByClause.Simple(exprs)      => exprs.map(prettyPrintExpr).mkString(", ")
@@ -218,6 +221,10 @@ object SqlVerifier:
       case ProtoLogicalPlan.LateralJoin(left, lateral, cond) =>
         val condStr = cond.map(c => s", cond=${prettyPrintProtoExpr(c)}").getOrElse("")
         s"${pad}LateralJoin$condStr\n${prettyPrintPlan(left, indent + 1)}${prettyPrintPlan(lateral, indent + 1)}"
+
+      case ProtoLogicalPlan.Generate(generator, output, outer, child) =>
+        val outerStr = if outer then " OUTER" else ""
+        s"${pad}Generate$outerStr(${prettyPrintProtoExpr(generator)}, output=[${output.mkString(", ")}])\n${prettyPrintPlan(child, indent + 1)}"
 
   private def prettyPrintProtoExpr(expr: ProtoExpr): String = expr match
     case ProtoExpr.Literal(value)              => value.toString

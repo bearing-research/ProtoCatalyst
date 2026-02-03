@@ -1509,3 +1509,128 @@ class TransformSuite extends munit.FunSuite:
       case _                                    => 0
 
     assertEquals(countJoins(result.toOption.get), 2)
+
+  // === Phase 15: LATERAL VIEW ===
+
+  // Schema for LATERAL VIEW tests with an array field
+  val arraySchema = ProtoSchema(
+    Vector(
+      ProtoStructField("name", ProtoType.StringType, nullable = false),
+      ProtoStructField("tags", ProtoType.ArrayType(ProtoType.StringType, true), nullable = true),
+      ProtoStructField("attributes", ProtoType.MapType(ProtoType.StringType, ProtoType.StringType, true), nullable = true)
+    )
+  )
+
+  test("transforms simple LATERAL VIEW EXPLODE"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users LATERAL VIEW EXPLODE(tags) t AS tag"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, arraySchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findGenerate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Generate] = plan match
+      case g @ ProtoLogicalPlan.Generate(_, _, _, _) => Some(g)
+      case ProtoLogicalPlan.Project(_, child)        => findGenerate(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findGenerate(child)
+      case _                                         => None
+
+    val generate = findGenerate(result.toOption.get)
+    assert(generate.isDefined, "Expected Generate in plan")
+    assertEquals(generate.get.outer, false)
+    assertEquals(generate.get.generatorOutput, Vector("tag"))
+
+  test("transforms LATERAL VIEW OUTER EXPLODE"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users LATERAL VIEW OUTER EXPLODE(tags) t AS tag"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, arraySchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findGenerate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Generate] = plan match
+      case g @ ProtoLogicalPlan.Generate(_, _, _, _) => Some(g)
+      case ProtoLogicalPlan.Project(_, child)        => findGenerate(child)
+      case _                                         => None
+
+    val generate = findGenerate(result.toOption.get)
+    assert(generate.isDefined, "Expected Generate in plan")
+    assertEquals(generate.get.outer, true)
+
+  test("transforms LATERAL VIEW with POSEXPLODE"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users LATERAL VIEW POSEXPLODE(tags) t AS pos, tag"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, arraySchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findGenerate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Generate] = plan match
+      case g @ ProtoLogicalPlan.Generate(_, _, _, _) => Some(g)
+      case ProtoLogicalPlan.Project(_, child)        => findGenerate(child)
+      case _                                         => None
+
+    val generate = findGenerate(result.toOption.get)
+    assert(generate.isDefined, "Expected Generate in plan")
+    assertEquals(generate.get.generatorOutput, Vector("pos", "tag"))
+    generate.get.generator match
+      case ProtoExpr.PosExplode(_) => () // ok
+      case _ => fail(s"Expected PosExplode, got ${generate.get.generator}")
+
+  test("transforms multiple LATERAL VIEWs"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users LATERAL VIEW EXPLODE(tags) t1 AS tag1 LATERAL VIEW EXPLODE(tags) t2 AS tag2"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, arraySchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def countGenerates(plan: ProtoLogicalPlan): Int = plan match
+      case ProtoLogicalPlan.Generate(_, _, _, child) => 1 + countGenerates(child)
+      case ProtoLogicalPlan.Project(_, child)        => countGenerates(child)
+      case ProtoLogicalPlan.Filter(_, child)         => countGenerates(child)
+      case _                                         => 0
+
+    assertEquals(countGenerates(result.toOption.get), 2)
+
+  test("transforms LATERAL VIEW with map EXPLODE"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users LATERAL VIEW EXPLODE(attributes) t AS key, value"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, arraySchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findGenerate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Generate] = plan match
+      case g @ ProtoLogicalPlan.Generate(_, _, _, _) => Some(g)
+      case ProtoLogicalPlan.Project(_, child)        => findGenerate(child)
+      case _                                         => None
+
+    val generate = findGenerate(result.toOption.get)
+    assert(generate.isDefined, "Expected Generate in plan")
+    assertEquals(generate.get.generatorOutput, Vector("key", "value"))

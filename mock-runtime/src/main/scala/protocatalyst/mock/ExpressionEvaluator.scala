@@ -443,6 +443,10 @@ object ExpressionEvaluator:
       case Grouping(_) =>
         throw IllegalStateException("GROUPING() cannot be evaluated row-by-row, requires aggregate context")
 
+      // Generator functions produce multiple rows and cannot be evaluated row-by-row
+      case Explode(_) | PosExplode(_) | Inline(_) | Stack(_, _) =>
+        throw IllegalStateException("Generator functions cannot be evaluated row-by-row, use with LATERAL VIEW")
+
   private def compareNumeric(
       l: ProtoExpr,
       r: ProtoExpr,

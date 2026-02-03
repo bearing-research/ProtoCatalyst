@@ -164,6 +164,10 @@ object AstToProtoTransform:
       case FromClause.Lateral(_, alias) =>
         // For LATERAL subqueries, use the alias as the schema key
         Map(alias -> defaultSchema)
+      case FromClause.LateralView(source, _) =>
+        // For LATERAL VIEW, only collect schemas from source
+        // The table alias refers to the generated columns, not the source columns
+        collectTableSchemas(source, defaultSchema, defaultTableName)
 
   /** Transform the FROM clause to a plan. */
   private def transformFromClause(
@@ -220,6 +224,29 @@ object AstToProtoTransform:
         transformSubquery(stmt, ctx).map { subPlan =>
           ProtoLogicalPlan.SubqueryAlias(alias, subPlan)
         }
+      case FromClause.LateralView(source, spec) =>
+        for
+          sourcePlan <- transformFromClause(source, schema, tableName, ctx)
+          generator <- transformExpr(spec.generator, ctx)
+          generatorExpr <- transformToGenerator(generator)
+        yield ProtoLogicalPlan.Generate(generatorExpr, spec.columnAliases, spec.outer, sourcePlan)
+
+  /** Convert a general expression to a generator expression. */
+  private def transformToGenerator(expr: ProtoExpr): Either[TransformError, ProtoExpr] =
+    import ProtoExpr.*
+    expr match
+      // Already a generator expression
+      case _: Explode | _: PosExplode | _: Inline | _: Stack => Right(expr)
+      // OpaqueCall to known generator functions
+      case OpaqueCall(name, args, _, _) =>
+        name.toUpperCase match
+          case "EXPLODE" if args.size == 1 => Right(Explode(args.head))
+          case "POSEXPLODE" if args.size == 1 => Right(PosExplode(args.head))
+          case "INLINE" if args.size == 1 => Right(Inline(args.head))
+          case "STACK" if args.size >= 2 => Right(Stack(args.head, args.tail))
+          case _ => Left(TransformError.InvalidExpression(s"Unknown generator function: $name"))
+      case other =>
+        Left(TransformError.InvalidExpression(s"Expected generator function in LATERAL VIEW, got: $other"))
 
   /** Convert SQL JoinType to ProtoLogicalPlan JoinType. */
   private def toProtoJoinType(jt: protocatalyst.sql.ast.JoinType): protocatalyst.plan.JoinType =
@@ -689,6 +716,7 @@ object AstToProtoTransform:
       case FromClause.Lateral(_, alias)      => alias
       case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
       case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+      case FromClause.LateralView(source, spec) => spec.tableAlias
 
   private def transformCaseWhenBranches(
       branches: Vector[(SqlExpr, SqlExpr)],

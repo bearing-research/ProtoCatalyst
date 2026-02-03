@@ -121,6 +121,9 @@ object PlanConverter:
       case LateralJoin(_, _, _) =>
         throw UnsupportedOperationException("LATERAL JOIN is not yet supported in mock runtime")
 
+      case Generate(_, _, _, _) =>
+        throw UnsupportedOperationException("LATERAL VIEW / Generate is not yet supported in mock runtime")
+
   private def convertSortOrder(so: SortOrder): MockExpression.SortOrder =
     import MockExpression.{SortDirection as MSD, NullOrdering as MNO}
     MockExpression.SortOrder(

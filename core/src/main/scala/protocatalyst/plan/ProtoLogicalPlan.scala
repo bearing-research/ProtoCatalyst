@@ -127,6 +127,17 @@ enum ProtoLogicalPlan extends Serializable:
       condition: Option[ProtoExpr]
   )
 
+  /** LATERAL VIEW: applies a generator function to produce rows from each input row */
+  case Generate(
+      /** The generator expression (e.g., Explode, PosExplode) */
+      generator: ProtoExpr,
+      /** Names for the generated output columns */
+      generatorOutput: Vector[String],
+      /** Whether to preserve input rows when generator produces empty results (OUTER) */
+      outer: Boolean,
+      child: ProtoLogicalPlan
+  )
+
 enum JoinType extends Serializable:
   case Inner, LeftOuter, RightOuter, FullOuter, LeftSemi, LeftAnti, Cross
 

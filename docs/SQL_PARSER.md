@@ -309,9 +309,7 @@ FROM users
 GROUP BY CUBE(name)
 ```
 
-## Future Phases
-
-### Phase 13: PIVOT / UNPIVOT
+### Phase 13: PIVOT / UNPIVOT (Complete)
 
 Data reshaping operations:
 
@@ -328,13 +326,20 @@ SELECT * FROM quarterly_sales
 UNPIVOT (
   amount FOR quarter IN (q1, q2, q3, q4)
 )
+
+-- UNPIVOT with INCLUDE NULLS
+SELECT * FROM quarterly_sales
+UNPIVOT INCLUDE NULLS (
+  amount FOR quarter IN (q1, q2, q3, q4)
+)
 ```
 
-### Phase 14: LATERAL Subquery
+### Phase 14: LATERAL Subquery (Complete)
 
 Correlated subqueries in FROM clause:
 
 ```sql
+-- Comma syntax (implicit CROSS JOIN)
 SELECT u.*, recent_orders.*
 FROM users u,
 LATERAL (
@@ -343,22 +348,62 @@ LATERAL (
   ORDER BY created_at DESC
   LIMIT 5
 ) recent_orders
+
+-- Explicit CROSS JOIN LATERAL
+SELECT *
+FROM users u
+CROSS JOIN LATERAL (
+  SELECT * FROM orders WHERE user_id = u.id
+) AS orders
+
+-- LEFT JOIN LATERAL
+SELECT *
+FROM users u
+LEFT JOIN LATERAL (
+  SELECT * FROM orders WHERE user_id = u.id LIMIT 1
+) last_order ON true
 ```
 
-### Phase 15: LATERAL VIEW
+### Phase 15: LATERAL VIEW (Complete)
 
-Generator functions with EXPLODE:
+Generator functions for expanding arrays/maps into rows:
+
+**Supported Generator Functions:**
+- EXPLODE(array) - one row per array element
+- EXPLODE(map) - one row per key-value pair
+- POSEXPLODE(array) - includes position/index
+- INLINE(array of structs) - expands struct array
+- STACK(n, exprs) - splits expressions into n rows
 
 ```sql
-SELECT name, col
+-- Basic EXPLODE
+SELECT name, tag
 FROM users
-LATERAL VIEW EXPLODE(tags) t AS col
+LATERAL VIEW EXPLODE(tags) t AS tag
 
 -- With OUTER to preserve rows with empty arrays
-SELECT name, col
+SELECT name, tag
 FROM users
-LATERAL VIEW OUTER EXPLODE(tags) t AS col
+LATERAL VIEW OUTER EXPLODE(tags) t AS tag
+
+-- POSEXPLODE with position
+SELECT name, pos, tag
+FROM users
+LATERAL VIEW POSEXPLODE(tags) t AS pos, tag
+
+-- Map EXPLODE (produces key and value columns)
+SELECT name, key, value
+FROM users
+LATERAL VIEW EXPLODE(attributes) t AS key, value
+
+-- Multiple LATERAL VIEWs
+SELECT name, tag, item
+FROM users
+LATERAL VIEW EXPLODE(tags) t1 AS tag
+LATERAL VIEW EXPLODE(items) t2 AS item
 ```
+
+## Future Phases
 
 ### Phase 16: VALUES Clause
 
@@ -433,10 +478,10 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (278 total tests in sql-parser module):
+Current test statistics (315 total tests in sql-parser module):
 - Lexer tests: 18 tests
-- Parser tests: 117 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping)
-- Transform tests: 79 tests
+- Parser tests: 138 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW)
+- Transform tests: 95 tests
 - **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
 
