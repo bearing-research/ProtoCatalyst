@@ -153,6 +153,14 @@ object AstToProtoTransform:
         // For subqueries, derive schema from the subquery's projections
         // For now, use the default schema (proper schema inference would require type analysis)
         Map(alias -> defaultSchema)
+      case FromClause.Pivot(source, _, alias) =>
+        // For PIVOT, collect schemas from the source and optionally add alias
+        val sourceSchemas = collectTableSchemas(source, defaultSchema, defaultTableName)
+        alias.map(a => sourceSchemas + (a -> defaultSchema)).getOrElse(sourceSchemas)
+      case FromClause.Unpivot(source, _, alias) =>
+        // For UNPIVOT, collect schemas from the source and optionally add alias
+        val sourceSchemas = collectTableSchemas(source, defaultSchema, defaultTableName)
+        alias.map(a => sourceSchemas + (a -> defaultSchema)).getOrElse(sourceSchemas)
 
   /** Transform the FROM clause to a plan. */
   private def transformFromClause(
@@ -178,6 +186,30 @@ object AstToProtoTransform:
         transformSubquery(stmt, ctx).map { subPlan =>
           ProtoLogicalPlan.SubqueryAlias(alias, subPlan)
         }
+      case FromClause.Pivot(source, spec, alias) =>
+        for
+          sourcePlan <- transformFromClause(source, schema, tableName, ctx)
+          pivotCol <- transformExpr(spec.pivotColumn, ctx)
+          pivotVals <- transformExprList(spec.pivotValues.map(_.value), ctx)
+          aggregates <- transformExprList(spec.aggregates.map(_.aggregate), ctx)
+          // For grouping expressions, we'd need to derive them from the source schema minus pivot and aggregate columns
+          // For now, use empty grouping (the pivot will be applied to all non-aggregated columns)
+          groupingExprs = Vector.empty[ProtoExpr]
+          pivotPlan = ProtoLogicalPlan.Pivot(groupingExprs, pivotCol, pivotVals, aggregates, sourcePlan)
+        yield alias.map(a => ProtoLogicalPlan.SubqueryAlias(a, pivotPlan)).getOrElse(pivotPlan)
+      case FromClause.Unpivot(source, spec, alias) =>
+        for
+          sourcePlan <- transformFromClause(source, schema, tableName, ctx)
+          columns <- transformExprList(spec.columns.map(_.column), ctx)
+          columnAliases = spec.columns.map(_.alias)
+          unpivotPlan = ProtoLogicalPlan.Unpivot(
+            spec.valueColumn,
+            spec.nameColumn,
+            columns.zip(columnAliases),
+            spec.includeNulls,
+            sourcePlan
+          )
+        yield alias.map(a => ProtoLogicalPlan.SubqueryAlias(a, unpivotPlan)).getOrElse(unpivotPlan)
 
   /** Convert SQL JoinType to ProtoLogicalPlan JoinType. */
   private def toProtoJoinType(jt: protocatalyst.sql.ast.JoinType): protocatalyst.plan.JoinType =
@@ -641,9 +673,11 @@ object AstToProtoTransform:
 
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref)          => ref.alias.getOrElse(ref.name)
-      case FromClause.Join(left, _, _, _) => extractTableName(left)
-      case FromClause.Subquery(_, alias)  => alias
+      case FromClause.Table(ref)             => ref.alias.getOrElse(ref.name)
+      case FromClause.Join(left, _, _, _)    => extractTableName(left)
+      case FromClause.Subquery(_, alias)     => alias
+      case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+      case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
 
   private def transformCaseWhenBranches(
       branches: Vector[(SqlExpr, SqlExpr)],

@@ -197,6 +197,24 @@ object Canonicalizer:
           transformPlan(child, exprTransform)
         )
 
+      case Pivot(grouping, pivotCol, pivotVals, aggs, child) =>
+        Pivot(
+          grouping.map(exprTransform),
+          exprTransform(pivotCol),
+          pivotVals.map(exprTransform),
+          aggs.map(exprTransform),
+          transformPlan(child, exprTransform)
+        )
+
+      case Unpivot(valueCol, varCol, columns, includeNulls, child) =>
+        Unpivot(
+          valueCol,
+          varCol,
+          columns.map((e, alias) => (exprTransform(e), alias)),
+          includeNulls,
+          transformPlan(child, exprTransform)
+        )
+
       case r: RelationRef => r
 
   private def transformExpr(

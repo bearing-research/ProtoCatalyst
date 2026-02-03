@@ -127,6 +127,12 @@ object MockQueryBinder:
           collectSchemas(child, catalog).map(cteMap ++ _)
         }
 
+      case Pivot(_, _, _, _, child) =>
+        collectSchemas(child, catalog)
+
+      case Unpivot(_, _, _, _, child) =>
+        collectSchemas(child, catalog)
+
   private def bindPlan(plan: ProtoLogicalPlan, ctx: BindingContext): BindingResult =
     import ProtoLogicalPlan.*
     plan match
@@ -231,6 +237,23 @@ object MockQueryBinder:
             bindPlan(child, ctx) match
               case BoundPlan(boundChild) => BoundPlan(With(ctes, boundChild))
               case err                   => err
+
+      case Pivot(grouping, pivotCol, pivotVals, aggs, child) =>
+        bindPlan(child, ctx) match
+          case BoundPlan(boundChild) =>
+            val boundGrouping = grouping.map(bindExpr(_, ctx))
+            val boundPivotCol = bindExpr(pivotCol, ctx)
+            val boundPivotVals = pivotVals.map(bindExpr(_, ctx))
+            val boundAggs = aggs.map(bindExpr(_, ctx))
+            BoundPlan(Pivot(boundGrouping, boundPivotCol, boundPivotVals, boundAggs, boundChild))
+          case err => err
+
+      case Unpivot(valueCol, varCol, columns, includeNulls, child) =>
+        bindPlan(child, ctx) match
+          case BoundPlan(boundChild) =>
+            val boundCols = columns.map((e, alias) => (bindExpr(e, ctx), alias))
+            BoundPlan(Unpivot(valueCol, varCol, boundCols, includeNulls, boundChild))
+          case err => err
 
   private def bindExpr(expr: ProtoExpr, ctx: BindingContext): ProtoExpr =
     import ProtoExpr.*

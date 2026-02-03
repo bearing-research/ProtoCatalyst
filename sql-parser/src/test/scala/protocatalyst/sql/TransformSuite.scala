@@ -1236,3 +1236,184 @@ class TransformSuite extends munit.FunSuite:
     )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
+
+  // === Phase 13: PIVOT/UNPIVOT ===
+
+  val salesSchema = ProtoSchema(
+    Vector(
+      ProtoStructField("product", ProtoType.StringType, nullable = false),
+      ProtoStructField("region", ProtoType.StringType, nullable = false),
+      ProtoStructField("amount", ProtoType.DoubleType, nullable = false),
+      ProtoStructField("q1", ProtoType.DoubleType, nullable = true),
+      ProtoStructField("q2", ProtoType.DoubleType, nullable = true),
+      ProtoStructField("q3", ProtoType.DoubleType, nullable = true),
+      ProtoStructField("q4", ProtoType.DoubleType, nullable = true)
+    )
+  )
+
+  test("transforms simple PIVOT"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales PIVOT (SUM(amount) FOR region IN ('East', 'West', 'North'))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findPivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Pivot] = plan match
+      case p @ ProtoLogicalPlan.Pivot(_, _, _, _, _) => Some(p)
+      case ProtoLogicalPlan.Project(_, child)        => findPivot(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findPivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)  => findPivot(child)
+      case _                                         => None
+
+    val pivot = findPivot(result.toOption.get)
+    assert(pivot.isDefined, "Expected Pivot in plan")
+    assertEquals(pivot.get.pivotValues.size, 3)
+    assertEquals(pivot.get.aggregates.size, 1)
+
+  test("transforms PIVOT with multiple aggregates"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales PIVOT (SUM(amount), AVG(amount) FOR region IN ('East', 'West'))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findPivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Pivot] = plan match
+      case p @ ProtoLogicalPlan.Pivot(_, _, _, _, _) => Some(p)
+      case ProtoLogicalPlan.Project(_, child)        => findPivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)  => findPivot(child)
+      case _                                         => None
+
+    val pivot = findPivot(result.toOption.get)
+    assert(pivot.isDefined, "Expected Pivot in plan")
+    assertEquals(pivot.get.aggregates.size, 2)
+    assertEquals(pivot.get.pivotValues.size, 2)
+
+  test("transforms PIVOT with value aliases"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales PIVOT (SUM(amount) FOR region IN ('East' AS e, 'West' AS w))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findPivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Pivot] = plan match
+      case p @ ProtoLogicalPlan.Pivot(_, _, _, _, _) => Some(p)
+      case ProtoLogicalPlan.Project(_, child)        => findPivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)  => findPivot(child)
+      case _                                         => None
+
+    val pivot = findPivot(result.toOption.get)
+    assert(pivot.isDefined, "Expected Pivot in plan")
+    assertEquals(pivot.get.pivotValues.size, 2)
+
+  test("transforms simple UNPIVOT"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales UNPIVOT (amount FOR quarter IN (q1, q2, q3, q4))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findUnpivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Unpivot] = plan match
+      case u @ ProtoLogicalPlan.Unpivot(_, _, _, _, _) => Some(u)
+      case ProtoLogicalPlan.Project(_, child)          => findUnpivot(child)
+      case ProtoLogicalPlan.Filter(_, child)           => findUnpivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)    => findUnpivot(child)
+      case _                                           => None
+
+    val unpivot = findUnpivot(result.toOption.get)
+    assert(unpivot.isDefined, "Expected Unpivot in plan")
+    assertEquals(unpivot.get.valueColumnName, "amount")
+    assertEquals(unpivot.get.variableColumnName, "quarter")
+    assertEquals(unpivot.get.columns.size, 4)
+
+  test("transforms UNPIVOT with INCLUDE NULLS"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales UNPIVOT INCLUDE NULLS (amount FOR quarter IN (q1, q2))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findUnpivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Unpivot] = plan match
+      case u @ ProtoLogicalPlan.Unpivot(_, _, _, _, _) => Some(u)
+      case ProtoLogicalPlan.Project(_, child)          => findUnpivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)    => findUnpivot(child)
+      case _                                           => None
+
+    val unpivot = findUnpivot(result.toOption.get)
+    assert(unpivot.isDefined, "Expected Unpivot in plan")
+    assert(unpivot.get.includeNulls, "Expected includeNulls to be true")
+
+  test("transforms UNPIVOT with EXCLUDE NULLS"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales UNPIVOT EXCLUDE NULLS (amount FOR quarter IN (q1, q2))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findUnpivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Unpivot] = plan match
+      case u @ ProtoLogicalPlan.Unpivot(_, _, _, _, _) => Some(u)
+      case ProtoLogicalPlan.Project(_, child)          => findUnpivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)    => findUnpivot(child)
+      case _                                           => None
+
+    val unpivot = findUnpivot(result.toOption.get)
+    assert(unpivot.isDefined, "Expected Unpivot in plan")
+    assert(!unpivot.get.includeNulls, "Expected includeNulls to be false")
+
+  test("transforms UNPIVOT with column aliases"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM sales UNPIVOT (amount FOR quarter IN (q1 AS first, q2 AS second))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, salesSchema, "sales")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findUnpivot(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Unpivot] = plan match
+      case u @ ProtoLogicalPlan.Unpivot(_, _, _, _, _) => Some(u)
+      case ProtoLogicalPlan.Project(_, child)          => findUnpivot(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child)    => findUnpivot(child)
+      case _                                           => None
+
+    val unpivot = findUnpivot(result.toOption.get)
+    assert(unpivot.isDefined, "Expected Unpivot in plan")
+    assertEquals(unpivot.get.columns.size, 2)

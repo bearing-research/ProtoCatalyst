@@ -42,11 +42,53 @@ case class Projection(expr: SqlExpr, alias: Option[String])
 /** A table reference with optional alias. */
 case class TableRef(name: String, alias: Option[String])
 
-/** The FROM clause - can be a simple table, a join, or a subquery. */
+/** The FROM clause - can be a simple table, a join, a subquery, or pivot/unpivot. */
 enum FromClause:
   case Table(ref: TableRef)
   case Join(left: FromClause, right: FromClause, joinType: JoinType, condition: Option[SqlExpr])
   case Subquery(stmt: SqlStatement.SelectStatement, alias: String)
+  case Pivot(source: FromClause, spec: PivotSpec, alias: Option[String])
+  case Unpivot(source: FromClause, spec: UnpivotSpec, alias: Option[String])
+
+/** PIVOT specification. */
+case class PivotSpec(
+    /** Aggregate expressions (e.g., SUM(amount)) */
+    aggregates: Vector[PivotAggregate],
+    /** The column to pivot on (FOR column) */
+    pivotColumn: SqlExpr,
+    /** The values to pivot into columns (IN (value1, value2, ...)) */
+    pivotValues: Vector[PivotValue]
+)
+
+/** An aggregate in a PIVOT clause. */
+case class PivotAggregate(
+    aggregate: SqlExpr,
+    alias: Option[String]
+)
+
+/** A value in the PIVOT IN clause. */
+case class PivotValue(
+    value: SqlExpr,
+    alias: Option[String]
+)
+
+/** UNPIVOT specification. */
+case class UnpivotSpec(
+    /** The name for the value column */
+    valueColumn: String,
+    /** The name for the name column */
+    nameColumn: String,
+    /** The columns to unpivot (IN (col1, col2, ...)) */
+    columns: Vector[UnpivotColumn],
+    /** Whether to include nulls (INCLUDE NULLS vs EXCLUDE NULLS) */
+    includeNulls: Boolean
+)
+
+/** A column in the UNPIVOT IN clause. */
+case class UnpivotColumn(
+    column: SqlExpr,
+    alias: Option[String]
+)
 
 /** Join types. */
 enum JoinType:

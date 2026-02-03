@@ -112,6 +112,12 @@ object PlanConverter:
           toMock(child)
         )
 
+      case Pivot(_, _, _, _, _) =>
+        throw UnsupportedOperationException("PIVOT is not yet supported in mock runtime")
+
+      case Unpivot(_, _, _, _, _) =>
+        throw UnsupportedOperationException("UNPIVOT is not yet supported in mock runtime")
+
   private def convertSortOrder(so: SortOrder): MockExpression.SortOrder =
     import MockExpression.{SortDirection as MSD, NullOrdering as MNO}
     MockExpression.SortOrder(

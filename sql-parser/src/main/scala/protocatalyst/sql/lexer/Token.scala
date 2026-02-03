@@ -19,6 +19,8 @@ enum Token:
   case WITH, RECURSIVE
   // Window function keywords
   case OVER, PARTITION, ROWS, RANGE, UNBOUNDED, PRECEDING, FOLLOWING, CURRENT, ROW
+  // PIVOT/UNPIVOT keywords
+  case PIVOT, UNPIVOT, FOR
 
   // Literals
   case IntegerLiteral(value: Long)
@@ -110,5 +112,8 @@ object Token:
     "CURRENT" -> Token.CURRENT,
     "ROW" -> Token.ROW,
     "EXTRACT" -> Token.EXTRACT,
-    "INTERVAL" -> Token.INTERVAL
+    "INTERVAL" -> Token.INTERVAL,
+    "PIVOT" -> Token.PIVOT,
+    "UNPIVOT" -> Token.UNPIVOT,
+    "FOR" -> Token.FOR
   )

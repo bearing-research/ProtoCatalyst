@@ -114,6 +114,10 @@ object SqlVerifier:
     case FromClause.Join(left, right, joinType, cond) =>
       s"${prettyPrintFrom(left)} $joinType JOIN ${prettyPrintFrom(right)}${cond.map(c => s" ON ${prettyPrintExpr(c)}").getOrElse("")}"
     case FromClause.Subquery(_, alias) => s"(subquery) AS $alias"
+    case FromClause.Pivot(source, _, alias) =>
+      s"${prettyPrintFrom(source)} PIVOT (...)${alias.map(a => s" AS $a").getOrElse("")}"
+    case FromClause.Unpivot(source, _, alias) =>
+      s"${prettyPrintFrom(source)} UNPIVOT (...)${alias.map(a => s" AS $a").getOrElse("")}"
 
   private def prettyPrintGroupBy(gb: GroupByClause): String = gb match
     case GroupByClause.Simple(exprs)      => exprs.map(prettyPrintExpr).mkString(", ")
@@ -203,6 +207,12 @@ object SqlVerifier:
 
       case ProtoLogicalPlan.Values(rows, _) =>
         s"${pad}Values(${rows.size} rows)\n"
+
+      case ProtoLogicalPlan.Pivot(grouping, pivotCol, pivotVals, aggs, child) =>
+        s"${pad}Pivot(grouping=[${grouping.size}], pivotCol=${prettyPrintProtoExpr(pivotCol)}, values=[${pivotVals.size}], aggs=[${aggs.size}])\n${prettyPrintPlan(child, indent + 1)}"
+
+      case ProtoLogicalPlan.Unpivot(valueCol, varCol, columns, includeNulls, child) =>
+        s"${pad}Unpivot(valueCol=$valueCol, varCol=$varCol, columns=[${columns.size}], includeNulls=$includeNulls)\n${prettyPrintPlan(child, indent + 1)}"
 
   private def prettyPrintProtoExpr(expr: ProtoExpr): String = expr match
     case ProtoExpr.Literal(value)              => value.toString

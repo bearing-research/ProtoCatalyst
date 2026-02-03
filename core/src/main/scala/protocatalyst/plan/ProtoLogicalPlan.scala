@@ -91,6 +91,32 @@ enum ProtoLogicalPlan extends Serializable:
       child: ProtoLogicalPlan
   )
 
+  /** PIVOT: transposes rows into columns based on pivot column values */
+  case Pivot(
+      /** Grouping columns (not explicitly aggregated or pivoted) */
+      groupingExprs: Vector[ProtoExpr],
+      /** The column to pivot on */
+      pivotColumn: ProtoExpr,
+      /** The values of pivot column to create new columns */
+      pivotValues: Vector[ProtoExpr],
+      /** Aggregate expressions to apply for each pivot value */
+      aggregates: Vector[ProtoExpr],
+      child: ProtoLogicalPlan
+  )
+
+  /** UNPIVOT: transposes columns into rows */
+  case Unpivot(
+      /** Column name for the unpivoted values */
+      valueColumnName: String,
+      /** Column name for the source column names */
+      variableColumnName: String,
+      /** Source columns to unpivot with optional aliases */
+      columns: Vector[(ProtoExpr, Option[String])],
+      /** Whether to include null values */
+      includeNulls: Boolean,
+      child: ProtoLogicalPlan
+  )
+
 enum JoinType extends Serializable:
   case Inner, LeftOuter, RightOuter, FullOuter, LeftSemi, LeftAnti, Cross
 

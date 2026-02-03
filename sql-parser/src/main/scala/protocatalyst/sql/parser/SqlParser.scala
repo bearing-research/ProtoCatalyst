@@ -213,22 +213,33 @@ class SqlParser(tokens: Vector[Token]):
       parseJoinClauses(firstItem)
     }
 
-  /** Parse a single FROM item: table or subquery. */
+  /** Parse a single FROM item: table, subquery, or pivot/unpivot. */
   private def parseFromItem(): Either[ParseError, FromClause] =
-    if check(Token.LParen) then
-      advance()
-      if check(Token.SELECT) then
-        // Subquery in FROM clause
-        parseSelectStatement().flatMap { stmt =>
-          expect(Token.RParen, ")").flatMap { _ =>
-            // Subquery must have an alias
-            parseRequiredAlias().map { alias =>
-              FromClause.Subquery(stmt, alias)
+    val baseItem =
+      if check(Token.LParen) then
+        advance()
+        if check(Token.SELECT) then
+          // Subquery in FROM clause
+          parseSelectStatement().flatMap { stmt =>
+            expect(Token.RParen, ")").flatMap { _ =>
+              // Subquery must have an alias
+              parseRequiredAlias().map { alias =>
+                FromClause.Subquery(stmt, alias)
+              }
             }
           }
-        }
-      else Left(ParseError.SyntaxError("Expected SELECT in subquery", currentPosition))
-    else parseTableRef().map(FromClause.Table(_))
+        else Left(ParseError.SyntaxError("Expected SELECT in subquery", currentPosition))
+      else parseTableRef().map(FromClause.Table(_))
+
+    // Check for PIVOT or UNPIVOT after the base item
+    baseItem.flatMap { source =>
+      if check(Token.PIVOT) then
+        parsePivot(source)
+      else if check(Token.UNPIVOT) then
+        parseUnpivot(source)
+      else
+        Right(source)
+    }
 
   private def parseRequiredAlias(): Either[ParseError, String] =
     if check(Token.AS) then advance()
@@ -319,6 +330,168 @@ class SqlParser(tokens: Vector[Token]):
         else
           // ON clause is optional for non-CROSS joins (becomes a cross join in practice)
           Right(None)
+
+  /** Parse PIVOT clause: PIVOT (aggregate FOR column IN (values)) [alias] */
+  private def parsePivot(source: FromClause): Either[ParseError, FromClause] =
+    advance() // consume PIVOT
+    for
+      _ <- expect(Token.LParen, "(")
+      aggregates <- parsePivotAggregates()
+      _ <- expect(Token.FOR, "FOR")
+      pivotColumn <- parsePrimary()
+      _ <- expect(Token.IN, "IN")
+      _ <- expect(Token.LParen, "(")
+      values <- parsePivotValues()
+      _ <- expect(Token.RParen, ")")
+      _ <- expect(Token.RParen, ")")
+      alias = parseOptionalPivotAlias()
+    yield FromClause.Pivot(source, PivotSpec(aggregates, pivotColumn, values), alias)
+
+  private def parsePivotAggregates(): Either[ParseError, Vector[PivotAggregate]] =
+    parsePivotAggregate().flatMap { first =>
+      parseRestOfPivotAggregates(Vector(first))
+    }
+
+  private def parseRestOfPivotAggregates(acc: Vector[PivotAggregate]): Either[ParseError, Vector[PivotAggregate]] =
+    // Check if next token is comma and NOT FOR (which would indicate we're done with aggregates)
+    if check(Token.Comma) && !lookAheadIsFor() then
+      advance()
+      parsePivotAggregate().flatMap { agg =>
+        parseRestOfPivotAggregates(acc :+ agg)
+      }
+    else
+      Right(acc)
+
+  private def lookAheadIsFor(): Boolean =
+    // Peek ahead past comma to see if FOR is coming
+    // This is a simplified check - in practice we stop at FOR
+    false // We'll let the main parser handle FOR detection
+
+  private def parsePivotAggregate(): Either[ParseError, PivotAggregate] =
+    parseExpr().flatMap { expr =>
+      val alias = if check(Token.AS) then
+        advance()
+        current match
+          case Token.Identifier(name) =>
+            advance()
+            Some(name)
+          case _ => None
+      else None
+      Right(PivotAggregate(expr, alias))
+    }
+
+  private def parsePivotValues(): Either[ParseError, Vector[PivotValue]] =
+    parsePivotValue().flatMap { first =>
+      parseRestOfPivotValues(Vector(first))
+    }
+
+  private def parseRestOfPivotValues(acc: Vector[PivotValue]): Either[ParseError, Vector[PivotValue]] =
+    if check(Token.Comma) then
+      advance()
+      parsePivotValue().flatMap { v =>
+        parseRestOfPivotValues(acc :+ v)
+      }
+    else
+      Right(acc)
+
+  private def parsePivotValue(): Either[ParseError, PivotValue] =
+    parsePrimary().flatMap { expr =>
+      val alias = if check(Token.AS) then
+        advance()
+        current match
+          case Token.Identifier(name) =>
+            advance()
+            Some(name)
+          case _ => None
+      else None
+      Right(PivotValue(expr, alias))
+    }
+
+  private def parseOptionalPivotAlias(): Option[String] =
+    if check(Token.AS) then advance()
+    current match
+      case Token.Identifier(name) if !isKeyword(name) && !isJoinKeyword(name) =>
+        advance()
+        Some(name)
+      case _ => None
+
+  /** Parse UNPIVOT clause: UNPIVOT [INCLUDE/EXCLUDE NULLS] (value_col FOR name_col IN (cols)) [alias] */
+  private def parseUnpivot(source: FromClause): Either[ParseError, FromClause] =
+    advance() // consume UNPIVOT
+    // Check for optional INCLUDE NULLS or EXCLUDE NULLS
+    val includeNulls = parseUnpivotNullsOption()
+    for
+      _ <- expect(Token.LParen, "(")
+      valueColumn <- parseIdentifier("value column name")
+      _ <- expect(Token.FOR, "FOR")
+      nameColumn <- parseIdentifier("name column name")
+      _ <- expect(Token.IN, "IN")
+      _ <- expect(Token.LParen, "(")
+      columns <- parseUnpivotColumns()
+      _ <- expect(Token.RParen, ")")
+      _ <- expect(Token.RParen, ")")
+      alias = parseOptionalPivotAlias()
+    yield FromClause.Unpivot(source, UnpivotSpec(valueColumn, nameColumn, columns, includeNulls), alias)
+
+  private def parseUnpivotNullsOption(): Boolean =
+    // Default is EXCLUDE NULLS (false), INCLUDE NULLS returns true
+    current match
+      case Token.Identifier(name) if name.toUpperCase == "INCLUDE" =>
+        advance()
+        current match
+          case Token.NULL =>
+            advance()
+            true
+          case Token.Identifier(n) if n.toUpperCase == "NULLS" =>
+            advance()
+            true
+          case _ => true
+      case Token.Identifier(name) if name.toUpperCase == "EXCLUDE" =>
+        advance()
+        current match
+          case Token.NULL =>
+            advance()
+            false
+          case Token.Identifier(n) if n.toUpperCase == "NULLS" =>
+            advance()
+            false
+          case _ => false
+      case _ => false // Default: EXCLUDE NULLS
+
+  private def parseIdentifier(expected: String): Either[ParseError, String] =
+    current match
+      case Token.Identifier(name) =>
+        advance()
+        Right(name)
+      case t =>
+        Left(ParseError.UnexpectedToken(t, expected, currentPosition))
+
+  private def parseUnpivotColumns(): Either[ParseError, Vector[UnpivotColumn]] =
+    parseUnpivotColumn().flatMap { first =>
+      parseRestOfUnpivotColumns(Vector(first))
+    }
+
+  private def parseRestOfUnpivotColumns(acc: Vector[UnpivotColumn]): Either[ParseError, Vector[UnpivotColumn]] =
+    if check(Token.Comma) then
+      advance()
+      parseUnpivotColumn().flatMap { col =>
+        parseRestOfUnpivotColumns(acc :+ col)
+      }
+    else
+      Right(acc)
+
+  private def parseUnpivotColumn(): Either[ParseError, UnpivotColumn] =
+    parsePrimary().flatMap { expr =>
+      val alias = if check(Token.AS) then
+        advance()
+        current match
+          case Token.Identifier(name) =>
+            advance()
+            Some(name)
+          case _ => None
+      else None
+      Right(UnpivotColumn(expr, alias))
+    }
 
   private def parseOptionalWhere(): Either[ParseError, Option[SqlExpr]] =
     if check(Token.WHERE) then

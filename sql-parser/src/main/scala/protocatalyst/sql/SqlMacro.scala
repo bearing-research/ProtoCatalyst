@@ -90,9 +90,11 @@ object SqlMacro:
   /** Extract the primary table name from a FROM clause. */
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref)          => ref.name
-      case FromClause.Join(left, _, _, _) => extractTableName(left)
-      case FromClause.Subquery(_, alias)  => alias
+      case FromClause.Table(ref)             => ref.name
+      case FromClause.Join(left, _, _, _)    => extractTableName(left)
+      case FromClause.Subquery(_, alias)     => alias
+      case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+      case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
 
   /** Convert SqlStatement to Expr for runtime use. */
   private def sqlStmtToExpr(stmt: SqlStatement)(using Quotes): Expr[SqlStatement] =
@@ -171,6 +173,58 @@ object SqlMacro:
         '{ FromClause.Join($leftExpr, $rightExpr, $joinTypeExpr, $condExpr) }
       case FromClause.Subquery(stmt, alias) =>
         '{ FromClause.Subquery(${ stmtToExpr(stmt) }, ${ Expr(alias) }) }
+      case FromClause.Pivot(source, spec, alias) =>
+        val sourceExpr = fromClauseToExpr(source)
+        val specExpr = pivotSpecToExpr(spec)
+        val aliasExpr = alias match
+          case Some(a) => '{ Some(${ Expr(a) }) }
+          case None    => '{ None }
+        '{ FromClause.Pivot($sourceExpr, $specExpr, $aliasExpr) }
+      case FromClause.Unpivot(source, spec, alias) =>
+        val sourceExpr = fromClauseToExpr(source)
+        val specExpr = unpivotSpecToExpr(spec)
+        val aliasExpr = alias match
+          case Some(a) => '{ Some(${ Expr(a) }) }
+          case None    => '{ None }
+        '{ FromClause.Unpivot($sourceExpr, $specExpr, $aliasExpr) }
+
+  private def pivotSpecToExpr(spec: PivotSpec)(using Quotes): Expr[PivotSpec] =
+    val aggregatesExpr = Expr.ofSeq(spec.aggregates.map(pivotAggregateToExpr))
+    val pivotColumnExpr = sqlExprToExpr(spec.pivotColumn)
+    val valuesExpr = Expr.ofSeq(spec.pivotValues.map(pivotValueToExpr))
+    '{ PivotSpec($aggregatesExpr.toVector, $pivotColumnExpr, $valuesExpr.toVector) }
+
+  private def pivotAggregateToExpr(agg: PivotAggregate)(using Quotes): Expr[PivotAggregate] =
+    val exprExpr = sqlExprToExpr(agg.aggregate)
+    val aliasExpr = agg.alias match
+      case Some(a) => '{ Some(${ Expr(a) }) }
+      case None    => '{ None }
+    '{ PivotAggregate($exprExpr, $aliasExpr) }
+
+  private def pivotValueToExpr(v: PivotValue)(using Quotes): Expr[PivotValue] =
+    val exprExpr = sqlExprToExpr(v.value)
+    val aliasExpr = v.alias match
+      case Some(a) => '{ Some(${ Expr(a) }) }
+      case None    => '{ None }
+    '{ PivotValue($exprExpr, $aliasExpr) }
+
+  private def unpivotSpecToExpr(spec: UnpivotSpec)(using Quotes): Expr[UnpivotSpec] =
+    val columnsExpr = Expr.ofSeq(spec.columns.map(unpivotColumnToExpr))
+    '{
+      UnpivotSpec(
+        ${ Expr(spec.valueColumn) },
+        ${ Expr(spec.nameColumn) },
+        $columnsExpr.toVector,
+        ${ Expr(spec.includeNulls) }
+      )
+    }
+
+  private def unpivotColumnToExpr(col: UnpivotColumn)(using Quotes): Expr[UnpivotColumn] =
+    val exprExpr = sqlExprToExpr(col.column)
+    val aliasExpr = col.alias match
+      case Some(a) => '{ Some(${ Expr(a) }) }
+      case None    => '{ None }
+    '{ UnpivotColumn($exprExpr, $aliasExpr) }
 
   private def projectionToExpr(proj: Projection)(using Quotes): Expr[Projection] =
     '{ Projection(${ sqlExprToExpr(proj.expr) }, ${ Expr(proj.alias) }) }
@@ -385,6 +439,14 @@ object SqlMacro:
           validateFromClause(left) ++ validateFromClause(right) ++
             condition.map(validateExpr).getOrElse(Vector.empty)
         case FromClause.Subquery(stmt, _) => validateSubquery(stmt)
+        case FromClause.Pivot(source, spec, _) =>
+          validateFromClause(source) ++
+            spec.aggregates.flatMap(a => validateExpr(a.aggregate)) ++
+            validateExpr(spec.pivotColumn) ++
+            spec.pivotValues.flatMap(v => validateExpr(v.value))
+        case FromClause.Unpivot(source, spec, _) =>
+          validateFromClause(source) ++
+            spec.columns.flatMap(c => validateExpr(c.column))
 
     def validateGroupByClause(gb: GroupByClause): Vector[String] =
       gb match

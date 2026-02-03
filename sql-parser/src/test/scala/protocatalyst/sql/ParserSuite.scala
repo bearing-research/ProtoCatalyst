@@ -12,9 +12,11 @@ class ParserSuite extends munit.FunSuite:
 
   // Helper to extract table name from FromClause
   def extractTableName(from: FromClause): String = from match
-    case FromClause.Table(ref)          => ref.name
-    case FromClause.Join(left, _, _, _) => extractTableName(left)
-    case FromClause.Subquery(_, alias)  => alias
+    case FromClause.Table(ref)             => ref.name
+    case FromClause.Join(left, _, _, _)    => extractTableName(left)
+    case FromClause.Subquery(_, alias)     => alias
+    case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+    case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
 
   // Helper to extract simple GROUP BY expressions
   def extractSimpleGroupBy(gb: Option[GroupByClause]): Vector[SqlExpr] = gb match
@@ -22,9 +24,11 @@ class ParserSuite extends munit.FunSuite:
     case other                             => fail(s"Expected Simple GROUP BY, got $other").asInstanceOf[Vector[SqlExpr]]
 
   def extractTableAlias(from: FromClause): Option[String] = from match
-    case FromClause.Table(ref)          => ref.alias
-    case FromClause.Join(left, _, _, _) => extractTableAlias(left)
-    case FromClause.Subquery(_, alias)  => Some(alias)
+    case FromClause.Table(ref)             => ref.alias
+    case FromClause.Join(left, _, _, _)    => extractTableAlias(left)
+    case FromClause.Subquery(_, alias)     => Some(alias)
+    case FromClause.Pivot(_, _, alias)     => alias
+    case FromClause.Unpivot(_, _, alias)   => alias
 
   test("parses simple SELECT"):
     val result = SqlParser.parse("SELECT name FROM users")
@@ -670,6 +674,125 @@ class ParserSuite extends munit.FunSuite:
       case Some(GroupByClause.Rollup(exprs)) =>
         assertEquals(exprs.size, 1)
       case _ => fail(s"Expected ROLLUP, got ${stmt.groupBy}")
+
+  // Phase 13 - PIVOT / UNPIVOT tests
+
+  test("parses simple PIVOT"):
+    val result = SqlParser.parse(
+      "SELECT * FROM sales PIVOT (SUM(amount) FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4'))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Pivot(source, spec, _) =>
+        assertEquals(spec.aggregates.size, 1)
+        assertEquals(spec.pivotValues.size, 4)
+        spec.pivotColumn match
+          case SqlExpr.ColumnRef("quarter", None) => () // ok
+          case _ => fail(s"Expected quarter column, got ${spec.pivotColumn}")
+      case _ => fail(s"Expected PIVOT, got ${stmt.from}")
+
+  test("parses PIVOT with alias"):
+    val result = SqlParser.parse(
+      "SELECT * FROM sales PIVOT (SUM(amount) AS total FOR quarter IN ('Q1', 'Q2')) AS pivoted"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Pivot(_, spec, Some("pivoted")) =>
+        spec.aggregates.head.alias match
+          case Some("total") => () // ok
+          case _ => fail(s"Expected alias 'total', got ${spec.aggregates.head.alias}")
+      case _ => fail(s"Expected PIVOT with alias, got ${stmt.from}")
+
+  test("parses PIVOT with multiple aggregates"):
+    val result = SqlParser.parse(
+      "SELECT * FROM sales PIVOT (SUM(amount), COUNT(*) FOR quarter IN ('Q1', 'Q2'))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Pivot(_, spec, _) =>
+        assertEquals(spec.aggregates.size, 2)
+      case _ => fail(s"Expected PIVOT, got ${stmt.from}")
+
+  test("parses PIVOT with value aliases"):
+    val result = SqlParser.parse(
+      "SELECT * FROM sales PIVOT (SUM(amount) FOR quarter IN ('Q1' AS first, 'Q2' AS second))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Pivot(_, spec, _) =>
+        assertEquals(spec.pivotValues(0).alias, Some("first"))
+        assertEquals(spec.pivotValues(1).alias, Some("second"))
+      case _ => fail(s"Expected PIVOT, got ${stmt.from}")
+
+  test("parses simple UNPIVOT"):
+    val result = SqlParser.parse(
+      "SELECT * FROM quarterly_sales UNPIVOT (amount FOR quarter IN (q1, q2, q3, q4))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Unpivot(source, spec, _) =>
+        assertEquals(spec.valueColumn, "amount")
+        assertEquals(spec.nameColumn, "quarter")
+        assertEquals(spec.columns.size, 4)
+        assertEquals(spec.includeNulls, false) // Default
+      case _ => fail(s"Expected UNPIVOT, got ${stmt.from}")
+
+  test("parses UNPIVOT with alias"):
+    val result = SqlParser.parse(
+      "SELECT * FROM quarterly_sales UNPIVOT (amount FOR quarter IN (q1, q2)) AS unpivoted"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Unpivot(_, _, Some("unpivoted")) => () // ok
+      case _ => fail(s"Expected UNPIVOT with alias, got ${stmt.from}")
+
+  test("parses UNPIVOT INCLUDE NULLS"):
+    val result = SqlParser.parse(
+      "SELECT * FROM quarterly_sales UNPIVOT INCLUDE NULLS (amount FOR quarter IN (q1, q2))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Unpivot(_, spec, _) =>
+        assert(spec.includeNulls, "Expected INCLUDE NULLS")
+      case _ => fail(s"Expected UNPIVOT, got ${stmt.from}")
+
+  test("parses UNPIVOT with column aliases"):
+    val result = SqlParser.parse(
+      "SELECT * FROM quarterly_sales UNPIVOT (amount FOR quarter IN (q1 AS first, q2 AS second))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Unpivot(_, spec, _) =>
+        assertEquals(spec.columns(0).alias, Some("first"))
+        assertEquals(spec.columns(1).alias, Some("second"))
+      case _ => fail(s"Expected UNPIVOT, got ${stmt.from}")
+
+  test("parses PIVOT on subquery"):
+    val result = SqlParser.parse(
+      "SELECT * FROM (SELECT region, quarter, amount FROM sales) s PIVOT (SUM(amount) FOR quarter IN ('Q1', 'Q2'))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Pivot(FromClause.Subquery(_, "s"), _, _) => () // ok
+      case _ => fail(s"Expected PIVOT on subquery, got ${stmt.from}")
 
   // Phase 5 - CASE WHEN and CAST tests
 
