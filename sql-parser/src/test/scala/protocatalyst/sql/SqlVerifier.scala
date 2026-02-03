@@ -83,8 +83,8 @@ object SqlVerifier:
         )
         sb.append(s"${pad}  from: ${prettyPrintFrom(from)}\n")
         sb.append(s"${pad}  where: ${where.map(prettyPrintExpr).getOrElse("None")}\n")
-        if groupBy.nonEmpty then
-          sb.append(s"${pad}  groupBy: ${groupBy.map(prettyPrintExpr).mkString(", ")}\n")
+        if groupBy.isDefined then
+          sb.append(s"${pad}  groupBy: ${prettyPrintGroupBy(groupBy.get)}\n")
         if having.isDefined then
           sb.append(s"${pad}  having: ${having.map(prettyPrintExpr).getOrElse("None")}\n")
         if orderBy.nonEmpty then
@@ -114,6 +114,13 @@ object SqlVerifier:
     case FromClause.Join(left, right, joinType, cond) =>
       s"${prettyPrintFrom(left)} $joinType JOIN ${prettyPrintFrom(right)}${cond.map(c => s" ON ${prettyPrintExpr(c)}").getOrElse("")}"
     case FromClause.Subquery(_, alias) => s"(subquery) AS $alias"
+
+  private def prettyPrintGroupBy(gb: GroupByClause): String = gb match
+    case GroupByClause.Simple(exprs)      => exprs.map(prettyPrintExpr).mkString(", ")
+    case GroupByClause.GroupingSets(sets) =>
+      s"GROUPING SETS (${sets.map(s => s"(${s.map(prettyPrintExpr).mkString(", ")})").mkString(", ")})"
+    case GroupByClause.Cube(exprs)        => s"CUBE(${exprs.map(prettyPrintExpr).mkString(", ")})"
+    case GroupByClause.Rollup(exprs)      => s"ROLLUP(${exprs.map(prettyPrintExpr).mkString(", ")})"
 
   private def prettyPrintExpr(expr: SqlExpr): String = expr match
     case SqlExpr.ColumnRef(name, qual) => qual.map(q => s"$q.$name").getOrElse(name)

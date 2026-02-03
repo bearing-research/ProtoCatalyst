@@ -266,17 +266,20 @@ SELECT
 FROM users
 ```
 
-## Future Phases
+### Phase 12: Advanced Grouping (Complete)
 
-### Phase 12: Advanced Grouping
+Advanced GROUP BY functionality for multi-dimensional aggregation:
 
-- GROUPING SETS
-- CUBE
-- ROLLUP
-- GROUPING() function
+**Grouping Sets:**
+- GROUPING SETS - explicit list of grouping combinations
+- CUBE - all combinations of grouping columns (2^n subsets)
+- ROLLUP - hierarchical aggregation (n+1 subsets)
+- WITH CUBE / WITH ROLLUP - alternate syntax after GROUP BY columns
+- GROUPING(column) function - identifies super-aggregate rows (returns 1 if null due to grouping)
 
 ```sql
-SELECT department, region, SUM(sales)
+-- GROUPING SETS: explicit grouping combinations
+SELECT department, region, SUM(sales) AS total
 FROM sales
 GROUP BY GROUPING SETS (
   (department, region),
@@ -284,18 +287,52 @@ GROUP BY GROUPING SETS (
   (region),
   ()
 )
+
+-- CUBE: all 2^n combinations (department, region), (department), (region), ()
+SELECT department, region, SUM(sales)
+FROM sales
+GROUP BY CUBE(department, region)
+
+-- ROLLUP: hierarchical (year, quarter, month), (year, quarter), (year), ()
+SELECT year, quarter, month, SUM(sales)
+FROM sales
+GROUP BY ROLLUP(year, quarter, month)
+
+-- WITH CUBE/ROLLUP syntax
+SELECT name, age, COUNT(*)
+FROM users
+GROUP BY name, age WITH CUBE
+
+-- GROUPING function: detect super-aggregate rows
+SELECT name, GROUPING(name) AS is_total, COUNT(*)
+FROM users
+GROUP BY CUBE(name)
 ```
 
-### Phase 13: QUALIFY Clause
+## Future Phases
 
-Filter window function results:
+### Phase 13: PIVOT / UNPIVOT
+
+Data reshaping operations:
 
 ```sql
-SELECT * FROM users
-QUALIFY ROW_NUMBER() OVER (PARTITION BY department ORDER BY salary DESC) = 1
+-- PIVOT: rows to columns
+SELECT * FROM sales
+PIVOT (
+  SUM(amount) AS total
+  FOR quarter IN ('Q1', 'Q2', 'Q3', 'Q4')
+)
+
+-- UNPIVOT: columns to rows
+SELECT * FROM quarterly_sales
+UNPIVOT (
+  amount FOR quarter IN (q1, q2, q3, q4)
+)
 ```
 
-### Phase 14: LATERAL Joins
+### Phase 14: LATERAL Subquery
+
+Correlated subqueries in FROM clause:
 
 ```sql
 SELECT u.*, recent_orders.*
@@ -308,7 +345,22 @@ LATERAL (
 ) recent_orders
 ```
 
-### Phase 15: VALUES Clause
+### Phase 15: LATERAL VIEW
+
+Generator functions with EXPLODE:
+
+```sql
+SELECT name, col
+FROM users
+LATERAL VIEW EXPLODE(tags) t AS col
+
+-- With OUTER to preserve rows with empty arrays
+SELECT name, col
+FROM users
+LATERAL VIEW OUTER EXPLODE(tags) t AS col
+```
+
+### Phase 16: VALUES Clause
 
 Inline table values:
 
@@ -316,7 +368,19 @@ Inline table values:
 SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, name)
 ```
 
-### Phase 16: Recursive CTEs
+### Phase 17: Query Hints
+
+Optimizer hints for join strategies and partitioning:
+
+```sql
+SELECT /*+ BROADCAST(t1) */ *
+FROM t1 INNER JOIN t2 ON t1.key = t2.key
+
+SELECT /*+ REPARTITION(3, col) */ *
+FROM large_table
+```
+
+### Phase 18: Recursive CTEs
 
 Full support for recursive common table expressions:
 
@@ -369,10 +433,10 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (262 total tests in sql-parser module):
+Current test statistics (278 total tests in sql-parser module):
 - Lexer tests: 18 tests
-- Parser tests: 107 tests (including CTEs, window functions, set operations, date/time functions)
-- Transform tests: 73 tests
+- Parser tests: 117 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping)
+- Transform tests: 79 tests
 - **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
 

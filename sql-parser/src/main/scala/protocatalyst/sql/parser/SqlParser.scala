@@ -326,26 +326,116 @@ class SqlParser(tokens: Vector[Token]):
       parseExpr().map(Some(_))
     else Right(None)
 
-  private def parseOptionalGroupBy(): Either[ParseError, Vector[SqlExpr]] =
+  private def parseOptionalGroupBy(): Either[ParseError, Option[GroupByClause]] =
     if check(Token.GROUP) then
       advance()
-      expect(Token.BY, "BY").flatMap(_ => parseGroupByExprs())
-    else Right(Vector.empty)
+      expect(Token.BY, "BY").flatMap(_ => parseGroupByClause().map(Some(_)))
+    else Right(None)
+
+  private def parseGroupByClause(): Either[ParseError, GroupByClause] =
+    // Check for GROUPING SETS, CUBE, ROLLUP at the start
+    current match
+      case Token.GROUPING =>
+        advance()
+        if check(Token.SETS) then
+          advance()
+          parseGroupingSets()
+        else
+          Left(ParseError.UnexpectedToken(current, "SETS after GROUPING", currentPosition))
+      case Token.CUBE =>
+        advance()
+        parseCubeOrRollupArgs().map(GroupByClause.Cube(_))
+      case Token.ROLLUP =>
+        advance()
+        parseCubeOrRollupArgs().map(GroupByClause.Rollup(_))
+      case _ =>
+        // Parse simple expressions, then check for WITH CUBE/ROLLUP
+        parseGroupByExprs().flatMap { exprs =>
+          if check(Token.WITH) then
+            advance()
+            current match
+              case Token.CUBE =>
+                advance()
+                Right(GroupByClause.Cube(exprs))
+              case Token.ROLLUP =>
+                advance()
+                Right(GroupByClause.Rollup(exprs))
+              case t =>
+                Left(ParseError.UnexpectedToken(t, "CUBE or ROLLUP after WITH", currentPosition))
+          else
+            Right(GroupByClause.Simple(exprs))
+        }
+
+  private def parseGroupingSets(): Either[ParseError, GroupByClause.GroupingSets] =
+    expect(Token.LParen, "(").flatMap { _ =>
+      parseGroupingSet().flatMap { first =>
+        parseRestOfGroupingSets(Vector(first))
+      }
+    }
+
+  private def parseRestOfGroupingSets(acc: Vector[Vector[SqlExpr]]): Either[ParseError, GroupByClause.GroupingSets] =
+    if check(Token.Comma) then
+      advance()
+      parseGroupingSet().flatMap { set =>
+        parseRestOfGroupingSets(acc :+ set)
+      }
+    else
+      expect(Token.RParen, ")").map(_ => GroupByClause.GroupingSets(acc))
+
+  private def parseGroupingSet(): Either[ParseError, Vector[SqlExpr]] =
+    if check(Token.LParen) then
+      advance()
+      if check(Token.RParen) then
+        // Empty grouping set: ()
+        advance()
+        Right(Vector.empty)
+      else
+        // Non-empty grouping set: (a, b)
+        parsePrimary().flatMap { first =>
+          parseRestOfGroupingSet(Vector(first))
+        }
+    else
+      // Single column without parens
+      parsePrimary().map(Vector(_))
+
+  private def parseRestOfGroupingSet(acc: Vector[SqlExpr]): Either[ParseError, Vector[SqlExpr]] =
+    if check(Token.Comma) then
+      advance()
+      parsePrimary().flatMap { e =>
+        parseRestOfGroupingSet(acc :+ e)
+      }
+    else
+      expect(Token.RParen, ")").map(_ => acc)
+
+  private def parseCubeOrRollupArgs(): Either[ParseError, Vector[SqlExpr]] =
+    expect(Token.LParen, "(").flatMap { _ =>
+      parsePrimary().flatMap { first =>
+        parseRestOfCubeOrRollupArgs(Vector(first))
+      }
+    }
+
+  private def parseRestOfCubeOrRollupArgs(acc: Vector[SqlExpr]): Either[ParseError, Vector[SqlExpr]] =
+    if check(Token.Comma) then
+      advance()
+      parsePrimary().flatMap { e =>
+        parseRestOfCubeOrRollupArgs(acc :+ e)
+      }
+    else
+      expect(Token.RParen, ")").map(_ => acc)
 
   private def parseGroupByExprs(): Either[ParseError, Vector[SqlExpr]] =
-    val exprs = Vector.newBuilder[SqlExpr]
+    parsePrimary().flatMap { first =>
+      parseRestOfGroupByExprs(Vector(first))
+    }
 
-    parsePrimary() match
-      case Right(e)  => exprs += e
-      case Left(err) => return Left(err)
-
-    while check(Token.Comma) do
+  private def parseRestOfGroupByExprs(acc: Vector[SqlExpr]): Either[ParseError, Vector[SqlExpr]] =
+    if check(Token.Comma) && !check(Token.WITH) then
       advance()
-      parsePrimary() match
-        case Right(e)  => exprs += e
-        case Left(err) => return Left(err)
-
-    Right(exprs.result())
+      parsePrimary().flatMap { e =>
+        parseRestOfGroupByExprs(acc :+ e)
+      }
+    else
+      Right(acc)
 
   private def parseOptionalHaving(): Either[ParseError, Option[SqlExpr]] =
     if check(Token.HAVING) then
@@ -684,8 +774,20 @@ class SqlParser(tokens: Vector[Token]):
       case Token.EXTRACT =>
         parseExtract()
 
+      case Token.GROUPING =>
+        parseGroupingFunction()
+
       case t =>
         Left(ParseError.UnexpectedToken(t, "expression", currentPosition))
+
+  /** Parse GROUPING(col1, col2, ...) function. */
+  private def parseGroupingFunction(): Either[ParseError, SqlExpr] =
+    advance() // consume GROUPING
+    for
+      _ <- expect(Token.LParen, "(")
+      args <- parseExprList()
+      _ <- expect(Token.RParen, ")")
+    yield SqlExpr.Grouping(args)
 
   /** Parse EXTRACT(field FROM expr) */
   private def parseExtract(): Either[ParseError, SqlExpr] =

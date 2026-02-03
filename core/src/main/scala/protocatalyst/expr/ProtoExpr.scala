@@ -130,6 +130,10 @@ enum ProtoExpr extends Serializable:
   case Minute(child: ProtoExpr)
   case Second(child: ProtoExpr)
 
+  // Grouping function for GROUPING SETS, CUBE, ROLLUP
+  // Returns 1 if the column is null due to grouping (super-aggregate row), 0 otherwise
+  case Grouping(columns: Vector[ProtoExpr])
+
   // Opaque function call (UDFs and unknown functions)
   case OpaqueCall(
       functionName: String,

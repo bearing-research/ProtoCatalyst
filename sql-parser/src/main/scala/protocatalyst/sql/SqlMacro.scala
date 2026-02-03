@@ -130,7 +130,9 @@ object SqlMacro:
     val whereExpr = stmt.where match
       case Some(w) => '{ Some(${ sqlExprToExpr(w) }) }
       case None    => '{ None }
-    val groupByExpr = Expr.ofSeq(stmt.groupBy.map(sqlExprToExpr))
+    val groupByExpr = stmt.groupBy match
+      case Some(gb) => '{ Some(${ groupByClauseToExpr(gb) }) }
+      case None     => '{ None }
     val havingExpr = stmt.having match
       case Some(h) => '{ Some(${ sqlExprToExpr(h) }) }
       case None    => '{ None }
@@ -142,7 +144,7 @@ object SqlMacro:
         $projectionsExpr.toVector,
         $fromExpr,
         $whereExpr,
-        $groupByExpr.toVector,
+        $groupByExpr,
         $havingExpr,
         $orderByExpr.toVector,
         ${ Expr(stmt.limit) }
@@ -175,6 +177,24 @@ object SqlMacro:
 
   private def orderSpecToExpr(spec: OrderSpec)(using Quotes): Expr[OrderSpec] =
     '{ OrderSpec(${ sqlExprToExpr(spec.expr) }, ${ Expr(spec.ascending) }) }
+
+  private def groupByClauseToExpr(gb: GroupByClause)(using Quotes): Expr[GroupByClause] =
+    gb match
+      case GroupByClause.Simple(exprs) =>
+        val exprsExpr = Expr.ofSeq(exprs.map(sqlExprToExpr))
+        '{ GroupByClause.Simple($exprsExpr.toVector) }
+      case GroupByClause.GroupingSets(sets) =>
+        val setsExpr = Expr.ofSeq(sets.map { s =>
+          val inner = Expr.ofSeq(s.map(sqlExprToExpr))
+          '{ $inner.toVector }
+        })
+        '{ GroupByClause.GroupingSets($setsExpr.toVector) }
+      case GroupByClause.Cube(exprs) =>
+        val exprsExpr = Expr.ofSeq(exprs.map(sqlExprToExpr))
+        '{ GroupByClause.Cube($exprsExpr.toVector) }
+      case GroupByClause.Rollup(exprs) =>
+        val exprsExpr = Expr.ofSeq(exprs.map(sqlExprToExpr))
+        '{ GroupByClause.Rollup($exprsExpr.toVector) }
 
   private def sqlExprToExpr(expr: SqlExpr)(using Quotes): Expr[SqlExpr] =
     expr match
@@ -261,6 +281,9 @@ object SqlMacro:
             WindowSpec($partitionByExpr.toVector, $orderByExpr.toVector, $frameExpr)
           )
         }
+      case SqlExpr.Grouping(columns) =>
+        val columnsExpr = Expr.ofSeq(columns.map(sqlExprToExpr))
+        '{ SqlExpr.Grouping($columnsExpr.toVector) }
 
   private def windowFrameToExpr(frame: WindowFrame)(using Quotes): Expr[WindowFrame] =
     val frameTypeExpr = frame.frameType match
@@ -345,6 +368,9 @@ object SqlMacro:
       case SqlExpr.NotExists(stmt)            => validateSubquery(stmt)
       case SqlExpr.InSubquery(value, stmt)    => validateExpr(value) ++ validateSubquery(stmt)
       case SqlExpr.NotInSubquery(value, stmt) => validateExpr(value) ++ validateSubquery(stmt)
+      case SqlExpr.WindowFunction(f, spec) =>
+        validateExpr(f) ++ spec.partitionBy.flatMap(validateExpr) ++ spec.orderBy.flatMap(o => validateExpr(o.expr))
+      case SqlExpr.Grouping(columns)          => columns.flatMap(validateExpr)
       case _                                  => Vector.empty
 
     def validateSubquery(stmt: SqlStatement.SelectStatement): Vector[String] =
@@ -360,9 +386,16 @@ object SqlMacro:
             condition.map(validateExpr).getOrElse(Vector.empty)
         case FromClause.Subquery(stmt, _) => validateSubquery(stmt)
 
+    def validateGroupByClause(gb: GroupByClause): Vector[String] =
+      gb match
+        case GroupByClause.Simple(exprs)       => exprs.flatMap(validateExpr)
+        case GroupByClause.GroupingSets(sets)  => sets.flatten.flatMap(validateExpr)
+        case GroupByClause.Cube(exprs)         => exprs.flatMap(validateExpr)
+        case GroupByClause.Rollup(exprs)       => exprs.flatMap(validateExpr)
+
     val projErrors = stmt.projections.flatMap(p => validateExpr(p.expr))
     val whereErrors = stmt.where.map(validateExpr).getOrElse(Vector.empty)
-    val groupByErrors = stmt.groupBy.flatMap(validateExpr)
+    val groupByErrors = stmt.groupBy.map(validateGroupByClause).getOrElse(Vector.empty)
     val havingErrors = stmt.having.map(validateExpr).getOrElse(Vector.empty)
     val orderErrors = stmt.orderBy.flatMap(o => validateExpr(o.expr))
     val joinErrors = validateFromClause(stmt.from)

@@ -16,6 +16,11 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Join(left, _, _, _) => extractTableName(left)
     case FromClause.Subquery(_, alias)  => alias
 
+  // Helper to extract simple GROUP BY expressions
+  def extractSimpleGroupBy(gb: Option[GroupByClause]): Vector[SqlExpr] = gb match
+    case Some(GroupByClause.Simple(exprs)) => exprs
+    case other                             => fail(s"Expected Simple GROUP BY, got $other").asInstanceOf[Vector[SqlExpr]]
+
   def extractTableAlias(from: FromClause): Option[String] = from match
     case FromClause.Table(ref)          => ref.alias
     case FromClause.Join(left, _, _, _) => extractTableAlias(left)
@@ -458,8 +463,9 @@ class ParserSuite extends munit.FunSuite:
 
     assert(result.isRight)
     val stmt = asSelect(result.toOption.get)
-    assertEquals(stmt.groupBy.size, 1)
-    stmt.groupBy.head match
+    val groupExprs = extractSimpleGroupBy(stmt.groupBy)
+    assertEquals(groupExprs.size, 1)
+    groupExprs.head match
       case SqlExpr.ColumnRef("name", None) => () // ok
       case _                               => fail("Expected column ref in GROUP BY")
 
@@ -468,7 +474,7 @@ class ParserSuite extends munit.FunSuite:
 
     assert(result.isRight)
     val stmt = asSelect(result.toOption.get)
-    assertEquals(stmt.groupBy.size, 2)
+    assertEquals(extractSimpleGroupBy(stmt.groupBy).size, 2)
 
   test("parses GROUP BY with HAVING"):
     val result =
@@ -476,7 +482,7 @@ class ParserSuite extends munit.FunSuite:
 
     assert(result.isRight)
     val stmt = asSelect(result.toOption.get)
-    assertEquals(stmt.groupBy.size, 1)
+    assertEquals(extractSimpleGroupBy(stmt.groupBy).size, 1)
     assert(stmt.having.isDefined)
     stmt.having match
       case Some(
@@ -493,7 +499,7 @@ class ParserSuite extends munit.FunSuite:
     assert(result.isRight)
     val stmt = asSelect(result.toOption.get)
     assertEquals(stmt.projections.size, 5)
-    assertEquals(stmt.groupBy.size, 1)
+    assertEquals(extractSimpleGroupBy(stmt.groupBy).size, 1)
 
   test("parses complete GROUP BY query"):
     val result = SqlParser.parse("""
@@ -511,10 +517,159 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.projections.size, 2)
     assertEquals(stmt.projections(1).alias, Some("cnt"))
     assert(stmt.where.isDefined)
-    assertEquals(stmt.groupBy.size, 1)
+    assertEquals(extractSimpleGroupBy(stmt.groupBy).size, 1)
     assert(stmt.having.isDefined)
     assertEquals(stmt.orderBy.size, 1)
     assertEquals(stmt.limit, Some(10L))
+
+  // Phase 12 - Advanced Grouping (GROUPING SETS, CUBE, ROLLUP)
+
+  test("parses GROUPING SETS"):
+    val result = SqlParser.parse(
+      "SELECT name, age, COUNT(*) FROM users GROUP BY GROUPING SETS ((name), (age), (name, age))"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.GroupingSets(sets)) =>
+        assertEquals(sets.size, 3)
+        // First set: (name)
+        assertEquals(sets(0).size, 1)
+        // Second set: (age)
+        assertEquals(sets(1).size, 1)
+        // Third set: (name, age)
+        assertEquals(sets(2).size, 2)
+      case _ => fail(s"Expected GROUPING SETS, got ${stmt.groupBy}")
+
+  test("parses GROUPING SETS with empty set"):
+    val result = SqlParser.parse(
+      "SELECT name, COUNT(*) FROM users GROUP BY GROUPING SETS ((name), ())"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.GroupingSets(sets)) =>
+        assertEquals(sets.size, 2)
+        assertEquals(sets(0).size, 1) // (name)
+        assertEquals(sets(1).size, 0) // ()
+      case _ => fail(s"Expected GROUPING SETS, got ${stmt.groupBy}")
+
+  test("parses CUBE"):
+    val result = SqlParser.parse(
+      "SELECT name, age, COUNT(*) FROM users GROUP BY CUBE(name, age)"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.Cube(exprs)) =>
+        assertEquals(exprs.size, 2)
+        exprs(0) match
+          case SqlExpr.ColumnRef("name", None) => () // ok
+          case _                               => fail("Expected column ref 'name'")
+        exprs(1) match
+          case SqlExpr.ColumnRef("age", None) => () // ok
+          case _                              => fail("Expected column ref 'age'")
+      case _ => fail(s"Expected CUBE, got ${stmt.groupBy}")
+
+  test("parses ROLLUP"):
+    val result = SqlParser.parse(
+      "SELECT year, quarter, month, SUM(sales) FROM sales GROUP BY ROLLUP(year, quarter, month)"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.Rollup(exprs)) =>
+        assertEquals(exprs.size, 3)
+        exprs(0) match
+          case SqlExpr.ColumnRef("year", None) => () // ok
+          case _                               => fail("Expected column ref 'year'")
+        exprs(1) match
+          case SqlExpr.ColumnRef("quarter", None) => () // ok
+          case _                                  => fail("Expected column ref 'quarter'")
+        exprs(2) match
+          case SqlExpr.ColumnRef("month", None) => () // ok
+          case _                                => fail("Expected column ref 'month'")
+      case _ => fail(s"Expected ROLLUP, got ${stmt.groupBy}")
+
+  test("parses GROUP BY WITH CUBE"):
+    val result = SqlParser.parse(
+      "SELECT name, age, COUNT(*) FROM users GROUP BY name, age WITH CUBE"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.Cube(exprs)) =>
+        assertEquals(exprs.size, 2)
+      case _ => fail(s"Expected CUBE via WITH CUBE, got ${stmt.groupBy}")
+
+  test("parses GROUP BY WITH ROLLUP"):
+    val result = SqlParser.parse(
+      "SELECT year, quarter, SUM(sales) FROM sales GROUP BY year, quarter WITH ROLLUP"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.Rollup(exprs)) =>
+        assertEquals(exprs.size, 2)
+      case _ => fail(s"Expected ROLLUP via WITH ROLLUP, got ${stmt.groupBy}")
+
+  test("parses GROUPING function"):
+    val result = SqlParser.parse(
+      "SELECT name, age, GROUPING(name) AS gn, COUNT(*) FROM users GROUP BY CUBE(name, age)"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    // Check GROUPING function in projections
+    stmt.projections(2).expr match
+      case SqlExpr.Grouping(columns) =>
+        assertEquals(columns.size, 1)
+        columns.head match
+          case SqlExpr.ColumnRef("name", None) => () // ok
+          case _                               => fail("Expected column ref 'name' in GROUPING")
+      case _ => fail(s"Expected GROUPING function, got ${stmt.projections(2).expr}")
+
+  test("parses GROUPING function with multiple columns"):
+    val result = SqlParser.parse(
+      "SELECT GROUPING(name, age) AS g FROM users GROUP BY CUBE(name, age)"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.Grouping(columns) =>
+        assertEquals(columns.size, 2)
+      case _ => fail(s"Expected GROUPING function with 2 columns")
+
+  test("parses CUBE with single column"):
+    val result = SqlParser.parse(
+      "SELECT name, COUNT(*) FROM users GROUP BY CUBE(name)"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.Cube(exprs)) =>
+        assertEquals(exprs.size, 1)
+      case _ => fail(s"Expected CUBE, got ${stmt.groupBy}")
+
+  test("parses ROLLUP with single column"):
+    val result = SqlParser.parse(
+      "SELECT name, COUNT(*) FROM users GROUP BY ROLLUP(name)"
+    )
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.groupBy match
+      case Some(GroupByClause.Rollup(exprs)) =>
+        assertEquals(exprs.size, 1)
+      case _ => fail(s"Expected ROLLUP, got ${stmt.groupBy}")
 
   // Phase 5 - CASE WHEN and CAST tests
 

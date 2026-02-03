@@ -439,6 +439,10 @@ object ExpressionEvaluator:
       case Second(child) =>
         extractField(DateTimeField.Second, evalInternal(child, row))
 
+      // Grouping requires aggregate context - cannot be evaluated row-by-row
+      case Grouping(_) =>
+        throw IllegalStateException("GROUPING() cannot be evaluated row-by-row, requires aggregate context")
+
   private def compareNumeric(
       l: ProtoExpr,
       r: ProtoExpr,

@@ -121,13 +121,21 @@ class ParserComparisonSuite extends FunSuite:
       case SqlStatement.SelectStatement(_, projs, _, where, groupBy, having, orderBy, _) =>
         projs.flatMap(p => extractColumnsFromExpr(p.expr)).toSet ++
           where.toVector.flatMap(extractColumnsFromExpr).toSet ++
-          groupBy.flatMap(extractColumnsFromExpr).toSet ++
+          extractColumnsFromGroupBy(groupBy) ++
           having.toVector.flatMap(extractColumnsFromExpr).toSet ++
           orderBy.flatMap(o => extractColumnsFromExpr(o.expr)).toSet
       case SqlStatement.CompoundStatement(left, _, right) =>
         extractColumnsOurs(left) ++ extractColumnsOurs(right)
       case SqlStatement.WithStatement(ctes, _, query) =>
         ctes.flatMap(c => extractColumnsOurs(c.query)).toSet ++ extractColumnsOurs(query)
+
+  private def extractColumnsFromGroupBy(gb: Option[GroupByClause]): Set[String] =
+    gb match
+      case None => Set.empty
+      case Some(GroupByClause.Simple(exprs)) => exprs.flatMap(extractColumnsFromExpr).toSet
+      case Some(GroupByClause.GroupingSets(sets)) => sets.flatten.flatMap(extractColumnsFromExpr).toSet
+      case Some(GroupByClause.Cube(exprs)) => exprs.flatMap(extractColumnsFromExpr).toSet
+      case Some(GroupByClause.Rollup(exprs)) => exprs.flatMap(extractColumnsFromExpr).toSet
 
   private def extractColumnsFromExpr(expr: SqlExpr): Set[String] = expr match
     case SqlExpr.ColumnRef(name, _)       => Set(name)

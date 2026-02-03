@@ -312,6 +312,144 @@ class TransformSuite extends munit.FunSuite:
 
     assertEquals(countAggregates(result.toOption.get), 3)
 
+  // Phase 12 - Advanced Grouping tests
+
+  test("transforms GROUPING SETS"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT name, age, COUNT(*) FROM users GROUP BY GROUPING SETS ((name), (age), (name, age))"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight)
+
+    // GROUPING SETS should produce an Aggregate with all referenced columns
+    def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
+      case agg @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(agg)
+      case ProtoLogicalPlan.Project(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findAggregate(child)
+      case _                                         => None
+
+    val agg = findAggregate(result.toOption.get)
+    assert(agg.isDefined, "Expected Aggregate in plan")
+    // All grouping columns should be present
+    assertEquals(agg.get.groupingExprs.size, 2) // name, age (flattened from all sets)
+
+  test("transforms CUBE"):
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, age, COUNT(*) FROM users GROUP BY CUBE(name, age)")
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight)
+
+    def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
+      case agg @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(agg)
+      case ProtoLogicalPlan.Project(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findAggregate(child)
+      case _                                         => None
+
+    val agg = findAggregate(result.toOption.get)
+    assert(agg.isDefined, "Expected Aggregate in plan")
+    assertEquals(agg.get.groupingExprs.size, 2) // name, age
+
+  test("transforms ROLLUP"):
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, age, COUNT(*) FROM users GROUP BY ROLLUP(name, age)")
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight)
+
+    def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
+      case agg @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(agg)
+      case ProtoLogicalPlan.Project(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findAggregate(child)
+      case _                                         => None
+
+    val agg = findAggregate(result.toOption.get)
+    assert(agg.isDefined, "Expected Aggregate in plan")
+    assertEquals(agg.get.groupingExprs.size, 2) // name, age
+
+  test("transforms GROUPING function"):
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, GROUPING(name), COUNT(*) FROM users GROUP BY CUBE(name)")
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight)
+
+    def findGrouping(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, child) =>
+        exprs.exists {
+          case ProtoExpr.Grouping(_) => true
+          case _                     => false
+        } || findGrouping(child)
+      case ProtoLogicalPlan.Aggregate(_, exprs, child) =>
+        exprs.exists {
+          case ProtoExpr.Grouping(_) => true
+          case _                     => false
+        } || findGrouping(child)
+      case ProtoLogicalPlan.Filter(_, child) => findGrouping(child)
+      case _                                 => false
+
+    assert(findGrouping(result.toOption.get), "Expected GROUPING function in plan")
+
+  test("transforms WITH CUBE"):
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, age, COUNT(*) FROM users GROUP BY name, age WITH CUBE")
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight)
+
+    def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
+      case agg @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(agg)
+      case ProtoLogicalPlan.Project(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findAggregate(child)
+      case _                                         => None
+
+    val agg = findAggregate(result.toOption.get)
+    assert(agg.isDefined, "Expected Aggregate in plan")
+    assertEquals(agg.get.groupingExprs.size, 2) // name, age
+
+  test("transforms WITH ROLLUP"):
+    val stmt = asSelect(
+      SqlParser
+        .parse("SELECT name, age, COUNT(*) FROM users GROUP BY name, age WITH ROLLUP")
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight)
+
+    def findAggregate(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Aggregate] = plan match
+      case agg @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(agg)
+      case ProtoLogicalPlan.Project(_, child)        => findAggregate(child)
+      case ProtoLogicalPlan.Filter(_, child)         => findAggregate(child)
+      case _                                         => None
+
+    val agg = findAggregate(result.toOption.get)
+    assert(agg.isDefined, "Expected Aggregate in plan")
+    assertEquals(agg.get.groupingExprs.size, 2) // name, age
+
   // Phase 5 - CASE WHEN and CAST tests
 
   test("transforms CASE WHEN expression"):

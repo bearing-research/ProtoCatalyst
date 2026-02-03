@@ -8,6 +8,8 @@ enum Token:
   case BETWEEN, LIKE, IN, ESCAPE
   case JOIN, INNER, LEFT, RIGHT, FULL, OUTER, CROSS, ON
   case GROUP, HAVING
+  // Advanced grouping keywords
+  case CUBE, ROLLUP, SETS, GROUPING
   case CASE, WHEN, THEN, ELSE, END, CAST
   case EXISTS
   // Date/time keywords
@@ -81,6 +83,10 @@ object Token:
     "ON" -> Token.ON,
     "GROUP" -> Token.GROUP,
     "HAVING" -> Token.HAVING,
+    "CUBE" -> Token.CUBE,
+    "ROLLUP" -> Token.ROLLUP,
+    "SETS" -> Token.SETS,
+    "GROUPING" -> Token.GROUPING,
     "CASE" -> Token.CASE,
     "WHEN" -> Token.WHEN,
     "THEN" -> Token.THEN,

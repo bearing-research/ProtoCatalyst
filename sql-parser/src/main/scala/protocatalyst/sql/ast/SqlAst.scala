@@ -7,7 +7,7 @@ enum SqlStatement:
       projections: Vector[Projection],
       from: FromClause,
       where: Option[SqlExpr],
-      groupBy: Vector[SqlExpr],
+      groupBy: Option[GroupByClause],
       having: Option[SqlExpr],
       orderBy: Vector[OrderSpec],
       limit: Option[Long]
@@ -58,6 +58,17 @@ enum JoinType:
 
 /** ORDER BY specification. */
 case class OrderSpec(expr: SqlExpr, ascending: Boolean)
+
+/** GROUP BY clause variants. */
+enum GroupByClause:
+  /** Simple GROUP BY: GROUP BY col1, col2 */
+  case Simple(exprs: Vector[SqlExpr])
+  /** GROUPING SETS: GROUP BY GROUPING SETS ((a, b), (a), ()) */
+  case GroupingSets(sets: Vector[Vector[SqlExpr]])
+  /** CUBE: GROUP BY CUBE(a, b) or GROUP BY a, b WITH CUBE */
+  case Cube(exprs: Vector[SqlExpr])
+  /** ROLLUP: GROUP BY ROLLUP(a, b) or GROUP BY a, b WITH ROLLUP */
+  case Rollup(exprs: Vector[SqlExpr])
 
 /** Binary comparison operators. */
 enum CompareOp:
@@ -130,6 +141,9 @@ enum SqlExpr:
 
   // Window function expression
   case WindowFunction(function: SqlExpr, windowSpec: WindowSpec)
+
+  // GROUPING() function for advanced grouping (returns 1 if column is null due to grouping, 0 otherwise)
+  case Grouping(columns: Vector[SqlExpr])
 
 /** Window specification for OVER clause. */
 case class WindowSpec(

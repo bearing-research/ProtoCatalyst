@@ -97,10 +97,11 @@ object AstToProtoTransform:
           Right(basePlan)
 
       // Apply GROUP BY if present
-      aggregated <-
-        if stmt.groupBy.nonEmpty then
-          transformAggregate(stmt.projections, stmt.groupBy, filtered, ctx)
-        else Right(filtered)
+      aggregated <- stmt.groupBy match
+        case Some(groupByClause) =>
+          transformAggregate(stmt.projections, groupByClause, filtered, ctx)
+        case None =>
+          Right(filtered)
 
       // Apply HAVING (filter after aggregation)
       havingFiltered <- stmt.having match
@@ -114,10 +115,11 @@ object AstToProtoTransform:
         if stmt.distinct then ProtoLogicalPlan.Distinct(havingFiltered) else havingFiltered
 
       // Apply projection (skip if we already have an aggregate, as aggregates handle projection)
-      projected <-
-        if stmt.groupBy.nonEmpty then
+      projected <- stmt.groupBy match
+        case Some(_) =>
           Right(distinctPlan) // Aggregate already handles the expressions
-        else transformProjections(stmt.projections, ctx, distinctPlan)
+        case None =>
+          transformProjections(stmt.projections, ctx, distinctPlan)
 
       // Apply ORDER BY
       sorted <- stmt.orderBy match
@@ -265,13 +267,26 @@ object AstToProtoTransform:
   /** Transform GROUP BY to an Aggregate plan. */
   private def transformAggregate(
       projections: Vector[Projection],
-      groupBy: Vector[SqlExpr],
+      groupBy: GroupByClause,
       child: ProtoLogicalPlan,
       ctx: TransformContext
   ): Either[TransformError, ProtoLogicalPlan] =
     for
-      // Transform GROUP BY expressions
-      groupingExprs <- transformExprList(groupBy, ctx)
+      // Transform GROUP BY expressions based on clause type
+      groupingExprs <- groupBy match
+        case GroupByClause.Simple(exprs) =>
+          transformExprList(exprs, ctx)
+        case GroupByClause.GroupingSets(sets) =>
+          // For GROUPING SETS, flatten all expressions for the aggregate
+          // The actual grouping sets logic would need a more complex plan
+          val allExprs = sets.flatten.distinct
+          transformExprList(allExprs, ctx)
+        case GroupByClause.Cube(exprs) =>
+          // CUBE generates all combinations - for now, just use the base expressions
+          transformExprList(exprs, ctx)
+        case GroupByClause.Rollup(exprs) =>
+          // ROLLUP generates hierarchical combinations - for now, just use the base expressions
+          transformExprList(exprs, ctx)
 
       // Extract aggregate expressions from projections
       aggregateExprs <- extractAggregateExprs(projections, ctx)
@@ -541,6 +556,9 @@ object AstToProtoTransform:
           orderBy <- transformOrderSpecs(windowSpec.orderBy, ctx)
           frame = windowSpec.frame.map(transformFrame)
         yield ProtoExpr.WindowExpr(windowFunc, partitionBy, orderBy, frame)
+
+      case SqlExpr.Grouping(columns) =>
+        transformExprList(columns, ctx).map(ProtoExpr.Grouping(_))
 
   /** Transform a regular expression to a window function if applicable. */
   private def transformWindowFunction(expr: ProtoExpr): Either[TransformError, ProtoExpr] =

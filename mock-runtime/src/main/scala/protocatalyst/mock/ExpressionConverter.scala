@@ -177,6 +177,11 @@ object ExpressionConverter:
       case Minute(child)           => ME.Minute(toMock(child))
       case Second(child)           => ME.Second(toMock(child))
 
+      // === Grouping Function ===
+      // GROUPING() is evaluated during aggregate computation, not row-by-row
+      case Grouping(columns) =>
+        ME.Grouping(columns.map(toMock))
+
       // === Opaque Function ===
       case OpaqueCall(name, args, returnType, deterministic) =>
         ME.UnresolvedFunction(name, args.map(toMock))
@@ -440,6 +445,7 @@ object ExpressionConverter:
       case ME.Hour(child)                => PE.Hour(fromMock(child))
       case ME.Minute(child)              => PE.Minute(fromMock(child))
       case ME.Second(child)              => PE.Second(fromMock(child))
+      case ME.Grouping(children)         => PE.Grouping(children.map(fromMock).toVector)
 
       case ME.WindowExpression(function, spec) =>
         PE.WindowExpr(

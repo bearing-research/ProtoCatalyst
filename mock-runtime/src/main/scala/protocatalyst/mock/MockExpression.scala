@@ -516,6 +516,12 @@ object MockExpression:
     def nullable: Boolean = child.nullable
     def children: Seq[MockExpression] = Seq(child)
 
+  // === Grouping Function ===
+  // Returns 1 if the column is a grouping column for an aggregate row, 0 otherwise
+  case class Grouping(children: Seq[MockExpression]) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = false
+
   // === Unresolved Function ===
 
   case class UnresolvedFunction(

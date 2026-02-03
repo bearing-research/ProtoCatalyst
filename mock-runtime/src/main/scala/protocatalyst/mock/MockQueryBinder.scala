@@ -372,6 +372,9 @@ object MockQueryBinder:
       case Minute(child)           => Minute(bindExpr(child, ctx))
       case Second(child)           => Second(bindExpr(child, ctx))
 
+      // Grouping function
+      case Grouping(children)      => Grouping(children.map(bindExpr(_, ctx)))
+
       // Leaf nodes that don't need binding
       case lit: Literal  => lit
       case ref: BoundRef => ref
