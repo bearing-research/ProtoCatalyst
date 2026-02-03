@@ -80,7 +80,7 @@ object SqlMacro:
   /** Extract the primary table name from a statement. */
   private def extractTableNameFromStmt(stmt: SqlStatement): String =
     stmt match
-      case SqlStatement.SelectStatement(_, _, from, _, _, _, _, _) =>
+      case SqlStatement.SelectStatement(_, _, _, from, _, _, _, _, _) =>
         extractTableName(from)
       case SqlStatement.CompoundStatement(left, _, _) =>
         extractTableNameFromStmt(left)
@@ -130,6 +130,7 @@ object SqlMacro:
   private def stmtToExpr(stmt: SqlStatement.SelectStatement)(using
       Quotes
   ): Expr[SqlStatement.SelectStatement] =
+    val hintsExpr = Expr.ofSeq(stmt.hints.map(queryHintToExpr))
     val projectionsExpr = Expr.ofSeq(stmt.projections.map(projectionToExpr))
     val fromExpr = fromClauseToExpr(stmt.from)
     val whereExpr = stmt.where match
@@ -145,6 +146,7 @@ object SqlMacro:
 
     '{
       SqlStatement.SelectStatement(
+        $hintsExpr.toVector,
         ${ Expr(stmt.distinct) },
         $projectionsExpr.toVector,
         $fromExpr,
@@ -270,6 +272,29 @@ object SqlMacro:
       case GroupByClause.Rollup(exprs) =>
         val exprsExpr = Expr.ofSeq(exprs.map(sqlExprToExpr))
         '{ GroupByClause.Rollup($exprsExpr.toVector) }
+
+  private def queryHintToExpr(hint: QueryHint)(using Quotes): Expr[QueryHint] =
+    hint match
+      case QueryHint.Broadcast(tables) =>
+        val tablesExpr = Expr.ofSeq(tables.map(Expr(_)))
+        '{ QueryHint.Broadcast($tablesExpr.toVector) }
+      case QueryHint.Merge(tables) =>
+        val tablesExpr = Expr.ofSeq(tables.map(Expr(_)))
+        '{ QueryHint.Merge($tablesExpr.toVector) }
+      case QueryHint.ShuffleHash(tables) =>
+        val tablesExpr = Expr.ofSeq(tables.map(Expr(_)))
+        '{ QueryHint.ShuffleHash($tablesExpr.toVector) }
+      case QueryHint.ShuffleReplicateNL(tables) =>
+        val tablesExpr = Expr.ofSeq(tables.map(Expr(_)))
+        '{ QueryHint.ShuffleReplicateNL($tablesExpr.toVector) }
+      case QueryHint.Coalesce(partitions) =>
+        '{ QueryHint.Coalesce(${ Expr(partitions) }) }
+      case QueryHint.Repartition(partitions, columns) =>
+        val columnsExpr = Expr.ofSeq(columns.map(Expr(_)))
+        '{ QueryHint.Repartition(${ Expr(partitions) }, $columnsExpr.toVector) }
+      case QueryHint.RepartitionByRange(partitions, columns) =>
+        val columnsExpr = Expr.ofSeq(columns.map(Expr(_)))
+        '{ QueryHint.RepartitionByRange(${ Expr(partitions) }, $columnsExpr.toVector) }
 
   private def sqlExprToExpr(expr: SqlExpr)(using Quotes): Expr[SqlExpr] =
     expr match

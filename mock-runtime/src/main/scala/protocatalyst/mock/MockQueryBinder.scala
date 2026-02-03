@@ -142,6 +142,9 @@ object MockQueryBinder:
       case Generate(_, _, _, child) =>
         collectSchemas(child, catalog)
 
+      case ResolvedHint(_, child) =>
+        collectSchemas(child, catalog)
+
   private def bindPlan(plan: ProtoLogicalPlan, ctx: BindingContext): BindingResult =
     import ProtoLogicalPlan.*
     plan match
@@ -278,6 +281,11 @@ object MockQueryBinder:
             val boundGenerator = bindExpr(generator, ctx)
             BoundPlan(Generate(boundGenerator, output, outer, boundChild))
           case err => err
+
+      case ResolvedHint(hints, child) =>
+        bindPlan(child, ctx) match
+          case BoundPlan(boundChild) => BoundPlan(ResolvedHint(hints, boundChild))
+          case err                   => err
 
   private def bindExpr(expr: ProtoExpr, ctx: BindingContext): ProtoExpr =
     import ProtoExpr.*

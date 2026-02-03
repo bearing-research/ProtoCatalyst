@@ -1061,7 +1061,7 @@ class ParserSuite extends munit.FunSuite:
     result.toOption.get match
       case SqlStatement.CompoundStatement(_, SetOperation.Union(_), _) =>
         () // UNION parsed correctly
-      case SqlStatement.SelectStatement(_, _, _, _, orderBy, _, _, _) if orderBy.nonEmpty =>
+      case SqlStatement.SelectStatement(_, _, _, _, _, _, _, orderBy, _) if orderBy.nonEmpty =>
         () // Parser may attach ORDER BY to result
       case other => fail(s"Expected UNION compound statement, got $other")
 
@@ -1073,7 +1073,7 @@ class ParserSuite extends munit.FunSuite:
     result.toOption.get match
       case SqlStatement.CompoundStatement(_, SetOperation.Union(_), _) =>
         () // UNION parsed correctly
-      case SqlStatement.SelectStatement(_, _, _, _, _, Some(_), _, _) =>
+      case SqlStatement.SelectStatement(_, _, _, _, _, _, _, _, Some(_)) =>
         () // Parser may attach LIMIT to result
       case other => fail(s"Expected UNION compound statement, got $other")
 
@@ -1087,8 +1087,8 @@ class ParserSuite extends munit.FunSuite:
       case SqlStatement.CompoundStatement(left, SetOperation.Union(_), right) =>
         (left, right) match
           case (
-                SqlStatement.SelectStatement(_, _, _, Some(_), _, _, _, _),
-                SqlStatement.SelectStatement(_, _, _, Some(_), _, _, _, _)
+                SqlStatement.SelectStatement(_, _, _, _, Some(_), _, _, _, _),
+                SqlStatement.SelectStatement(_, _, _, _, Some(_), _, _, _, _)
               ) =>
             () // ok - both have WHERE clauses
           case _ => fail("Expected both sides to have WHERE clauses")
@@ -1824,3 +1824,116 @@ class ParserSuite extends munit.FunSuite:
       case FromClause.Values(rows, "people", Some(Vector("id", "name"))) =>
         assertEquals(rows.size, 5)
       case other => fail(s"Expected Values, got $other")
+
+  // === Phase 17: Query Hints ===
+
+  test("parses BROADCAST hint"):
+    val result = SqlParser.parse("SELECT /*+ BROADCAST(t1) */ * FROM users AS t1")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.Broadcast(tables) => assertEquals(tables, Vector("t1"))
+      case other => fail(s"Expected Broadcast hint, got $other")
+
+  test("parses BROADCAST hint with multiple tables"):
+    val result = SqlParser.parse("SELECT /*+ BROADCAST(t1, t2) */ * FROM users AS t1 CROSS JOIN orders AS t2")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.Broadcast(tables) => assertEquals(tables, Vector("t1", "t2"))
+      case other => fail(s"Expected Broadcast hint, got $other")
+
+  test("parses REPARTITION hint"):
+    val result = SqlParser.parse("SELECT /*+ REPARTITION(3) */ * FROM users")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.Repartition(partitions, columns) =>
+        assertEquals(partitions, 3)
+        assert(columns.isEmpty)
+      case other => fail(s"Expected Repartition hint, got $other")
+
+  test("parses REPARTITION hint with columns"):
+    val result = SqlParser.parse("SELECT /*+ REPARTITION(3, id) */ * FROM users")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.Repartition(partitions, columns) =>
+        assertEquals(partitions, 3)
+        assertEquals(columns, Vector("id"))
+      case other => fail(s"Expected Repartition hint, got $other")
+
+  test("parses COALESCE hint"):
+    val result = SqlParser.parse("SELECT /*+ COALESCE(1) */ * FROM users")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.Coalesce(partitions) => assertEquals(partitions, 1)
+      case other => fail(s"Expected Coalesce hint, got $other")
+
+  test("parses multiple hints"):
+    val result = SqlParser.parse("SELECT /*+ BROADCAST(t1) REPARTITION(4) */ * FROM users AS t1")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 2)
+
+  test("parses MERGE hint"):
+    val result = SqlParser.parse("SELECT /*+ MERGE(t1) */ * FROM users AS t1")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.Merge(tables) => assertEquals(tables, Vector("t1"))
+      case other => fail(s"Expected Merge hint, got $other")
+
+  test("parses SHUFFLE_HASH hint"):
+    val result = SqlParser.parse("SELECT /*+ SHUFFLE_HASH(t1) */ * FROM users AS t1")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    stmt.hints.head match
+      case QueryHint.ShuffleHash(tables) => assertEquals(tables, Vector("t1"))
+      case other => fail(s"Expected ShuffleHash hint, got $other")
+
+  test("parses hint with DISTINCT"):
+    val result = SqlParser.parse("SELECT /*+ BROADCAST(t1) */ DISTINCT name FROM users AS t1")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.hints.size, 1)
+    assert(stmt.distinct)
+
+  test("parses query without hints"):
+    val result = SqlParser.parse("SELECT * FROM users")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assert(stmt.hints.isEmpty)
+
+  test("parses hint in subquery"):
+    val result = SqlParser.parse(
+      "SELECT * FROM (SELECT /*+ REPARTITION(2) */ name FROM users) AS sub"
+    )
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Subquery(subq, "sub") =>
+        assertEquals(subq.hints.size, 1)
+        subq.hints.head match
+          case QueryHint.Repartition(partitions, _) => assertEquals(partitions, 2)
+          case other => fail(s"Expected Repartition hint, got $other")
+      case other => fail(s"Expected Subquery, got $other")

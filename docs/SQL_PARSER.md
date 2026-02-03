@@ -432,19 +432,47 @@ SELECT * FROM (VALUES
 ) AS people(id, name)
 ```
 
-## Future Phases
-
-### Phase 17: Query Hints
+### Phase 17: Query Hints (Complete)
 
 Optimizer hints for join strategies and partitioning:
 
+**Join Hints:**
+- BROADCAST(table) - suggests broadcast join for specified tables
+- BROADCASTJOIN(table), MAPJOIN(table) - aliases for BROADCAST
+- MERGE(table) - suggests merge/sort-merge join
+- SHUFFLE_HASH(table) - suggests shuffle hash join
+- SHUFFLE_REPLICATE_NL(table) - suggests nested loop join with shuffle replication
+
+**Partitioning Hints:**
+- COALESCE(n) - reduce partitions to n
+- REPARTITION(n) - repartition to n partitions
+- REPARTITION(n, col1, col2) - repartition by columns
+- REPARTITION_BY_RANGE(n, col1) - range partitioning
+
 ```sql
+-- Broadcast hint for small table
 SELECT /*+ BROADCAST(t1) */ *
 FROM t1 INNER JOIN t2 ON t1.key = t2.key
 
+-- Repartition hint
 SELECT /*+ REPARTITION(3, col) */ *
 FROM large_table
+
+-- Coalesce for reducing output partitions
+SELECT /*+ COALESCE(1) */ *
+FROM aggregated_result
+
+-- Multiple hints
+SELECT /*+ BROADCAST(dim) REPARTITION(4) */ *
+FROM fact_table f
+INNER JOIN dim_table dim ON f.key = dim.key
+
+-- Merge join hint
+SELECT /*+ MERGE(t1, t2) */ *
+FROM t1 INNER JOIN t2 ON t1.id = t2.id
 ```
+
+## Future Phases
 
 ### Phase 18: Recursive CTEs
 
@@ -499,10 +527,10 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (325 total tests in sql-parser module):
+Current test statistics (340 total tests in sql-parser module):
 - Lexer tests: 18 tests
-- Parser tests: 144 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW, VALUES)
-- Transform tests: 99 tests
+- Parser tests: 155 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW, VALUES, Query Hints)
+- Transform tests: 103 tests
 - **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
 

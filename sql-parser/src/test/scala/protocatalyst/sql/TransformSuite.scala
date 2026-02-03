@@ -1735,3 +1735,102 @@ class TransformSuite extends munit.FunSuite:
     assert(values.isDefined, "Expected Values in plan")
     // Schema should have column names from aliases
     assertEquals(values.get.schema.fields.map(_.name), Vector("id", "name"))
+
+  // === Phase 17: Query Hints ===
+
+  test("transforms query with BROADCAST hint"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT /*+ BROADCAST(users) */ * FROM users"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findHint(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.ResolvedHint] = plan match
+      case h @ ProtoLogicalPlan.ResolvedHint(_, _) => Some(h)
+      case ProtoLogicalPlan.Project(_, child)      => findHint(child)
+      case ProtoLogicalPlan.Filter(_, child)       => findHint(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child) => findHint(child)
+      case _                                       => None
+
+    val hint = findHint(result.toOption.get)
+    assert(hint.isDefined, "Expected ResolvedHint in plan")
+    assertEquals(hint.get.hints.size, 1)
+    hint.get.hints.head match
+      case protocatalyst.plan.PlanHint.Broadcast(tables) =>
+        assertEquals(tables, Vector("users"))
+      case other => fail(s"Expected Broadcast hint, got $other")
+
+  test("transforms query with REPARTITION hint"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT /*+ REPARTITION(4) */ * FROM users"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findHint(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.ResolvedHint] = plan match
+      case h @ ProtoLogicalPlan.ResolvedHint(_, _) => Some(h)
+      case ProtoLogicalPlan.Project(_, child)      => findHint(child)
+      case _                                       => None
+
+    val hint = findHint(result.toOption.get)
+    assert(hint.isDefined, "Expected ResolvedHint in plan")
+    hint.get.hints.head match
+      case protocatalyst.plan.PlanHint.Repartition(partitions, _) =>
+        assertEquals(partitions, 4)
+      case other => fail(s"Expected Repartition hint, got $other")
+
+  test("transforms query with multiple hints"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT /*+ BROADCAST(users) COALESCE(1) */ * FROM users"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findHint(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.ResolvedHint] = plan match
+      case h @ ProtoLogicalPlan.ResolvedHint(_, _) => Some(h)
+      case ProtoLogicalPlan.Project(_, child)      => findHint(child)
+      case _                                       => None
+
+    val hint = findHint(result.toOption.get)
+    assert(hint.isDefined, "Expected ResolvedHint in plan")
+    assertEquals(hint.get.hints.size, 2)
+
+  test("transforms query without hints has no ResolvedHint"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findHint(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.ResolvedHint] = plan match
+      case h @ ProtoLogicalPlan.ResolvedHint(_, _) => Some(h)
+      case ProtoLogicalPlan.Project(_, child)      => findHint(child)
+      case ProtoLogicalPlan.Filter(_, child)       => findHint(child)
+      case _                                       => None
+
+    val hint = findHint(result.toOption.get)
+    assert(hint.isEmpty, "Expected no ResolvedHint in plan for query without hints")

@@ -66,6 +66,7 @@ object SqlVerifier:
     val pad = "  " * indent
     stmt match
       case SqlStatement.SelectStatement(
+            hints,
             distinct,
             projections,
             from,
@@ -77,6 +78,7 @@ object SqlVerifier:
           ) =>
         val sb = new StringBuilder()
         sb.append(s"${pad}SelectStatement:\n")
+        if hints.nonEmpty then sb.append(s"${pad}  hints: ${hints.mkString(", ")}\n")
         sb.append(s"${pad}  distinct: $distinct\n")
         sb.append(
           s"${pad}  projections: ${projections.map(p => prettyPrintProjection(p)).mkString(", ")}\n"
@@ -228,6 +230,9 @@ object SqlVerifier:
       case ProtoLogicalPlan.Generate(generator, output, outer, child) =>
         val outerStr = if outer then " OUTER" else ""
         s"${pad}Generate$outerStr(${prettyPrintProtoExpr(generator)}, output=[${output.mkString(", ")}])\n${prettyPrintPlan(child, indent + 1)}"
+
+      case ProtoLogicalPlan.ResolvedHint(hints, child) =>
+        s"${pad}Hint(${hints.mkString(", ")})\n${prettyPrintPlan(child, indent + 1)}"
 
   private def prettyPrintProtoExpr(expr: ProtoExpr): String = expr match
     case ProtoExpr.Literal(value)              => value.toString

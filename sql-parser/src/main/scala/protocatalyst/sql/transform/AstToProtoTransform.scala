@@ -134,7 +134,13 @@ object AstToProtoTransform:
       limited = stmt.limit match
         case Some(n) => ProtoLogicalPlan.Limit(n.toInt, sorted)
         case None    => sorted
-    yield limited
+
+      // Apply hints
+      hinted = if stmt.hints.nonEmpty then
+        val planHints = stmt.hints.map(transformHint)
+        ProtoLogicalPlan.ResolvedHint(planHints, limited)
+      else limited
+    yield hinted
 
   /** Collect all table schemas from the FROM clause. */
   private def collectTableSchemas(
@@ -1024,6 +1030,18 @@ object AstToProtoTransform:
       case "MICROSECOND" => Some(DateTimeField.Microsecond)
       case "MILLISECOND" => Some(DateTimeField.Millisecond)
       case _             => None
+
+  /** Transform a SQL QueryHint to a PlanHint. */
+  private def transformHint(hint: QueryHint): PlanHint =
+    hint match
+      case QueryHint.Broadcast(tables)                 => PlanHint.Broadcast(tables)
+      case QueryHint.Merge(tables)                     => PlanHint.Merge(tables)
+      case QueryHint.ShuffleHash(tables)               => PlanHint.ShuffleHash(tables)
+      case QueryHint.ShuffleReplicateNL(tables)        => PlanHint.ShuffleReplicateNL(tables)
+      case QueryHint.Coalesce(partitions)              => PlanHint.Coalesce(partitions)
+      case QueryHint.Repartition(partitions, columns)  => PlanHint.Repartition(partitions, columns)
+      case QueryHint.RepartitionByRange(partitions, columns) =>
+        PlanHint.RepartitionByRange(partitions, columns)
 
 /** Context for transformation. */
 case class TransformContext(

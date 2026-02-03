@@ -47,10 +47,28 @@ class Lexer(input: String):
         case '+' => advance(); Right(Token.Plus)
         case '-' =>
           advance()
-          if pos < input.length && current.isDigit then readNumber(negative = true)
+          if pos < input.length && current == '-' then
+            // Line comment: skip to end of line
+            skipLineComment()
+            nextToken() // Skip and get next token
+          else if pos < input.length && current.isDigit then readNumber(negative = true)
           else Right(Token.Minus)
         case '*' => advance(); Right(Token.Star)
-        case '/' => advance(); Right(Token.Slash)
+        case '/' =>
+          advance()
+          if pos < input.length && current == '*' then
+            // Block comment - check if it's a hint (/*+)
+            advance()
+            if pos < input.length && current == '+' then
+              advance()
+              readHint()
+            else
+              skipBlockComment()
+              nextToken() // Skip and get next token
+          else if pos < input.length && current == '-' then
+            // Possibly -- line comment (rare but /- is not valid)
+            Right(Token.Slash) // Just return slash, let parser handle invalid syntax
+          else Right(Token.Slash)
         case '=' => advance(); Right(Token.Eq)
         case '<' =>
           advance()
@@ -87,6 +105,36 @@ class Lexer(input: String):
 
   private def skipWhitespace(): Unit =
     while pos < input.length && current.isWhitespace do advance()
+
+  /** Skip a line comment (from -- to end of line). */
+  private def skipLineComment(): Unit =
+    while pos < input.length && current != '\n' do advance()
+    if pos < input.length then advance() // Skip the newline
+
+  /** Skip a block comment (from current position to closing star-slash). */
+  private def skipBlockComment(): Unit =
+    while pos < input.length do
+      if current == '*' && pos + 1 < input.length && input.charAt(pos + 1) == '/' then
+        advance() // skip *
+        advance() // skip /
+        return
+      advance()
+
+  /** Read a hint comment (after /*+, until */). */
+  private def readHint(): Either[LexerError, Token] =
+    val startLine = line
+    val startCol = col
+    val sb = new StringBuilder
+
+    while pos < input.length do
+      if current == '*' && pos + 1 < input.length && input.charAt(pos + 1) == '/' then
+        advance() // skip *
+        advance() // skip /
+        return Right(Token.Hint(sb.toString.trim))
+      sb.append(current)
+      advance()
+
+    Left(LexerError("Unterminated hint comment", startLine, startCol))
 
   private def readNumber(negative: Boolean): Either[LexerError, Token] =
     col

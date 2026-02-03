@@ -3,6 +3,7 @@ package protocatalyst.sql.ast
 /** SQL statement AST. */
 enum SqlStatement:
   case SelectStatement(
+      hints: Vector[QueryHint],
       distinct: Boolean,
       projections: Vector[Projection],
       from: FromClause,
@@ -240,3 +241,20 @@ enum SqlType:
   case BooleanType
   case DateType
   case TimestampType
+
+/** Query hints for optimizer directives. */
+enum QueryHint:
+  /** BROADCAST hint - suggests broadcast join for the specified tables */
+  case Broadcast(tables: Vector[String])
+  /** MERGE hint - suggests merge/sort-merge join for the specified tables */
+  case Merge(tables: Vector[String])
+  /** SHUFFLE_HASH hint - suggests shuffle hash join */
+  case ShuffleHash(tables: Vector[String])
+  /** SHUFFLE_REPLICATE_NL hint - suggests nested loop join with shuffle replication */
+  case ShuffleReplicateNL(tables: Vector[String])
+  /** COALESCE hint - reduce partitions to the specified number */
+  case Coalesce(partitions: Int)
+  /** REPARTITION hint - repartition to the specified number and optional columns */
+  case Repartition(partitions: Int, columns: Vector[String])
+  /** REPARTITION_BY_RANGE hint - range repartition */
+  case RepartitionByRange(partitions: Int, columns: Vector[String])

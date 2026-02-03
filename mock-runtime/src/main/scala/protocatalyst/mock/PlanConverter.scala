@@ -124,6 +124,10 @@ object PlanConverter:
       case Generate(_, _, _, _) =>
         throw UnsupportedOperationException("LATERAL VIEW / Generate is not yet supported in mock runtime")
 
+      case ResolvedHint(_, child) =>
+        // Hints are optimizer directives; mock runtime ignores them and just executes the child
+        toMock(child)
+
   private def convertSortOrder(so: SortOrder): MockExpression.SortOrder =
     import MockExpression.{SortDirection as MSD, NullOrdering as MNO}
     MockExpression.SortOrder(

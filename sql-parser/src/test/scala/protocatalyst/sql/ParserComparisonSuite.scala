@@ -51,7 +51,7 @@ class ParserComparisonSuite extends FunSuite:
   /** Extract table names from our AST. */
   def extractTablesOurs(stmt: SqlStatement): Set[String] =
     stmt match
-      case SqlStatement.SelectStatement(_, _, from, _, _, _, _, _) =>
+      case SqlStatement.SelectStatement(_, _, _, from, _, _, _, _, _) =>
         extractTablesFromClause(from)
       case SqlStatement.CompoundStatement(left, _, right) =>
         extractTablesOurs(left) ++ extractTablesOurs(right)
@@ -128,7 +128,7 @@ class ParserComparisonSuite extends FunSuite:
   /** Extract column names from our AST expressions. */
   def extractColumnsOurs(stmt: SqlStatement): Set[String] =
     stmt match
-      case SqlStatement.SelectStatement(_, projs, _, where, groupBy, having, orderBy, _) =>
+      case SqlStatement.SelectStatement(_, _, projs, _, where, groupBy, having, orderBy, _) =>
         projs.flatMap(p => extractColumnsFromExpr(p.expr)).toSet ++
           where.toVector.flatMap(extractColumnsFromExpr).toSet ++
           extractColumnsFromGroupBy(groupBy) ++

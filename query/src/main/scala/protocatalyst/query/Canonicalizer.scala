@@ -230,6 +230,9 @@ object Canonicalizer:
           transformPlan(child, exprTransform)
         )
 
+      case ResolvedHint(hints, child) =>
+        ResolvedHint(hints, transformPlan(child, exprTransform))
+
       case r: RelationRef => r
 
   private def transformExpr(

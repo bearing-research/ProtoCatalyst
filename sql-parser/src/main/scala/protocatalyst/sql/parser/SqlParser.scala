@@ -133,6 +133,7 @@ class SqlParser(tokens: Vector[Token]):
   private def parseSingleSelect(): Either[ParseError, SqlStatement.SelectStatement] =
     for
       _ <- expect(Token.SELECT, "SELECT")
+      hints <- parseHints()
       distinct <- parseDistinct()
       projections <- parseProjections()
       _ <- expect(Token.FROM, "FROM")
@@ -143,6 +144,7 @@ class SqlParser(tokens: Vector[Token]):
       orderBy <- parseOptionalOrderBy()
       limit <- parseOptionalLimit()
     yield SqlStatement.SelectStatement(
+      hints,
       distinct,
       projections,
       from,
@@ -152,6 +154,80 @@ class SqlParser(tokens: Vector[Token]):
       orderBy,
       limit
     )
+
+  /** Parse hints after SELECT keyword. Hints are /*+ ... */ comments. */
+  private def parseHints(): Either[ParseError, Vector[QueryHint]] =
+    val hints = Vector.newBuilder[QueryHint]
+    while current.isInstanceOf[Token.Hint] do
+      val Token.Hint(content) = current: @unchecked
+      advance()
+      parseHintContent(content) match
+        case Right(parsed) => hints ++= parsed
+        case Left(err)     => return Left(err)
+    Right(hints.result())
+
+  /** Parse hint content string into QueryHint objects. */
+  private def parseHintContent(content: String): Either[ParseError, Vector[QueryHint]] =
+    // Content is comma or space separated hints like "BROADCAST(t1) REPARTITION(3, col)"
+    val hints = Vector.newBuilder[QueryHint]
+    var remaining = content.trim
+
+    while remaining.nonEmpty do
+      parseNextHint(remaining) match
+        case Right((hint, rest)) =>
+          hints += hint
+          remaining = rest.trim
+        case Left(err) => return Left(err)
+
+    Right(hints.result())
+
+  /** Parse a single hint from the content string. Returns the hint and remaining string. */
+  private def parseNextHint(content: String): Either[ParseError, (QueryHint, String)] =
+    val hintPattern = """(?i)(\w+)(?:\(([^)]*)\))?(.*)""".r
+    content match
+      case hintPattern(name, args, rest) =>
+        val hintName = name.toUpperCase
+        val argList = Option(args).map(_.split(",").map(_.trim).toVector).getOrElse(Vector.empty)
+        parseHintByName(hintName, argList).map((_, rest.stripPrefix(",").trim))
+      case _ =>
+        // If we can't parse, just skip - hints are advisory
+        Right((QueryHint.Broadcast(Vector.empty), ""))
+
+  /** Parse a hint by name and arguments. */
+  private def parseHintByName(name: String, args: Vector[String]): Either[ParseError, QueryHint] =
+    name match
+      case "BROADCAST" | "BROADCASTJOIN" | "MAPJOIN" =>
+        Right(QueryHint.Broadcast(args))
+      case "MERGE" | "SHUFFLE_MERGE" | "MERGEJOIN" =>
+        Right(QueryHint.Merge(args))
+      case "SHUFFLE_HASH" =>
+        Right(QueryHint.ShuffleHash(args))
+      case "SHUFFLE_REPLICATE_NL" =>
+        Right(QueryHint.ShuffleReplicateNL(args))
+      case "COALESCE" =>
+        val n = args.headOption.flatMap(_.toIntOption).getOrElse(1)
+        Right(QueryHint.Coalesce(n))
+      case "REPARTITION" =>
+        args match
+          case Vector() => Right(QueryHint.Repartition(1, Vector.empty))
+          case Vector(numStr) if numStr.forall(_.isDigit) =>
+            Right(QueryHint.Repartition(numStr.toInt, Vector.empty))
+          case numStr +: cols if numStr.forall(_.isDigit) =>
+            Right(QueryHint.Repartition(numStr.toInt, cols))
+          case cols =>
+            Right(QueryHint.Repartition(1, cols))
+      case "REPARTITION_BY_RANGE" =>
+        args match
+          case Vector() => Right(QueryHint.RepartitionByRange(1, Vector.empty))
+          case Vector(numStr) if numStr.forall(_.isDigit) =>
+            Right(QueryHint.RepartitionByRange(numStr.toInt, Vector.empty))
+          case numStr +: cols if numStr.forall(_.isDigit) =>
+            Right(QueryHint.RepartitionByRange(numStr.toInt, cols))
+          case cols =>
+            Right(QueryHint.RepartitionByRange(1, cols))
+      case _ =>
+        // Unknown hint - ignore it (hints are advisory)
+        Right(QueryHint.Broadcast(Vector.empty))
 
   private def parseDistinct(): Either[ParseError, Boolean] =
     if check(Token.DISTINCT) then
@@ -1169,6 +1245,7 @@ class SqlParser(tokens: Vector[Token]):
   private def parseSelectStatement(): Either[ParseError, SqlStatement.SelectStatement] =
     for
       _ <- expect(Token.SELECT, "SELECT")
+      hints <- parseHints()
       distinct <- parseDistinct()
       projections <- parseProjections()
       _ <- expect(Token.FROM, "FROM")
@@ -1179,6 +1256,7 @@ class SqlParser(tokens: Vector[Token]):
       orderBy <- parseOptionalOrderBy()
       limit <- parseOptionalLimit()
     yield SqlStatement.SelectStatement(
+      hints,
       distinct,
       projections,
       from,

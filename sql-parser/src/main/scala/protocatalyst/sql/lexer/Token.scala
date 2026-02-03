@@ -54,6 +54,9 @@ enum Token:
   case Comma // ,
   case Dot // .
 
+  // Hint (optimizer hint from /*+ ... */ comments)
+  case Hint(content: String)
+
   // Special
   case EOF
 
