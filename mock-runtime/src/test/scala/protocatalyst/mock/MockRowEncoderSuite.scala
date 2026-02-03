@@ -12,7 +12,7 @@ class MockRowEncoderSuite extends FunSuite:
 
   val userSchema = Vector(
     FieldSchema("name", ProtoType.StringType, nullable = false, 0),
-    FieldSchema("age", ProtoType.IntType, nullable = false, 1)
+    FieldSchema("age", ProtoType.IntegerType, nullable = false, 1)
   )
 
   // === Basic serialization with type conversion ===
@@ -52,8 +52,8 @@ class MockRowEncoderSuite extends FunSuite:
   test("nested struct converts to MockRow"):
     val innerSchema = ProtoType.StructType(
       Vector(
-        ProtoStructField("x", ProtoType.IntType, false),
-        ProtoStructField("y", ProtoType.IntType, false)
+        ProtoStructField("x", ProtoType.IntegerType, false),
+        ProtoStructField("y", ProtoType.IntegerType, false)
       )
     )
     val schema = Vector(
@@ -78,7 +78,7 @@ class MockRowEncoderSuite extends FunSuite:
 
   test("array field converts to MockArrayData"):
     val schema = Vector(
-      FieldSchema("values", ProtoType.ArrayType(ProtoType.IntType, false), nullable = false, 0)
+      FieldSchema("values", ProtoType.ArrayType(ProtoType.IntegerType, false), nullable = false, 0)
     )
     val encoder = RowEncoder(schema)
     val row = MockRow(Seq(1, 2, 3))
@@ -109,7 +109,7 @@ class MockRowEncoderSuite extends FunSuite:
     val schema = Vector(
       FieldSchema(
         "data",
-        ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, false),
+        ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, false),
         nullable = false,
         0
       )

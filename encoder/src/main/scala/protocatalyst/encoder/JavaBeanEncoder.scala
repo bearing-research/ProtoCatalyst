@@ -63,7 +63,7 @@ object JavaBeanEncoder:
       case c if c == classOf[Short] || c == classOf[java.lang.Short] =>
         PrimitiveRuntimeEncoder(ProtoType.ShortType, ClassTag(c), c == classOf[java.lang.Short])
       case c if c == classOf[Int] || c == classOf[java.lang.Integer] =>
-        PrimitiveRuntimeEncoder(ProtoType.IntType, ClassTag(c), c == classOf[java.lang.Integer])
+        PrimitiveRuntimeEncoder(ProtoType.IntegerType, ClassTag(c), c == classOf[java.lang.Integer])
       case c if c == classOf[Long] || c == classOf[java.lang.Long] =>
         PrimitiveRuntimeEncoder(ProtoType.LongType, ClassTag(c), c == classOf[java.lang.Long])
       case c if c == classOf[Float] || c == classOf[java.lang.Float] =>

@@ -42,7 +42,7 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
   // === Primitive types (no conversion) ===
 
   test("Int passes through unchanged"):
-    val result = MockInternalTypeConverter.toInternal(42, ProtoType.IntType)
+    val result = MockInternalTypeConverter.toInternal(42, ProtoType.IntegerType)
     assertEquals(result, 42)
 
   test("Long passes through unchanged"):
@@ -88,7 +88,7 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     val list = List(1, 2, 3)
     val result = MockInternalTypeConverter.toInternal(
       list,
-      ProtoType.ArrayType(ProtoType.IntType, false)
+      ProtoType.ArrayType(ProtoType.IntegerType, false)
     )
 
     result match
@@ -106,7 +106,7 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     val map = Map("a" -> 1, "b" -> 2)
     val result = MockInternalTypeConverter.toInternal(
       map,
-      ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, false)
+      ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, false)
     )
 
     result match
@@ -125,7 +125,7 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     val structType = ProtoType.StructType(
       Vector(
         ProtoStructField("name", ProtoType.StringType, false),
-        ProtoStructField("age", ProtoType.IntType, false)
+        ProtoStructField("age", ProtoType.IntegerType, false)
       )
     )
 

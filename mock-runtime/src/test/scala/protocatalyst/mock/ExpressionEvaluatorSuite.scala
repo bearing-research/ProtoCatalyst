@@ -28,7 +28,7 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
 
   test("evaluates null literal"):
     assertEquals(
-      ExpressionEvaluator.eval(ProtoExpr.litNull(ProtoType.IntType)),
+      ExpressionEvaluator.eval(ProtoExpr.litNull(ProtoType.IntegerType)),
       ExpressionEvaluator.Success(null)
     )
 
@@ -174,7 +174,7 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
 
   test("evaluates IsNull"):
     assertEquals(
-      ExpressionEvaluator.eval(ProtoExpr.IsNull(ProtoExpr.litNull(ProtoType.IntType))),
+      ExpressionEvaluator.eval(ProtoExpr.IsNull(ProtoExpr.litNull(ProtoType.IntegerType))),
       ExpressionEvaluator.Success(true)
     )
     assertEquals(
@@ -188,14 +188,14 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
       ExpressionEvaluator.Success(true)
     )
     assertEquals(
-      ExpressionEvaluator.eval(ProtoExpr.IsNotNull(ProtoExpr.litNull(ProtoType.IntType))),
+      ExpressionEvaluator.eval(ProtoExpr.IsNotNull(ProtoExpr.litNull(ProtoType.IntegerType))),
       ExpressionEvaluator.Success(false)
     )
 
   test("evaluates Coalesce"):
     val expr = ProtoExpr.Coalesce(
       Vector(
-        ProtoExpr.litNull(ProtoType.IntType),
+        ProtoExpr.litNull(ProtoType.IntegerType),
         ProtoExpr.lit(42),
         ProtoExpr.lit(100)
       )
@@ -205,8 +205,8 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
   test("Coalesce returns null if all null"):
     val expr = ProtoExpr.Coalesce(
       Vector(
-        ProtoExpr.litNull(ProtoType.IntType),
-        ProtoExpr.litNull(ProtoType.IntType)
+        ProtoExpr.litNull(ProtoType.IntegerType),
+        ProtoExpr.litNull(ProtoType.IntegerType)
       )
     )
     assertEquals(ExpressionEvaluator.eval(expr), ExpressionEvaluator.Success(null))
@@ -215,7 +215,7 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
 
   test("evaluates BoundRef against row"):
     val row = MockRow(10, "test", 3.14)
-    val ref = ProtoExpr.BoundRef(0, ProtoType.IntType, false)
+    val ref = ProtoExpr.BoundRef(0, ProtoType.IntegerType, false)
     assertEquals(ExpressionEvaluator.eval(ref, row), ExpressionEvaluator.Success(10))
 
   test("evaluates BoundRef for different ordinals"):
@@ -225,7 +225,7 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
       ExpressionEvaluator.Success("Alice")
     )
     assertEquals(
-      ExpressionEvaluator.eval(ProtoExpr.BoundRef(1, ProtoType.IntType, false), row),
+      ExpressionEvaluator.eval(ProtoExpr.BoundRef(1, ProtoType.IntegerType, false), row),
       ExpressionEvaluator.Success(30)
     )
     assertEquals(
@@ -317,7 +317,7 @@ class ExpressionEvaluatorSuite extends munit.FunSuite:
 
   test("evaluates Cast to Int"):
     assertEquals(
-      ExpressionEvaluator.eval(ProtoExpr.Cast(ProtoExpr.lit(42L), ProtoType.IntType)),
+      ExpressionEvaluator.eval(ProtoExpr.Cast(ProtoExpr.lit(42L), ProtoType.IntegerType)),
       ExpressionEvaluator.Success(42)
     )
 

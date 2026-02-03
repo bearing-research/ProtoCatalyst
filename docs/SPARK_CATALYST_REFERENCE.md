@@ -135,7 +135,7 @@ UnresolvedRelation(Seq("users"))
 Project(
   Seq(
     AttributeReference("name", StringType, nullable=true)(exprId=1),
-    AttributeReference("age", IntType, nullable=false)(exprId=2)
+    AttributeReference("age", IntegerType, nullable=false)(exprId=2)
   ),
   Relation("users", schema=StructType(...))
 )
@@ -556,7 +556,7 @@ SchemaContract(
   fingerprint = SchemaFingerprint(hash),
   fields = Vector(
     ProtoStructField("name", ProtoType.StringType, nullable = true),
-    ProtoStructField("age", ProtoType.IntType, nullable = false)
+    ProtoStructField("age", ProtoType.IntegerType, nullable = false)
   )
 )
 ```

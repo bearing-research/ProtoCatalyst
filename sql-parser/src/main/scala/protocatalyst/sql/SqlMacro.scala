@@ -280,7 +280,7 @@ object SqlMacro:
 
   private def sqlTypeToExpr(sqlType: SqlType)(using Quotes): Expr[SqlType] =
     sqlType match
-      case SqlType.IntType       => '{ SqlType.IntType }
+      case SqlType.IntegerType       => '{ SqlType.IntegerType }
       case SqlType.LongType      => '{ SqlType.LongType }
       case SqlType.DoubleType    => '{ SqlType.DoubleType }
       case SqlType.StringType    => '{ SqlType.StringType }

@@ -36,7 +36,7 @@ object ArrowSchemaConverter:
     case ProtoType.BooleanType => ArrowType.Bool.INSTANCE
     case ProtoType.ByteType    => new ArrowType.Int(8, true)
     case ProtoType.ShortType   => new ArrowType.Int(16, true)
-    case ProtoType.IntType     => new ArrowType.Int(32, true)
+    case ProtoType.IntegerType     => new ArrowType.Int(32, true)
     case ProtoType.LongType    => new ArrowType.Int(64, true)
     case ProtoType.FloatType   => new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE)
     case ProtoType.DoubleType  => new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)
@@ -159,7 +159,7 @@ object ArrowSchemaConverter:
       (i.getBitWidth, i.getIsSigned) match
         case (8, true)  => ProtoType.ByteType
         case (16, true) => ProtoType.ShortType
-        case (32, true) => ProtoType.IntType
+        case (32, true) => ProtoType.IntegerType
         case (64, true) => ProtoType.LongType
         case _          =>
           ProtoType.UnresolvedType(

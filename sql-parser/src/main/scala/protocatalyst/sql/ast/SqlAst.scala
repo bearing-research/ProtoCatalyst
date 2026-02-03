@@ -160,7 +160,7 @@ enum FrameBound:
 
 /** SQL data types for CAST. */
 enum SqlType:
-  case IntType
+  case IntegerType
   case LongType
   case DoubleType
   case StringType

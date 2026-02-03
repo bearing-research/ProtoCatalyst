@@ -68,11 +68,11 @@ class ProtoExprSuite extends munit.FunSuite:
   // === BoundRef Construction ===
 
   test("BoundRef creation"):
-    val expr = ProtoExpr.BoundRef(5, ProtoType.IntType, nullable = false)
+    val expr = ProtoExpr.BoundRef(5, ProtoType.IntegerType, nullable = false)
     expr match
       case ProtoExpr.BoundRef(idx, dt, null_) =>
         assertEquals(idx, 5)
-        assertEquals(dt, ProtoType.IntType)
+        assertEquals(dt, ProtoType.IntegerType)
         assertEquals(null_, false)
       case _ => fail(s"Expected BoundRef, got $expr")
 
@@ -133,21 +133,21 @@ class ProtoExprSuite extends munit.FunSuite:
   // === Null Handling Expressions ===
 
   test("IsNull construction"):
-    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, nullable = true)
+    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntegerType, nullable = true)
     val expr = ProtoExpr.IsNull(col)
     expr match
       case ProtoExpr.IsNull(c) => assertEquals(c, col)
       case _                   => fail(s"Expected IsNull, got $expr")
 
   test("IsNotNull construction"):
-    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, nullable = true)
+    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntegerType, nullable = true)
     val expr = ProtoExpr.IsNotNull(col)
     expr match
       case ProtoExpr.IsNotNull(c) => assertEquals(c, col)
       case _                      => fail(s"Expected IsNotNull, got $expr")
 
   test("Coalesce construction"):
-    val a = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, nullable = true)
+    val a = ProtoExpr.ColumnRef("x", None, ProtoType.IntegerType, nullable = true)
     val b = ProtoExpr.lit(0)
     val expr = ProtoExpr.Coalesce(Vector(a, b))
     expr match
@@ -478,7 +478,7 @@ class ProtoExprSuite extends munit.FunSuite:
       case _                    => fail(s"Expected Ntile, got $expr")
 
   test("Lead construction"):
-    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = true)
+    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntegerType, nullable = true)
     val offset = ProtoExpr.lit(1)
     val default = ProtoExpr.lit(0)
     val expr = ProtoExpr.Lead(input, offset, Some(default))
@@ -490,7 +490,7 @@ class ProtoExprSuite extends munit.FunSuite:
       case _ => fail(s"Expected Lead, got $expr")
 
   test("Lag construction"):
-    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = true)
+    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntegerType, nullable = true)
     val offset = ProtoExpr.lit(1)
     val expr = ProtoExpr.Lag(input, offset, None)
     expr match
@@ -500,7 +500,7 @@ class ProtoExprSuite extends munit.FunSuite:
       case _ => fail(s"Expected Lag, got $expr")
 
   test("FirstValue and LastValue construction"):
-    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = true)
+    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntegerType, nullable = true)
     val first = ProtoExpr.FirstValue(input, ignoreNulls = true)
     val last = ProtoExpr.LastValue(input, ignoreNulls = false)
 
@@ -513,7 +513,7 @@ class ProtoExprSuite extends munit.FunSuite:
       case _                             => fail(s"Expected LastValue with ignoreNulls=false")
 
   test("NthValue construction"):
-    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = true)
+    val input = ProtoExpr.ColumnRef("value", None, ProtoType.IntegerType, nullable = true)
     val n = ProtoExpr.lit(3)
     val expr = ProtoExpr.NthValue(input, n)
     expr match

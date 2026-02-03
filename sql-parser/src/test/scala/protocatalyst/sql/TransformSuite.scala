@@ -18,7 +18,7 @@ class TransformSuite extends munit.FunSuite:
   val userSchema = ProtoSchema(
     Vector(
       ProtoStructField("name", ProtoType.StringType, nullable = false),
-      ProtoStructField("age", ProtoType.IntType, nullable = false),
+      ProtoStructField("age", ProtoType.IntegerType, nullable = false),
       ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
     )
   )
@@ -155,7 +155,7 @@ class TransformSuite extends munit.FunSuite:
     val schemaWithNullable = ProtoSchema(
       Vector(
         ProtoStructField("name", ProtoType.StringType, nullable = true),
-        ProtoStructField("age", ProtoType.IntType, nullable = false),
+        ProtoStructField("age", ProtoType.IntegerType, nullable = false),
         ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
       )
     )

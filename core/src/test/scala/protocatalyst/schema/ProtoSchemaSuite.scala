@@ -16,12 +16,12 @@ class ProtoSchemaSuite extends munit.FunSuite:
 
   test("schema fingerprint is order-independent"):
     val fields1 = Vector(
-      ProtoStructField("a", ProtoType.IntType, nullable = false),
+      ProtoStructField("a", ProtoType.IntegerType, nullable = false),
       ProtoStructField("b", ProtoType.StringType, nullable = true)
     )
     val fields2 = Vector(
       ProtoStructField("b", ProtoType.StringType, nullable = true),
-      ProtoStructField("a", ProtoType.IntType, nullable = false)
+      ProtoStructField("a", ProtoType.IntegerType, nullable = false)
     )
 
     val schema1 = ProtoSchema(fields1)
@@ -37,7 +37,7 @@ class ProtoSchemaSuite extends munit.FunSuite:
     )
     val schema2 = ProtoSchema(
       Vector(
-        ProtoStructField("id", ProtoType.IntType, nullable = false)
+        ProtoStructField("id", ProtoType.IntegerType, nullable = false)
       )
     )
 

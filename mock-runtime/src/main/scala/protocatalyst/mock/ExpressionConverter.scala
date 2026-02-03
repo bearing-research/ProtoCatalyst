@@ -456,7 +456,7 @@ object TypeConverter:
       case BooleanType                            => MDT.BooleanType
       case ByteType                               => MDT.ByteType
       case ShortType                              => MDT.ShortType
-      case IntType                                => MDT.IntegerType
+      case IntegerType                            => MDT.IntegerType
       case LongType                               => MDT.LongType
       case FloatType                              => MDT.FloatType
       case DoubleType                             => MDT.DoubleType
@@ -498,7 +498,7 @@ object TypeConverter:
       case MDT.BooleanType                            => PT.BooleanType
       case MDT.ByteType                               => PT.ByteType
       case MDT.ShortType                              => PT.ShortType
-      case MDT.IntegerType                            => PT.IntType
+      case MDT.IntegerType                            => PT.IntegerType
       case MDT.LongType                               => PT.LongType
       case MDT.FloatType                              => PT.FloatType
       case MDT.DoubleType                             => PT.DoubleType

@@ -32,7 +32,7 @@ class ConverterSuite extends munit.FunSuite:
       case other => fail(s"Expected Literal('hello', StringType), got $other")
 
   test("convert literal null"):
-    val proto = ProtoExpr.litNull(ProtoType.IntType)
+    val proto = ProtoExpr.litNull(ProtoType.IntegerType)
     val mock = ExpressionConverter.toMock(proto)
 
     mock match
@@ -101,7 +101,7 @@ class ConverterSuite extends munit.FunSuite:
       case other                 => fail(s"Expected Not, got $other")
 
   test("convert IsNull and IsNotNull"):
-    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, true)
+    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntegerType, true)
 
     val isNull = ExpressionConverter.toMock(ProtoExpr.IsNull(col))
     val isNotNull = ExpressionConverter.toMock(ProtoExpr.IsNotNull(col))
@@ -150,7 +150,7 @@ class ConverterSuite extends munit.FunSuite:
       case other => fail(s"Expected CaseWhen, got $other")
 
   test("convert Cast"):
-    val proto = ProtoExpr.Cast(ProtoExpr.lit("123"), ProtoType.IntType)
+    val proto = ProtoExpr.Cast(ProtoExpr.lit("123"), ProtoType.IntegerType)
     val mock = ExpressionConverter.toMock(proto)
 
     mock match
@@ -174,7 +174,7 @@ class ConverterSuite extends munit.FunSuite:
     val proto = ProtoExpr.And(
       Vector(
         ProtoExpr.Eq(
-          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false),
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false),
           ProtoExpr.lit(30)
         ),
         ProtoExpr.Or(
@@ -208,7 +208,7 @@ class ConverterSuite extends munit.FunSuite:
       "users",
       Vector(
         FieldContract("name", ProtoType.StringType, false, 0),
-        FieldContract("age", ProtoType.IntType, false, 1)
+        FieldContract("age", ProtoType.IntegerType, false, 1)
       ),
       SchemaFingerprint.fromLong(0L)
     )
@@ -229,7 +229,7 @@ class ConverterSuite extends munit.FunSuite:
   test("convert Filter"):
     val schema = SchemaContract("users", Vector.empty, SchemaFingerprint.fromLong(0L))
     val proto = ProtoLogicalPlan.Filter(
-      ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false), ProtoExpr.lit(18)),
+      ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false), ProtoExpr.lit(18)),
       ProtoLogicalPlan.RelationRef("users", None, schema)
     )
 
@@ -271,8 +271,8 @@ class ConverterSuite extends munit.FunSuite:
       JoinType.Inner,
       Some(
         ProtoExpr.Eq(
-          ProtoExpr.ColumnRef("id", Some("users"), ProtoType.IntType, false),
-          ProtoExpr.ColumnRef("user_id", Some("orders"), ProtoType.IntType, false)
+          ProtoExpr.ColumnRef("id", Some("users"), ProtoType.IntegerType, false),
+          ProtoExpr.ColumnRef("user_id", Some("orders"), ProtoType.IntegerType, false)
         )
       )
     )
@@ -291,7 +291,7 @@ class ConverterSuite extends munit.FunSuite:
     val proto = ProtoLogicalPlan.Sort(
       Vector(
         SortOrder(
-          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false),
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false),
           SortDirection.Descending,
           NullOrdering.NullsLast
         )
@@ -361,7 +361,7 @@ class ConverterSuite extends munit.FunSuite:
       "users",
       Vector(
         FieldContract("name", ProtoType.StringType, false, 0),
-        FieldContract("age", ProtoType.IntType, false, 1)
+        FieldContract("age", ProtoType.IntegerType, false, 1)
       ),
       SchemaFingerprint.fromLong(0L)
     )
@@ -370,7 +370,7 @@ class ConverterSuite extends munit.FunSuite:
         ProtoExpr.ColumnRef("name", None, ProtoType.StringType, false)
       ),
       ProtoLogicalPlan.Filter(
-        ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntType, false), ProtoExpr.lit(18)),
+        ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false), ProtoExpr.lit(18)),
         ProtoLogicalPlan.RelationRef("users", None, schema)
       )
     )
@@ -390,13 +390,13 @@ class ConverterSuite extends munit.FunSuite:
 
   test("convert primitive types"):
     assertEquals(TypeConverter.toMock(ProtoType.BooleanType), MockDataType.BooleanType)
-    assertEquals(TypeConverter.toMock(ProtoType.IntType), MockDataType.IntegerType)
+    assertEquals(TypeConverter.toMock(ProtoType.IntegerType), MockDataType.IntegerType)
     assertEquals(TypeConverter.toMock(ProtoType.LongType), MockDataType.LongType)
     assertEquals(TypeConverter.toMock(ProtoType.DoubleType), MockDataType.DoubleType)
     assertEquals(TypeConverter.toMock(ProtoType.StringType), MockDataType.StringType)
 
   test("convert complex types"):
-    val arrayType = ProtoType.ArrayType(ProtoType.IntType, false)
+    val arrayType = ProtoType.ArrayType(ProtoType.IntegerType, false)
     val mockArray = TypeConverter.toMock(arrayType)
 
     mockArray match
@@ -406,10 +406,10 @@ class ConverterSuite extends munit.FunSuite:
   test("type roundtrip"):
     val types = Seq(
       ProtoType.BooleanType,
-      ProtoType.IntType,
+      ProtoType.IntegerType,
       ProtoType.StringType,
       ProtoType.ArrayType(ProtoType.DoubleType, true),
-      ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, false)
+      ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, false)
     )
 
     types.foreach { pt =>

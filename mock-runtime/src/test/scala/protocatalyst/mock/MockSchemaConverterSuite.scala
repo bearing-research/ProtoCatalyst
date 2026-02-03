@@ -8,7 +8,7 @@ class MockSchemaConverterSuite extends munit.FunSuite:
     assertEquals(MockSchemaConverter.toMockType(ProtoType.BooleanType), MockDataType.BooleanType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.ByteType), MockDataType.ByteType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.ShortType), MockDataType.ShortType)
-    assertEquals(MockSchemaConverter.toMockType(ProtoType.IntType), MockDataType.IntegerType)
+    assertEquals(MockSchemaConverter.toMockType(ProtoType.IntegerType), MockDataType.IntegerType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.LongType), MockDataType.LongType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.FloatType), MockDataType.FloatType)
     assertEquals(MockSchemaConverter.toMockType(ProtoType.DoubleType), MockDataType.DoubleType)
@@ -32,14 +32,14 @@ class MockSchemaConverterSuite extends munit.FunSuite:
 
   test("converts array type"):
     assertEquals(
-      MockSchemaConverter.toMockType(ProtoType.ArrayType(ProtoType.IntType, containsNull = true)),
+      MockSchemaConverter.toMockType(ProtoType.ArrayType(ProtoType.IntegerType, containsNull = true)),
       MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true)
     )
 
   test("converts map type"):
     assertEquals(
       MockSchemaConverter.toMockType(
-        ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, valueContainsNull = false)
+        ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, valueContainsNull = false)
       ),
       MockDataType.MapType(
         MockDataType.StringType,
@@ -52,7 +52,7 @@ class MockSchemaConverterSuite extends munit.FunSuite:
     val protoStruct = ProtoType.StructType(
       Vector(
         ProtoStructField("name", ProtoType.StringType, nullable = false),
-        ProtoStructField("age", ProtoType.IntType, nullable = true)
+        ProtoStructField("age", ProtoType.IntegerType, nullable = true)
       )
     )
     val mockStruct = MockSchemaConverter.toMockType(protoStruct)
@@ -71,13 +71,13 @@ class MockSchemaConverterSuite extends munit.FunSuite:
   test("roundtrip conversion preserves types"):
     val types: Vector[ProtoType] = Vector(
       ProtoType.BooleanType,
-      ProtoType.IntType,
+      ProtoType.IntegerType,
       ProtoType.LongType,
       ProtoType.DoubleType,
       ProtoType.StringType,
       ProtoType.DecimalType(10, 5),
       ProtoType.ArrayType(ProtoType.StringType, containsNull = true),
-      ProtoType.MapType(ProtoType.IntType, ProtoType.StringType, valueContainsNull = false)
+      ProtoType.MapType(ProtoType.IntegerType, ProtoType.StringType, valueContainsNull = false)
     )
 
     for pt <- types do

@@ -22,7 +22,7 @@ object SchemaConverter:
     case ProtoType.BooleanType => BooleanType
     case ProtoType.ByteType => ByteType
     case ProtoType.ShortType => ShortType
-    case ProtoType.IntType => IntegerType
+    case ProtoType.IntegerType => IntegerType
     case ProtoType.LongType => LongType
     case ProtoType.FloatType => FloatType
     case ProtoType.DoubleType => DoubleType
@@ -50,7 +50,7 @@ object SchemaConverter:
     case BooleanType => ProtoType.BooleanType
     case ByteType => ProtoType.ByteType
     case ShortType => ProtoType.ShortType
-    case IntegerType => ProtoType.IntType
+    case IntegerType => ProtoType.IntegerType
     case LongType => ProtoType.LongType
     case FloatType => ProtoType.FloatType
     case DoubleType => ProtoType.DoubleType

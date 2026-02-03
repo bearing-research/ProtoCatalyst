@@ -7,7 +7,7 @@ enum ProtoType extends Serializable:
   case BooleanType
   case ByteType
   case ShortType
-  case IntType
+  case IntegerType
   case LongType
   case FloatType
   case DoubleType
@@ -74,7 +74,7 @@ object LiteralValue:
     case BooleanValue(_)                => ProtoType.BooleanType
     case ByteValue(_)                   => ProtoType.ByteType
     case ShortValue(_)                  => ProtoType.ShortType
-    case IntValue(_)                    => ProtoType.IntType
+    case IntValue(_)                    => ProtoType.IntegerType
     case LongValue(_)                   => ProtoType.LongType
     case FloatValue(_)                  => ProtoType.FloatType
     case DoubleValue(_)                 => ProtoType.DoubleType

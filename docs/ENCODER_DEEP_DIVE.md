@@ -94,7 +94,7 @@ An **Encoder** is the component that converts between objects and row format. In
 1. **Schema Discovery** - Figure out what fields a type has
    ```scala
    Person has: name (String), age (Int)
-   // → Schema: [("name", StringType), ("age", IntType)]
+   // → Schema: [("name", StringType), ("age", IntegerType)]
    ```
 
 2. **Serialization** - Convert object → row
@@ -291,7 +291,7 @@ case class Person(name: String, age: Int)
 
 val encoder = ProtoEncoder.derived[Person]
 println(encoder.schema)
-// Output: Vector(ProtoStructField(name,StringType,false), ProtoStructField(age,IntType,false))
+// Output: Vector(ProtoStructField(name,StringType,false), ProtoStructField(age,IntegerType,false))
 ```
 
 > **Note**: `ProtoEncoder` provides schema information only. `InlineRowSerializer` provides serialization. They are independent—use whichever you need.
@@ -366,7 +366,7 @@ The `inline` keyword is crucial. It tells the compiler to:
 ```scala
 // Without inline: Runtime type checking
 def serialize(value: Any, dataType: Type): Any = dataType match
-  case IntType => value        // Checked at runtime for every call
+  case IntegerType => value        // Checked at runtime for every call
   case StringType => convert(value)
   // ... many more cases
 

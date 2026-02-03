@@ -771,7 +771,7 @@ class SqlParser(tokens: Vector[Token]):
       case Token.Identifier(typeName) =>
         advance()
         typeName.toUpperCase match
-          case "INT" | "INTEGER"                      => Right(SqlType.IntType)
+          case "INT" | "INTEGER"                      => Right(SqlType.IntegerType)
           case "BIGINT" | "LONG"                      => Right(SqlType.LongType)
           case "DOUBLE" | "FLOAT" | "REAL"            => Right(SqlType.DoubleType)
           case "STRING" | "VARCHAR" | "TEXT" | "CHAR" =>

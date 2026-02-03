@@ -146,7 +146,7 @@ class ArtifactCodecSuite extends munit.FunSuite:
       ),
       plan = baseRelation,
       outputSchema =
-        ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntType, nullable = false))),
+        ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntegerType, nullable = false))),
       sourceInfo = Some(SourceInfo("file.scala", 100, Some("SELECT * FROM t")))
     )
 

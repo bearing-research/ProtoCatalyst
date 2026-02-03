@@ -24,7 +24,7 @@ object SqlVerifier:
     Vector(
       ProtoStructField("id", ProtoType.LongType, nullable = false),
       ProtoStructField("name", ProtoType.StringType, nullable = false),
-      ProtoStructField("age", ProtoType.IntType, nullable = false),
+      ProtoStructField("age", ProtoType.IntegerType, nullable = false),
       ProtoStructField("salary", ProtoType.DoubleType, nullable = true),
       ProtoStructField("department", ProtoType.StringType, nullable = true),
       ProtoStructField("active", ProtoType.BooleanType, nullable = false),

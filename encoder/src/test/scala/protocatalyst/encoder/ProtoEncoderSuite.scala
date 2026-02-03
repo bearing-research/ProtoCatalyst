@@ -47,7 +47,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
 
   test("primitive encoders exist"):
     val intEnc = summon[ProtoEncoder[Int]]
-    assertEquals(intEnc.catalystType, ProtoType.IntType)
+    assertEquals(intEnc.catalystType, ProtoType.IntegerType)
     assertEquals(intEnc.nullable, false)
 
   test("string encoder"):
@@ -57,7 +57,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
   test("option encoder is nullable"):
     val optEnc = summon[ProtoEncoder[Option[Int]]]
     assertEquals(optEnc.nullable, true)
-    assertEquals(optEnc.catalystType, ProtoType.IntType)
+    assertEquals(optEnc.catalystType, ProtoType.IntegerType)
 
   // === Case class derivation tests ===
 
@@ -69,7 +69,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields(0).name, "name")
     assertEquals(enc.fields(0).encoder.catalystType, ProtoType.StringType)
     assertEquals(enc.fields(1).name, "age")
-    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.IntType)
+    assertEquals(enc.fields(1).encoder.catalystType, ProtoType.IntegerType)
 
   test("case class schema has correct struct type"):
     val enc = ProtoEncoder.derived[Person]
@@ -81,7 +81,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
         assertEquals(fields(0).dataType, ProtoType.StringType)
         assertEquals(fields(0).nullable, false)
         assertEquals(fields(1).name, "age")
-        assertEquals(fields(1).dataType, ProtoType.IntType)
+        assertEquals(fields(1).dataType, ProtoType.IntegerType)
         assertEquals(fields(1).nullable, false)
       case other =>
         fail(s"Expected StructType, got $other")
@@ -135,7 +135,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
 
     enc.catalystType match
       case ProtoType.ArrayType(elemType, containsNull) =>
-        assertEquals(elemType, ProtoType.IntType)
+        assertEquals(elemType, ProtoType.IntegerType)
         assertEquals(containsNull, false)
       case other =>
         fail(s"Expected ArrayType, got $other")
@@ -146,7 +146,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     enc.catalystType match
       case ProtoType.MapType(keyType, valType, valContainsNull) =>
         assertEquals(keyType, ProtoType.StringType)
-        assertEquals(valType, ProtoType.IntType)
+        assertEquals(valType, ProtoType.IntegerType)
         assertEquals(valContainsNull, false)
       case other =>
         fail(s"Expected MapType, got $other")
@@ -161,7 +161,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
       case other => fail(s"Expected ArrayType[String], got $other")
 
     enc.fields(1).encoder.catalystType match
-      case ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, _) => () // ok
+      case ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, _) => () // ok
       case other => fail(s"Expected MapType[String, Int], got $other")
 
   // === java.time encoder tests ===
@@ -195,7 +195,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
         assertEquals(fields(0).name, "_1")
         assertEquals(fields(0).dataType, ProtoType.StringType)
         assertEquals(fields(1).name, "_2")
-        assertEquals(fields(1).dataType, ProtoType.IntType)
+        assertEquals(fields(1).dataType, ProtoType.IntegerType)
       case other =>
         fail(s"Expected StructType for tuple, got $other")
 
@@ -209,7 +209,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
         assertEquals(fields(1).name, "_2")
         assertEquals(fields(2).name, "_3")
         assertEquals(fields(0).dataType, ProtoType.StringType)
-        assertEquals(fields(1).dataType, ProtoType.IntType)
+        assertEquals(fields(1).dataType, ProtoType.IntegerType)
         assertEquals(fields(2).dataType, ProtoType.DoubleType)
       case other =>
         fail(s"Expected StructType for tuple, got $other")
@@ -419,7 +419,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
 
   test("java.lang.Integer encoder"):
     val enc = summon[ProtoEncoder[java.lang.Integer]]
-    assertEquals(enc.catalystType, ProtoType.IntType)
+    assertEquals(enc.catalystType, ProtoType.IntegerType)
     assertEquals(enc.nullable, true)
     assertEquals(enc.clsTag.runtimeClass, classOf[java.lang.Integer])
 
@@ -483,7 +483,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
 
   test("Option of boxed primitive"):
     val enc = summon[ProtoEncoder[Option[java.lang.Integer]]]
-    assertEquals(enc.catalystType, ProtoType.IntType)
+    assertEquals(enc.catalystType, ProtoType.IntegerType)
     assertEquals(enc.nullable, true)
 
   test("List of boxed primitives"):
@@ -505,7 +505,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
 
     assertEquals(enc.fields.size, 3)
     assertEquals(enc.fields(0).name, "count")
-    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntType)
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntegerType)
     assertEquals(enc.fields(0).nullable, true) // Boxed Integer is nullable
     assertEquals(enc.fields(1).name, "value")
     assertEquals(enc.fields(1).encoder.catalystType, ProtoType.DoubleType)
@@ -586,7 +586,7 @@ class ProtoEncoderSuite extends munit.FunSuite:
     assertEquals(enc.fields.size, 2)
     // Fields are sorted alphabetically
     assertEquals(enc.fields(0).name, "age")
-    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntType)
+    assertEquals(enc.fields(0).encoder.catalystType, ProtoType.IntegerType)
     assertEquals(enc.fields(0).nullable, false) // primitive int
     assertEquals(enc.fields(1).name, "name")
     assertEquals(enc.fields(1).encoder.catalystType, ProtoType.StringType)
@@ -750,10 +750,10 @@ class ProtoEncoderSuite extends munit.FunSuite:
     val enc = ProtoEncoder.fromUDT(TestUDTs.IPAddressUDT)
 
     enc.catalystType match
-      case ProtoType.UDTType(className, ProtoType.IntType) =>
+      case ProtoType.UDTType(className, ProtoType.IntegerType) =>
         assert(className.contains("IPAddressUDT"))
       case other =>
-        fail(s"Expected UDTType with IntType, got $other")
+        fail(s"Expected UDTType with IntegerType, got $other")
 
   test("UDT encoder non-nullable"):
     val enc = ProtoEncoder.fromUDT(TestUDTs.NonEmptyStringUDT)
@@ -902,9 +902,9 @@ class ProtoEncoderSuite extends munit.FunSuite:
           case ProtoType.StructType(fields) =>
             assertEquals(fields.size, 2)
             assertEquals(fields(0).name, "x")
-            assertEquals(fields(0).dataType, ProtoType.IntType)
+            assertEquals(fields(0).dataType, ProtoType.IntegerType)
             assertEquals(fields(1).name, "y")
-            assertEquals(fields(1).dataType, ProtoType.IntType)
+            assertEquals(fields(1).dataType, ProtoType.IntegerType)
           case other =>
             fail(s"Expected StructType for Click, got $other")
       case None =>

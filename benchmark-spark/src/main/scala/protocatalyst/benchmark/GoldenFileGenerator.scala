@@ -160,7 +160,7 @@ object GoldenFileGenerator {
 
   def dataTypeToString(dt: DataType): String = dt match {
     case StringType                  => "StringType"
-    case IntegerType                 => "IntType"
+    case IntegerType                 => "IntegerType"
     case LongType                    => "LongType"
     case DoubleType                  => "DoubleType"
     case FloatType                   => "FloatType"

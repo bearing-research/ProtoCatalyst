@@ -47,7 +47,7 @@ ProtoCatalyst supports all Spark DataTypes:
 | Boolean | BooleanType | BooleanType |
 | Byte | ByteType | ByteType |
 | Short | ShortType | ShortType |
-| Int | IntType | IntegerType |
+| Int | IntegerType | IntegerType |
 | Long | LongType | LongType |
 | Float | FloatType | FloatType |
 | Double | DoubleType | DoubleType |
@@ -58,7 +58,7 @@ ProtoCatalyst supports all Spark DataTypes:
 | Java Type | ProtoType | Notes |
 |-----------|-----------|-------|
 | java.lang.Boolean | BooleanType | nullable = true |
-| java.lang.Integer | IntType | nullable = true |
+| java.lang.Integer | IntegerType | nullable = true |
 | java.lang.Long | LongType | nullable = true |
 | (all boxed types) | Corresponding type | nullable = true |
 

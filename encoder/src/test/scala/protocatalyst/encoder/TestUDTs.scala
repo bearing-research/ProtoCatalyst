@@ -118,7 +118,7 @@ object TestUDTs:
       )
 
   object IPAddressUDT extends ProtoUDT[IPAddress]:
-    def sqlType: ProtoType = ProtoType.IntType
+    def sqlType: ProtoType = ProtoType.IntegerType
 
     def serialize(ip: IPAddress): Any =
       if ip == null then null

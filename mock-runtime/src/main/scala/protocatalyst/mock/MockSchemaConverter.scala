@@ -12,7 +12,7 @@ object MockSchemaConverter:
     case ProtoType.BooleanType           => MockDataType.BooleanType
     case ProtoType.ByteType              => MockDataType.ByteType
     case ProtoType.ShortType             => MockDataType.ShortType
-    case ProtoType.IntType               => MockDataType.IntegerType
+    case ProtoType.IntegerType               => MockDataType.IntegerType
     case ProtoType.LongType              => MockDataType.LongType
     case ProtoType.FloatType             => MockDataType.FloatType
     case ProtoType.DoubleType            => MockDataType.DoubleType
@@ -61,7 +61,7 @@ object MockSchemaConverter:
     case MockDataType.BooleanType           => ProtoType.BooleanType
     case MockDataType.ByteType              => ProtoType.ByteType
     case MockDataType.ShortType             => ProtoType.ShortType
-    case MockDataType.IntegerType           => ProtoType.IntType
+    case MockDataType.IntegerType           => ProtoType.IntegerType
     case MockDataType.LongType              => ProtoType.LongType
     case MockDataType.FloatType             => ProtoType.FloatType
     case MockDataType.DoubleType            => ProtoType.DoubleType

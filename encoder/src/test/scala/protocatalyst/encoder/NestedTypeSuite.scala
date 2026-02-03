@@ -129,7 +129,7 @@ class NestedTypeSuite extends munit.FunSuite:
     enc.fields(0).encoder.catalystType match
       case ProtoType.ArrayType(innerType, _) =>
         innerType match
-          case ProtoType.ArrayType(ProtoType.IntType, _) => () // ok
+          case ProtoType.ArrayType(ProtoType.IntegerType, _) => () // ok
           case other => fail(s"Expected ArrayType[Int], got $other")
       case other =>
         fail(s"Expected ArrayType[ArrayType[Int]], got $other")
@@ -140,7 +140,7 @@ class NestedTypeSuite extends munit.FunSuite:
     enc.fields(0).encoder.catalystType match
       case ProtoType.MapType(ProtoType.StringType, innerType, _) =>
         innerType match
-          case ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, _) => () // ok
+          case ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, _) => () // ok
           case other => fail(s"Expected MapType[String, Int], got $other")
       case other =>
         fail(s"Expected MapType[String, MapType], got $other")

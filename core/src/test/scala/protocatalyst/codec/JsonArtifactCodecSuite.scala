@@ -15,7 +15,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
       ProtoType.BooleanType,
       ProtoType.ByteType,
       ProtoType.ShortType,
-      ProtoType.IntType,
+      ProtoType.IntegerType,
       ProtoType.LongType,
       ProtoType.FloatType,
       ProtoType.DoubleType,
@@ -46,7 +46,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
       case other => fail(s"Expected DecimalType, got $other")
 
   test("roundtrip ArrayType"):
-    val arrayType = ProtoType.ArrayType(ProtoType.IntType, containsNull = true)
+    val arrayType = ProtoType.ArrayType(ProtoType.IntegerType, containsNull = true)
     val artifact = makeArtifact(ProtoExpr.lit(1), schemaWithType(arrayType))
     val bytes = JsonArtifactCodec.serialize(artifact)
     val result = JsonArtifactCodec.deserialize(bytes)
@@ -55,7 +55,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
 
   test("roundtrip MapType"):
     val mapType =
-      ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, valueContainsNull = true)
+      ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, valueContainsNull = true)
     val artifact = makeArtifact(ProtoExpr.lit(1), schemaWithType(mapType))
     val bytes = JsonArtifactCodec.serialize(artifact)
     val result = JsonArtifactCodec.deserialize(bytes)
@@ -65,7 +65,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
   test("roundtrip StructType"):
     val structType = ProtoType.StructType(
       Vector(
-        ProtoStructField("x", ProtoType.IntType, nullable = false),
+        ProtoStructField("x", ProtoType.IntegerType, nullable = false),
         ProtoStructField("y", ProtoType.StringType, nullable = true)
       )
     )
@@ -182,7 +182,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
     assertExprRoundtrip(artifact, expr)
 
   test("roundtrip BoundRef"):
-    val expr = ProtoExpr.BoundRef(0, ProtoType.IntType, nullable = false)
+    val expr = ProtoExpr.BoundRef(0, ProtoType.IntegerType, nullable = false)
     val artifact = makeArtifact(expr, simpleSchema)
     assertExprRoundtrip(artifact, expr)
 
@@ -214,7 +214,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
       assertExprRoundtrip(artifact, expr)
 
   test("roundtrip null-handling expressions"):
-    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntType, nullable = true)
+    val col = ProtoExpr.ColumnRef("x", None, ProtoType.IntegerType, nullable = true)
     val exprs = List(
       ProtoExpr.IsNull(col),
       ProtoExpr.IsNotNull(col),
@@ -250,7 +250,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
       assertExprRoundtrip(artifact, expr)
 
   test("roundtrip aggregate expressions"):
-    val col = ProtoExpr.ColumnRef("value", None, ProtoType.IntType, nullable = false)
+    val col = ProtoExpr.ColumnRef("value", None, ProtoType.IntegerType, nullable = false)
     val exprs = List(
       ProtoExpr.Count(col, distinct = false),
       ProtoExpr.Count(col, distinct = true),
@@ -303,7 +303,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
     val expr = ProtoExpr.OpaqueCall(
       "my_udf",
       Vector(ProtoExpr.lit(1), ProtoExpr.lit(2)),
-      Some(ProtoType.IntType),
+      Some(ProtoType.IntegerType),
       deterministic = true
     )
     val artifact = makeArtifact(expr, simpleSchema)
@@ -332,7 +332,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
   test("roundtrip Filter"):
     val plan = ProtoLogicalPlan.Filter(
       ProtoExpr.Gt(
-        ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+        ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, nullable = false),
         ProtoExpr.lit(18)
       ),
       baseRelation
@@ -363,7 +363,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
           NullOrdering.NullsFirst
         ),
         SortOrder(
-          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, nullable = false),
           SortDirection.Descending,
           NullOrdering.NullsLast
         )
@@ -452,7 +452,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
   test("roundtrip Values"):
     val schema = ProtoSchema(
       Vector(
-        ProtoStructField("a", ProtoType.IntType, nullable = false),
+        ProtoStructField("a", ProtoType.IntegerType, nullable = false),
         ProtoStructField("b", ProtoType.StringType, nullable = true)
       )
     )
@@ -560,7 +560,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
   private val simpleSchema = ProtoSchema(
     Vector(
       ProtoStructField("id", ProtoType.LongType, nullable = false),
-      ProtoStructField("value", ProtoType.IntType, nullable = true)
+      ProtoStructField("value", ProtoType.IntegerType, nullable = true)
     )
   )
 

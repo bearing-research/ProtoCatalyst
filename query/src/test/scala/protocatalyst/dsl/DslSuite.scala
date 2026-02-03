@@ -32,7 +32,7 @@ class DslSuite extends munit.FunSuite:
     assertEquals(nameCol.name, "name")
     assertEquals(nameCol.protoType, ProtoType.StringType)
     assertEquals(ageCol.name, "age")
-    assertEquals(ageCol.protoType, ProtoType.IntType)
+    assertEquals(ageCol.protoType, ProtoType.IntegerType)
     assertEquals(salaryCol.name, "salary")
     assertEquals(salaryCol.protoType, ProtoType.DoubleType)
 

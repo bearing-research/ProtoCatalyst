@@ -422,7 +422,7 @@ object ExpressionEvaluator:
   private def castValue(v: Any, targetType: ProtoType): Any =
     targetType match
       case ProtoType.StringType  => v.toString
-      case ProtoType.IntType     => toInt(v)
+      case ProtoType.IntegerType     => toInt(v)
       case ProtoType.LongType    => v.asInstanceOf[Number].longValue
       case ProtoType.DoubleType  => toDouble(v)
       case ProtoType.FloatType   => toDouble(v).toFloat

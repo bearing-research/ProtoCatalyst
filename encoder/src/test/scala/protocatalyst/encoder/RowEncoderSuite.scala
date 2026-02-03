@@ -12,7 +12,7 @@ class RowEncoderSuite extends FunSuite:
 
   val userSchema = Vector(
     FieldSchema("name", ProtoType.StringType, nullable = false, 0),
-    FieldSchema("age", ProtoType.IntType, nullable = false, 1)
+    FieldSchema("age", ProtoType.IntegerType, nullable = false, 1)
   )
 
   // === Creation tests ===
@@ -25,7 +25,7 @@ class RowEncoderSuite extends FunSuite:
   test("create from StructType"):
     val structType: ProtoType.StructType = ProtoType.StructType(
       Vector(
-        ProtoStructField("a", ProtoType.IntType, false),
+        ProtoStructField("a", ProtoType.IntegerType, false),
         ProtoStructField("b", ProtoType.StringType, true)
       )
     )
@@ -52,7 +52,7 @@ class RowEncoderSuite extends FunSuite:
   test("convenience factory with of"):
     val encoder = RowEncoder.of(
       ("name", ProtoType.StringType, false),
-      ("age", ProtoType.IntType, false)
+      ("age", ProtoType.IntegerType, false)
     )
     assertEquals(encoder.numFields, 2)
     assertEquals(encoder.fieldNames, Vector("name", "age"))
@@ -141,7 +141,7 @@ class RowEncoderSuite extends FunSuite:
   test("roundtrip with various types"):
     val schema = Vector(
       FieldSchema("bool", ProtoType.BooleanType, false, 0),
-      FieldSchema("int", ProtoType.IntType, false, 1),
+      FieldSchema("int", ProtoType.IntegerType, false, 1),
       FieldSchema("long", ProtoType.LongType, false, 2),
       FieldSchema("double", ProtoType.DoubleType, false, 3),
       FieldSchema("string", ProtoType.StringType, false, 4)

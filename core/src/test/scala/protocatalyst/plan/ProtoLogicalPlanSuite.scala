@@ -31,7 +31,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
   test("Values with rows"):
     val schema = ProtoSchema(
       Vector(
-        ProtoStructField("a", ProtoType.IntType, nullable = false),
+        ProtoStructField("a", ProtoType.IntegerType, nullable = false),
         ProtoStructField("b", ProtoType.StringType, nullable = true)
       )
     )
@@ -47,7 +47,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
       case _ => fail(s"Expected Values, got $plan")
 
   test("Values with empty rows"):
-    val schema = ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntType, nullable = false)))
+    val schema = ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntegerType, nullable = false)))
     val plan = ProtoLogicalPlan.Values(Vector.empty, schema)
     plan match
       case ProtoLogicalPlan.Values(r, _) =>
@@ -83,7 +83,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
 
   test("Filter with simple condition"):
     val condition = ProtoExpr.Gt(
-      ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+      ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, nullable = false),
       ProtoExpr.lit(18)
     )
     val plan = ProtoLogicalPlan.Filter(condition, baseRelation)
@@ -97,11 +97,11 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     val condition = ProtoExpr.And(
       Vector(
         ProtoExpr.Gt(
-          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, nullable = false),
           ProtoExpr.lit(18)
         ),
         ProtoExpr.Lt(
-          ProtoExpr.ColumnRef("age", None, ProtoType.IntType, nullable = false),
+          ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, nullable = false),
           ProtoExpr.lit(65)
         ),
         ProtoExpr.IsNotNull(

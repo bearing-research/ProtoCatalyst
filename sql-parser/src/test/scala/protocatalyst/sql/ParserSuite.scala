@@ -562,7 +562,7 @@ class ParserSuite extends munit.FunSuite:
     assert(result.isRight)
     val stmt = asSelect(result.toOption.get)
     stmt.projections.head.expr match
-      case SqlExpr.Cast(SqlExpr.ColumnRef("age", None), SqlType.IntType) => () // ok
+      case SqlExpr.Cast(SqlExpr.ColumnRef("age", None), SqlType.IntegerType) => () // ok
       case _ => fail("Expected CAST to INT")
 
   test("parses CAST to VARCHAR"):

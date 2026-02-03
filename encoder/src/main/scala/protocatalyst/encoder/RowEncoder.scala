@@ -17,7 +17,7 @@ import protocatalyst.types._
   * {{{
   * val schema = Vector(
   *   FieldSchema("name", ProtoType.StringType, nullable = false, 0),
-  *   FieldSchema("age", ProtoType.IntType, nullable = false, 1)
+  *   FieldSchema("age", ProtoType.IntegerType, nullable = false, 1)
   * )
   * val encoder = RowEncoder(schema)
   *

@@ -30,7 +30,7 @@ object JsonArtifactCodec extends ArtifactCodec:
     macroRW[ProtoType.BooleanType.type],
     macroRW[ProtoType.ByteType.type],
     macroRW[ProtoType.ShortType.type],
-    macroRW[ProtoType.IntType.type],
+    macroRW[ProtoType.IntegerType.type],
     macroRW[ProtoType.LongType.type],
     macroRW[ProtoType.FloatType.type],
     macroRW[ProtoType.DoubleType.type],

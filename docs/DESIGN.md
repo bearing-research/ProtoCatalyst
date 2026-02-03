@@ -55,7 +55,7 @@ enum ProtoType:
   case BooleanType
   case ByteType
   case ShortType
-  case IntType
+  case IntegerType
   case LongType
   case FloatType
   case DoubleType
@@ -745,7 +745,7 @@ object SchemaConverter:
 
   def toSparkType(pt: ProtoType): DataType = pt match
     case ProtoType.BooleanType => org.apache.spark.sql.types.BooleanType
-    case ProtoType.IntType => org.apache.spark.sql.types.IntegerType
+    case ProtoType.IntegerType => org.apache.spark.sql.types.IntegerType
     case ProtoType.LongType => org.apache.spark.sql.types.LongType
     case ProtoType.DoubleType => org.apache.spark.sql.types.DoubleType
     case ProtoType.StringType => org.apache.spark.sql.types.StringType
@@ -1028,8 +1028,8 @@ object QueryBinder:
   private def isTypeCompatible(expected: ProtoType, actual: DataType): Boolean =
     // Exact match or safe widening
     (expected, actual) match
-      case (ProtoType.IntType, IntegerType) => true
-      case (ProtoType.IntType, LongType) => true  // Safe widening
+      case (ProtoType.IntegerType, IntegerType) => true
+      case (ProtoType.IntegerType, LongType) => true  // Safe widening
       case (ProtoType.LongType, LongType) => true
       case (ProtoType.StringType, StringType) => true
       case (ProtoType.DoubleType, DoubleType) => true
@@ -1284,7 +1284,7 @@ object Canonicalizer:
    */
   val foldConstants: ProtoExpr => ProtoExpr = {
     case ProtoExpr.Add(ProtoExpr.Literal(a: Int, _), ProtoExpr.Literal(b: Int, _)) =>
-      ProtoExpr.Literal(a + b, ProtoType.IntType)
+      ProtoExpr.Literal(a + b, ProtoType.IntegerType)
 
     case ProtoExpr.Concat(children) if children.forall(_.isInstanceOf[ProtoExpr.Literal]) =>
       val str = children.collect { case ProtoExpr.Literal(s: String, _) => s }.mkString

@@ -269,7 +269,7 @@ object InlineRowSerializer:
       case _: Boolean                 => ProtoType.BooleanType
       case _: Byte                    => ProtoType.ByteType
       case _: Short                   => ProtoType.ShortType
-      case _: Int                     => ProtoType.IntType
+      case _: Int                     => ProtoType.IntegerType
       case _: Long                    => ProtoType.LongType
       case _: Float                   => ProtoType.FloatType
       case _: Double                  => ProtoType.DoubleType

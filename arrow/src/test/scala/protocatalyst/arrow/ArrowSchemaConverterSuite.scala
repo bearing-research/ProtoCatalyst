@@ -30,8 +30,8 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
         assertEquals(i.getIsSigned, true)
       case _ => fail("Expected ArrowType.Int")
 
-  test("convert IntType to Arrow Int32"):
-    val arrowType = ArrowSchemaConverter.toArrowType(ProtoType.IntType)
+  test("convert IntegerType to Arrow Int32"):
+    val arrowType = ArrowSchemaConverter.toArrowType(ProtoType.IntegerType)
     arrowType match
       case i: ArrowType.Int =>
         assertEquals(i.getBitWidth, 32)
@@ -131,7 +131,7 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
       ProtoType.BooleanType,
       ProtoType.ByteType,
       ProtoType.ShortType,
-      ProtoType.IntType,
+      ProtoType.IntegerType,
       ProtoType.LongType,
       ProtoType.FloatType,
       ProtoType.DoubleType,
@@ -166,14 +166,14 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
     assertEquals(backToProto.fields.head.dataType, pt)
 
   test("roundtrip ArrayType"):
-    val pt = ProtoType.ArrayType(ProtoType.IntType, true)
+    val pt = ProtoType.ArrayType(ProtoType.IntegerType, true)
     val protoSchema = ProtoSchema(Vector(ProtoStructField("values", pt, false)))
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(protoSchema)
     val backToProto = ArrowSchemaConverter.fromArrowSchema(arrowSchema)
     assertEquals(backToProto.fields.head.dataType, pt)
 
   test("roundtrip MapType"):
-    val pt = ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, true)
+    val pt = ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, true)
     val protoSchema = ProtoSchema(Vector(ProtoStructField("mapping", pt, false)))
     val arrowSchema = ArrowSchemaConverter.toArrowSchema(protoSchema)
     val backToProto = ArrowSchemaConverter.fromArrowSchema(arrowSchema)
@@ -181,8 +181,8 @@ class ArrowSchemaConverterSuite extends munit.FunSuite:
 
   test("roundtrip StructType"):
     val nestedFields = Vector(
-      ProtoStructField("x", ProtoType.IntType, false),
-      ProtoStructField("y", ProtoType.IntType, false)
+      ProtoStructField("x", ProtoType.IntegerType, false),
+      ProtoStructField("y", ProtoType.IntegerType, false)
     )
     val pt = ProtoType.StructType(nestedFields)
     val protoSchema = ProtoSchema(Vector(ProtoStructField("point", pt, false)))

@@ -42,15 +42,15 @@ object TestFixtures:
     Vector(
       ProtoStructField("id", ProtoType.LongType, nullable = false),
       ProtoStructField("name", ProtoType.StringType, nullable = false),
-      ProtoStructField("age", ProtoType.IntType, nullable = true),
+      ProtoStructField("age", ProtoType.IntegerType, nullable = true),
       ProtoStructField("salary", ProtoType.DoubleType, nullable = true),
-      ProtoStructField("department_id", ProtoType.IntType, nullable = true)
+      ProtoStructField("department_id", ProtoType.IntegerType, nullable = true)
     )
   )
 
   val departmentProtoSchema: ProtoSchema = ProtoSchema(
     Vector(
-      ProtoStructField("id", ProtoType.IntType, nullable = false),
+      ProtoStructField("id", ProtoType.IntegerType, nullable = false),
       ProtoStructField("name", ProtoType.StringType, nullable = false),
       ProtoStructField("budget", ProtoType.DecimalType(18, 2), nullable = true)
     )
@@ -148,7 +148,7 @@ object TestFixtures:
   val simpleUserProtoSchema: ProtoSchema = ProtoSchema(
     Vector(
       ProtoStructField("name", ProtoType.StringType, nullable = false),
-      ProtoStructField("age", ProtoType.IntType, nullable = false),
+      ProtoStructField("age", ProtoType.IntegerType, nullable = false),
       ProtoStructField("salary", ProtoType.DoubleType, nullable = false)
     )
   )

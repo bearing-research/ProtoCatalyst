@@ -134,7 +134,7 @@ object ProtoEncoder:
         // Schema represents the discriminated union structure
         val fields = Vector(
           ProtoStructField("_type", ProtoType.StringType, nullable = false),
-          ProtoStructField("_ordinal", ProtoType.IntType, nullable = false)
+          ProtoStructField("_ordinal", ProtoType.IntegerType, nullable = false)
         )
         ProtoSchema(fields)
       case _ => ProtoSchema(Vector.empty)
@@ -209,7 +209,7 @@ object ProtoEncoder:
   given ProtoEncoder[Boolean] = PrimitiveEncoder(ProtoType.BooleanType, classTag[Boolean])
   given ProtoEncoder[Byte] = PrimitiveEncoder(ProtoType.ByteType, classTag[Byte])
   given ProtoEncoder[Short] = PrimitiveEncoder(ProtoType.ShortType, classTag[Short])
-  given ProtoEncoder[Int] = PrimitiveEncoder(ProtoType.IntType, classTag[Int])
+  given ProtoEncoder[Int] = PrimitiveEncoder(ProtoType.IntegerType, classTag[Int])
   given ProtoEncoder[Long] = PrimitiveEncoder(ProtoType.LongType, classTag[Long])
   given ProtoEncoder[Float] = PrimitiveEncoder(ProtoType.FloatType, classTag[Float])
   given ProtoEncoder[Double] = PrimitiveEncoder(ProtoType.DoubleType, classTag[Double])
@@ -273,7 +273,7 @@ object ProtoEncoder:
   given boxedShortEncoder: ProtoEncoder[java.lang.Short] =
     BoxedPrimitiveEncoder(ProtoType.ShortType, classTag[java.lang.Short])
   given boxedIntEncoder: ProtoEncoder[java.lang.Integer] =
-    BoxedPrimitiveEncoder(ProtoType.IntType, classTag[java.lang.Integer])
+    BoxedPrimitiveEncoder(ProtoType.IntegerType, classTag[java.lang.Integer])
   given boxedLongEncoder: ProtoEncoder[java.lang.Long] =
     BoxedPrimitiveEncoder(ProtoType.LongType, classTag[java.lang.Long])
   given boxedFloatEncoder: ProtoEncoder[java.lang.Float] =

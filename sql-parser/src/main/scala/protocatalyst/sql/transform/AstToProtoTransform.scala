@@ -643,7 +643,7 @@ object AstToProtoTransform:
   private def sqlTypeToProtoType(sqlType: SqlType): ProtoType =
     import protocatalyst.sql.ast.SqlType as ST
     sqlType match
-      case ST.IntType       => ProtoType.IntType
+      case ST.IntegerType   => ProtoType.IntegerType
       case ST.LongType      => ProtoType.LongType
       case ST.DoubleType    => ProtoType.DoubleType
       case ST.StringType    => ProtoType.StringType

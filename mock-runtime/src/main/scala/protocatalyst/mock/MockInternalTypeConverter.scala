@@ -159,7 +159,7 @@ object MockInternalTypeConverter extends InternalTypeConverter:
               )
 
         // Other primitive types - no conversion needed
-        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntType |
+        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntegerType |
             ProtoType.LongType | ProtoType.FloatType | ProtoType.DoubleType |
             _: ProtoType.DecimalType =>
           value
@@ -176,7 +176,7 @@ object MockInternalTypeConverter extends InternalTypeConverter:
               MockRow(
                 Vector(
                   toInternal(arr(0), ProtoType.StringType), // discriminator
-                  toInternal(arr(1), ProtoType.IntType) // ordinal
+                  toInternal(arr(1), ProtoType.IntegerType) // ordinal
                 )
               )
             case other =>
@@ -280,7 +280,7 @@ object MockInternalTypeConverter extends InternalTypeConverter:
           java.time.Period.ofMonths(value.asInstanceOf[Int])
 
         // Other primitive types - no conversion needed
-        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntType |
+        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntegerType |
             ProtoType.LongType | ProtoType.FloatType | ProtoType.DoubleType |
             _: ProtoType.DecimalType =>
           value

@@ -160,7 +160,7 @@ class ArtifactVersionSuite extends munit.FunSuite:
     import protocatalyst.schema.*
     import protocatalyst.types.*
 
-    val schema = ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntType, nullable = false)))
+    val schema = ProtoSchema(Vector(ProtoStructField("x", ProtoType.IntegerType, nullable = false)))
     val contract = SchemaContract("t", Vector.empty, SchemaFingerprint.fromLong(0L))
     val plan = ProtoLogicalPlan.RelationRef("t", None, contract)
 

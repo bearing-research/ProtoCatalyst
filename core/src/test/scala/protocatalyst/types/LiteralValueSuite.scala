@@ -16,9 +16,9 @@ class LiteralValueSuite extends munit.FunSuite:
     val lit = LiteralValue.ShortValue(1000.toShort)
     assertEquals(LiteralValue.typeOf(lit), ProtoType.ShortType)
 
-  test("typeOf IntValue returns IntType"):
+  test("typeOf IntValue returns IntegerType"):
     val lit = LiteralValue.IntValue(123456)
-    assertEquals(LiteralValue.typeOf(lit), ProtoType.IntType)
+    assertEquals(LiteralValue.typeOf(lit), ProtoType.IntegerType)
 
   test("typeOf LongValue returns LongType"):
     val lit = LiteralValue.LongValue(9876543210L)
@@ -59,9 +59,9 @@ class LiteralValueSuite extends munit.FunSuite:
   test("typeOf NullValue returns the specified type"):
     val types = List(
       ProtoType.StringType,
-      ProtoType.IntType,
-      ProtoType.ArrayType(ProtoType.IntType, containsNull = true),
-      ProtoType.MapType(ProtoType.StringType, ProtoType.IntType, valueContainsNull = true)
+      ProtoType.IntegerType,
+      ProtoType.ArrayType(ProtoType.IntegerType, containsNull = true),
+      ProtoType.MapType(ProtoType.StringType, ProtoType.IntegerType, valueContainsNull = true)
     )
     for t <- types do
       val lit = LiteralValue.NullValue(t)
@@ -269,7 +269,7 @@ class LiteralValueSuite extends munit.FunSuite:
   test("LiteralValue equality for null values"):
     val null1 = LiteralValue.NullValue(ProtoType.StringType)
     val null2 = LiteralValue.NullValue(ProtoType.StringType)
-    val null3 = LiteralValue.NullValue(ProtoType.IntType)
+    val null3 = LiteralValue.NullValue(ProtoType.IntegerType)
 
     assertEquals(null1, null2)
     assertNotEquals(null1, null3)
@@ -290,7 +290,7 @@ class LiteralValueSuite extends munit.FunSuite:
       LiteralValue.DecimalValue(BigDecimal("1")),
       LiteralValue.DateValue(1),
       LiteralValue.TimestampValue(1),
-      LiteralValue.NullValue(ProtoType.IntType)
+      LiteralValue.NullValue(ProtoType.IntegerType)
     )
 
     // Each value should have a different type
