@@ -71,6 +71,11 @@ case class Complex(
     nested: Option[Person]
 ) derives ProtoEncoder
 
+// Collection scaling test classes
+case class WithStringList(items: List[String]) derives ProtoEncoder
+case class WithIntMap(data: Map[String, Int]) derives ProtoEncoder
+case class WithPersonList(members: List[Person]) derives ProtoEncoder
+
 /** Factory for creating test data instances */
 object BenchmarkData:
   val simple: Simple = Simple("Alice", 30)
@@ -148,3 +153,20 @@ object BenchmarkData:
   val withBigInt: WithBigInt = WithBigInt("large", BigInt("12345678901234567890"))
   val withBigDecimal: WithBigDecimal =
     WithBigDecimal("precise", BigDecimal("123.456789012345678901"))
+
+  // Collection scaling test data
+  val smallList: List[String] = (1 to 10).map(i => s"item_$i").toList
+  val mediumList: List[String] = (1 to 100).map(i => s"item_$i").toList
+  val largeList: List[String] = (1 to 1000).map(i => s"item_$i").toList
+
+  val smallMap: Map[String, Int] = (1 to 10).map(i => s"key_$i" -> i).toMap
+  val mediumMap: Map[String, Int] = (1 to 100).map(i => s"key_$i" -> i).toMap
+  val largeMap: Map[String, Int] = (1 to 1000).map(i => s"key_$i" -> i).toMap
+
+  // Nested collection scaling (List[Person])
+  val smallTeam: List[Person] = (1 to 10).map(i =>
+    Person(s"Person_$i", 20 + i, Address(s"Street $i", "City", s"ZIP$i"))
+  ).toList
+  val mediumTeam: List[Person] = (1 to 100).map(i =>
+    Person(s"Person_$i", 20 + i, Address(s"Street $i", "City", s"ZIP$i"))
+  ).toList

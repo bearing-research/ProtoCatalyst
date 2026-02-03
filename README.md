@@ -116,7 +116,7 @@ val internalRow = new GenericInternalRow(row)  // Direct compatibility
 
 The `InternalTypeConverter` trait provides the pluggable backend - swap `MockInternalTypeConverter` for a Spark-native implementation when integrating.
 
-See [Spark Migration Guide](docs/SPARK_MIGRATION.md) for detailed integration instructions.
+See [Spark Migration Guide](docs/SPARK_MIGRATION_GUIDE.md) for detailed integration instructions.
 
 ## Building
 
@@ -135,9 +135,11 @@ sbt 'benchmarkSpark/Jmh/run SparkEncoderBenchmarks'
 ## Documentation
 
 - **[Understanding Encoders](docs/ENCODER_DEEP_DIVE.md)** - Start here! Beginner-friendly guide explaining what encoders are and how to use them
-- [Spark Migration Guide](docs/SPARK_MIGRATION.md) - Integration with Spark Scala 3
-- [Benchmarks](benchmarks/README.md) - Performance comparison with Spark
+- [Spark Migration Guide](docs/SPARK_MIGRATION_GUIDE.md) - Integration with Spark Scala 3
+- [Benchmarks](docs/BENCHMARKS.md) - Performance testing and results
 - [Design Document](docs/DESIGN.md) - Architecture and design decisions
+- [SQL Parser](docs/SQL_PARSER.md) - Compile-time SQL parsing
+- [Spark Catalyst Reference](docs/SPARK_CATALYST_REFERENCE.md) - Spark internals reference
 - [ADR-001: No Runtime Codegen](docs/decisions/ADR-001-no-runtime-codegen.md) - Why compile-time over runtime
 
 ## Requirements
