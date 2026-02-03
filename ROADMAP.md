@@ -46,7 +46,7 @@
 
 **Priority: High**
 
-- [ ] UUID encoder (common in modern applications)
+- [x] UUID encoder (common in modern applications)
 - [ ] java.util.Date encoder (legacy compatibility)
 - [ ] OffsetDateTime, ZonedDateTime (timezone-aware timestamps)
 - [ ] CalendarInterval encoder (defined in ProtoType, needs encoder)

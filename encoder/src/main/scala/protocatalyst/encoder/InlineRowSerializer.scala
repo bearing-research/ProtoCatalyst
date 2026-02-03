@@ -205,6 +205,13 @@ object InlineRowSerializer:
         result(idx) = conv.toInternal(product.productElement(idx), ProtoType.YearMonthIntervalType)
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
+      // === UUID - convert to string representation ===
+      case _: (java.util.UUID *: ts) =>
+        val uuid = product.productElement(idx).asInstanceOf[java.util.UUID]
+        result(idx) =
+          if uuid == null then null else conv.toInternal(uuid.toString, ProtoType.StringType)
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
       // === Fallback for other types (nested products, etc.) ===
       case _: (t *: ts) =>
         val fieldValue = product.productElement(idx)
@@ -214,15 +221,17 @@ object InlineRowSerializer:
   /** Serialize Option inner value with type specialization */
   private inline def serializeOptionValue[T](value: T, conv: InternalTypeConverter): Any =
     inline erasedValue[T] match
-      case _: Int     => value
-      case _: Long    => value
-      case _: Double  => value
-      case _: Float   => value
-      case _: Boolean => value
-      case _: Byte    => value
-      case _: Short   => value
-      case _: String  => conv.toInternal(value, ProtoType.StringType)
-      case _          => conv.toInternal(value, getProtoType[T])
+      case _: Int            => value
+      case _: Long           => value
+      case _: Double         => value
+      case _: Float          => value
+      case _: Boolean        => value
+      case _: Byte           => value
+      case _: Short          => value
+      case _: String         => conv.toInternal(value, ProtoType.StringType)
+      case _: java.util.UUID =>
+        conv.toInternal(value.asInstanceOf[java.util.UUID].toString, ProtoType.StringType)
+      case _ => conv.toInternal(value, getProtoType[T])
 
   /** Fallback serialization for complex types */
   private inline def serializeAnyField[T](value: Any, conv: InternalTypeConverter): Any =
@@ -261,6 +270,7 @@ object InlineRowSerializer:
       case _: java.time.LocalDateTime => ProtoType.TimestampNTZType
       case _: java.time.Duration      => ProtoType.DayTimeIntervalType
       case _: java.time.Period        => ProtoType.YearMonthIntervalType
+      case _: java.util.UUID          => ProtoType.StringType
       case _                          => getProtoTypeFromEncoder[T]
 
   /** Get ProtoType by summoning encoder - handles custom types like case classes */
@@ -403,6 +413,17 @@ object InlineRowSerializer:
         values(idx) = conv.fromInternal(row(idx), ProtoType.YearMonthIntervalType)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
+      // === UUID - convert from string representation ===
+      case _: (java.util.UUID *: ts) =>
+        val rawValue = row(idx)
+        values(idx) =
+          if rawValue == null then null
+          else
+            java.util.UUID.fromString(
+              conv.fromInternal(rawValue, ProtoType.StringType).asInstanceOf[String]
+            )
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
       // === Fallback for other types ===
       case _: (t *: ts) =>
         values(idx) = deserializeAnyField[t](row(idx), conv)
@@ -411,14 +432,18 @@ object InlineRowSerializer:
   /** Deserialize Option inner value */
   private inline def deserializeOptionValue[T](value: Any, conv: InternalTypeConverter): T =
     inline erasedValue[T] match
-      case _: Int     => value.asInstanceOf[T]
-      case _: Long    => value.asInstanceOf[T]
-      case _: Double  => value.asInstanceOf[T]
-      case _: Float   => value.asInstanceOf[T]
-      case _: Boolean => value.asInstanceOf[T]
-      case _: Byte    => value.asInstanceOf[T]
-      case _: Short   => value.asInstanceOf[T]
-      case _: String  => conv.fromInternal(value, ProtoType.StringType).asInstanceOf[T]
+      case _: Int            => value.asInstanceOf[T]
+      case _: Long           => value.asInstanceOf[T]
+      case _: Double         => value.asInstanceOf[T]
+      case _: Float          => value.asInstanceOf[T]
+      case _: Boolean        => value.asInstanceOf[T]
+      case _: Byte           => value.asInstanceOf[T]
+      case _: Short          => value.asInstanceOf[T]
+      case _: String         => conv.fromInternal(value, ProtoType.StringType).asInstanceOf[T]
+      case _: java.util.UUID =>
+        java.util.UUID
+          .fromString(conv.fromInternal(value, ProtoType.StringType).asInstanceOf[String])
+          .asInstanceOf[T]
       // Use deserializeAnyField for complex types (nested structs, collections, etc.)
       case _ => deserializeAnyField[T](value, conv)
 

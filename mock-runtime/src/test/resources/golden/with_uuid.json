@@ -1,0 +1,12 @@
+{
+  "typeName": "WithUUID",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-02T21:20:00.000000Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"id","type":"StringType","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"ZW50aXR5"},"id":{"type":"UTF8String","base64":"NTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAw"}}
+    }
+  ]
+}

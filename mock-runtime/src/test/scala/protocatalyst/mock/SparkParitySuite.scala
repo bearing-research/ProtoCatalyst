@@ -1,7 +1,7 @@
 package protocatalyst.mock
 
 import java.time.{Duration, Instant, Period}
-import java.util.Base64
+import java.util.{Base64, UUID}
 
 import scala.io.Source
 
@@ -45,6 +45,9 @@ case class ParityWithTuple3(label: String, triple: (String, Int, Double))
     derives InlineRowSerializer
 case class ParityWithTuple5(label: String, tuple: (String, Int, Double, Boolean, Long))
     derives InlineRowSerializer
+
+// UUID test (UUID stored as StringType)
+case class ParityWithUUID(name: String, id: UUID) derives InlineRowSerializer
 
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
@@ -100,6 +103,10 @@ object ParityTestData:
   val withTuple3: ParityWithTuple3 = ParityWithTuple3("triple", ("hello", 123, 3.14))
   val withTuple5: ParityWithTuple5 =
     ParityWithTuple5("quintet", ("test", 1, 2.5, true, 9999999999L))
+
+  // UUID test data - must match benchmark-spark BenchmarkData
+  val withUUID: ParityWithUUID =
+    ParityWithUUID("entity", UUID.fromString("550e8400-e29b-41d4-a716-446655440000"))
 
 /** Spark parity tests using golden files.
   *
@@ -329,3 +336,6 @@ class SparkParitySuite extends munit.FunSuite:
 
   test("WithTuple5 (Tuple5) parity with Spark"):
     runParityTest("with_tuple5", ParityTestData.withTuple5)
+
+  test("WithUUID (UUID as StringType) parity with Spark"):
+    runParityTest("with_uuid", ParityTestData.withUUID)

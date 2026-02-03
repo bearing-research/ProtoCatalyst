@@ -328,6 +328,15 @@ object GoldenFileGenerator {
     writeFile(new File(outputDir, "with_tuple5.json"), withTuple5Json)
     println("  ✓ with_tuple5.json")
 
+    // WithUUID (UUID as StringType)
+    val withUuidJson = generate(
+      "WithUUID",
+      ExpressionEncoder[WithUUID](),
+      Seq(("standard", BenchmarkData.withUUID))
+    )
+    writeFile(new File(outputDir, "with_uuid.json"), withUuidJson)
+    println("  ✓ with_uuid.json")
+
     println("\nDone! Copy these files to mock-runtime/src/test/resources/golden/")
   }
 

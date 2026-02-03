@@ -1,6 +1,7 @@
 package protocatalyst.benchmark
 
 import java.time._
+import java.util.UUID
 
 /** Test data classes for Spark comparison benchmarks.
   *
@@ -45,6 +46,9 @@ case class Complex(
 case class WithTuple2(label: String, pair: (Int, String))
 case class WithTuple3(label: String, triple: (String, Int, Double))
 case class WithTuple5(label: String, tuple: (String, Int, Double, Boolean, Long))
+
+// UUID test
+case class WithUUID(name: String, id: UUID)
 
 /** Factory for creating test data instances */
 object BenchmarkData {
@@ -99,4 +103,8 @@ object BenchmarkData {
   val withTuple3: WithTuple3 = WithTuple3("triple", ("hello", 123, 3.14))
   val withTuple5: WithTuple5 =
     WithTuple5("quintet", ("test", 1, 2.5, true, 9999999999L))
+
+  // UUID test data
+  val withUUID: WithUUID =
+    WithUUID("entity", UUID.fromString("550e8400-e29b-41d4-a716-446655440000"))
 }

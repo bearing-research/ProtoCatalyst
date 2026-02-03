@@ -385,6 +385,51 @@ class InlineRowSerializerSuite extends munit.FunSuite:
     assertEquals(deserialized.name, original.name)
     assertEquals(deserialized.period.toTotalMonths, original.period.toTotalMonths)
 
+  // === UUID tests ===
+
+  case class InlineWithUUID(name: String, id: java.util.UUID)
+
+  test("roundtrip UUID"):
+    val serializer = InlineRowSerializer.derived[InlineWithUUID]
+    val uuid = java.util.UUID.fromString("550e8400-e29b-41d4-a716-446655440000")
+    val original = InlineWithUUID("entity", uuid)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip random UUID"):
+    val serializer = InlineRowSerializer.derived[InlineWithUUID]
+    val uuid = java.util.UUID.randomUUID()
+    val original = InlineWithUUID("random", uuid)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  case class InlineWithOptionalUUID(name: String, id: Option[java.util.UUID])
+
+  test("roundtrip Option[UUID] with Some"):
+    val serializer = InlineRowSerializer.derived[InlineWithOptionalUUID]
+    val uuid = java.util.UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
+    val original = InlineWithOptionalUUID("with-id", Some(uuid))
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("roundtrip Option[UUID] with None"):
+    val serializer = InlineRowSerializer.derived[InlineWithOptionalUUID]
+    val original = InlineWithOptionalUUID("no-id", None)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized, original)
+
+  test("UUID encoder maps to StringType"):
+    val enc = summon[ProtoEncoder[java.util.UUID]]
+    assertEquals(enc.catalystType, ProtoType.StringType)
+
   // === Extended Tuple tests ===
 
   test("roundtrip Tuple6"):

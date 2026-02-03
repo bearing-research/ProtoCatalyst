@@ -165,7 +165,7 @@ object ProtoEncoder:
         error(
           "Cannot find or derive ProtoEncoder for type.\n\n" +
             "Supported types:\n" +
-            "  - Primitives: Boolean, Byte, Short, Int, Long, Float, Double, String, Array[Byte], BigDecimal\n" +
+            "  - Primitives: Boolean, Byte, Short, Int, Long, Float, Double, String, Array[Byte], BigDecimal, UUID\n" +
             "  - Boxed: java.lang.Integer, java.lang.Long, java.lang.Double, etc.\n" +
             "  - Temporal: java.time.LocalDate, Instant, LocalDateTime, Duration, Period\n" +
             "  - Legacy temporal: java.sql.Date, java.sql.Timestamp\n" +
@@ -233,6 +233,10 @@ object ProtoEncoder:
     PrimitiveEncoder(ProtoType.YearMonthIntervalType, classTag[java.time.Period])
   given ProtoEncoder[java.time.LocalTime] =
     PrimitiveEncoder(ProtoType.TimeType(6), classTag[java.time.LocalTime])
+
+  // UUID (stored as StringType - canonical 36-character representation)
+  given ProtoEncoder[java.util.UUID] =
+    PrimitiveEncoder(ProtoType.StringType, classTag[java.util.UUID])
 
   // java.sql types (legacy compatibility)
   given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] =
