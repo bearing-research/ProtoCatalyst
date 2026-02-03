@@ -513,6 +513,47 @@ class MockInternalTypeConverterSuite extends munit.FunSuite:
     assertEquals(deserialized.name, original.name)
     assertEquals(deserialized.period.toTotalMonths, original.period.toTotalMonths)
 
+  // === InlineRowSerializer integration with new timestamp types ===
+
+  case class WithJavaUtilDate(name: String, timestamp: java.util.Date)
+
+  test("InlineRowSerializer roundtrip with java.util.Date field"):
+    val serializer = InlineRowSerializer.derived[WithJavaUtilDate]
+    val date = new java.util.Date(1705312200000L) // 2024-01-15T10:30:00Z
+    val original = WithJavaUtilDate("event", date)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized.name, original.name)
+    // Compare at millisecond precision
+    assertEquals(deserialized.timestamp.getTime, original.timestamp.getTime)
+
+  case class WithOffsetDateTime(name: String, timestamp: java.time.OffsetDateTime)
+
+  test("InlineRowSerializer roundtrip with OffsetDateTime field"):
+    val serializer = InlineRowSerializer.derived[WithOffsetDateTime]
+    val odt = java.time.OffsetDateTime.of(2024, 1, 15, 10, 30, 0, 0, java.time.ZoneOffset.ofHours(5))
+    val original = WithOffsetDateTime("meeting", odt)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized.name, original.name)
+    // Compare at instant level (offset may differ after roundtrip as we store in UTC)
+    assertEquals(deserialized.timestamp.toInstant.toEpochMilli, original.timestamp.toInstant.toEpochMilli)
+
+  case class WithZonedDateTime(name: String, timestamp: java.time.ZonedDateTime)
+
+  test("InlineRowSerializer roundtrip with ZonedDateTime field"):
+    val serializer = InlineRowSerializer.derived[WithZonedDateTime]
+    val zdt = java.time.ZonedDateTime.of(2024, 1, 15, 10, 30, 0, 0, java.time.ZoneId.of("America/New_York"))
+    val original = WithZonedDateTime("appointment", zdt)
+
+    val deserialized = serializer.deserialize(serializer.serialize(original))
+
+    assertEquals(deserialized.name, original.name)
+    // Compare at instant level (zone may differ after roundtrip as we store in UTC)
+    assertEquals(deserialized.timestamp.toInstant.toEpochMilli, original.timestamp.toInstant.toEpochMilli)
+
   // === NullType tests ===
 
   test("NullType toInternal handles null value"):

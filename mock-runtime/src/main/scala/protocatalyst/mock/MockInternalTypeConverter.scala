@@ -83,13 +83,16 @@ object MockInternalTypeConverter extends InternalTypeConverter:
 
         case ProtoType.TimestampType =>
           value match
-            case ts: java.sql.Timestamp => ts.toInstant.toEpochMilli * 1000L
-            case i: java.time.Instant   => i.toEpochMilli * 1000L
-            case s: String              => java.time.Instant.parse(s).toEpochMilli * 1000L
-            case micros: Long           => micros // Already internal representation
-            case other                  =>
+            case ts: java.sql.Timestamp       => ts.toInstant.toEpochMilli * 1000L
+            case i: java.time.Instant         => i.toEpochMilli * 1000L
+            case d: java.util.Date            => d.toInstant.toEpochMilli * 1000L
+            case odt: java.time.OffsetDateTime => odt.toInstant.toEpochMilli * 1000L
+            case zdt: java.time.ZonedDateTime  => zdt.toInstant.toEpochMilli * 1000L
+            case s: String                    => java.time.Instant.parse(s).toEpochMilli * 1000L
+            case micros: Long                 => micros // Already internal representation
+            case other                        =>
               throw IllegalArgumentException(
-                s"TimestampType expects java.sql.Timestamp, Instant, String, or Long, got: ${other.getClass}"
+                s"TimestampType expects Timestamp, Instant, Date, OffsetDateTime, ZonedDateTime, String, or Long, got: ${other.getClass}"
               )
 
         case ProtoType.TimestampNTZType =>

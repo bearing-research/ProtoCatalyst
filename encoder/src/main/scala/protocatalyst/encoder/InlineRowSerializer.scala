@@ -193,6 +193,18 @@ object InlineRowSerializer:
         result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimestampType)
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
 
+      case _: (java.util.Date *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimestampType)
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
+      case _: (java.time.OffsetDateTime *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimestampType)
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
+      case _: (java.time.ZonedDateTime *: ts) =>
+        result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimestampType)
+        serializeFieldsImpl[ts](product, result, idx + 1, conv)
+
       case _: (java.time.LocalTime *: ts) =>
         result(idx) = conv.toInternal(product.productElement(idx), ProtoType.TimeType(6))
         serializeFieldsImpl[ts](product, result, idx + 1, conv)
@@ -265,13 +277,17 @@ object InlineRowSerializer:
       case _: BigDecimal              => ProtoType.DecimalType(38, 18)
       case _: BigInt                  => ProtoType.DecimalType(38, 0)
       case _: Array[Byte]             => ProtoType.BinaryType
-      case _: java.time.LocalDate     => ProtoType.DateType
-      case _: java.time.Instant       => ProtoType.TimestampType
-      case _: java.time.LocalDateTime => ProtoType.TimestampNTZType
-      case _: java.time.Duration      => ProtoType.DayTimeIntervalType
-      case _: java.time.Period        => ProtoType.YearMonthIntervalType
-      case _: java.util.UUID          => ProtoType.StringType
-      case _                          => getProtoTypeFromEncoder[T]
+      case _: java.time.LocalDate      => ProtoType.DateType
+      case _: java.time.Instant        => ProtoType.TimestampType
+      case _: java.time.LocalDateTime  => ProtoType.TimestampNTZType
+      case _: java.time.OffsetDateTime => ProtoType.TimestampType
+      case _: java.time.ZonedDateTime  => ProtoType.TimestampType
+      case _: java.time.LocalTime      => ProtoType.TimeType(6)
+      case _: java.time.Duration       => ProtoType.DayTimeIntervalType
+      case _: java.time.Period         => ProtoType.YearMonthIntervalType
+      case _: java.util.Date           => ProtoType.TimestampType
+      case _: java.util.UUID           => ProtoType.StringType
+      case _                           => getProtoTypeFromEncoder[T]
 
   /** Get ProtoType by summoning encoder - handles custom types like case classes */
   private inline def getProtoTypeFromEncoder[T]: ProtoType =
@@ -399,6 +415,24 @@ object InlineRowSerializer:
 
       case _: (java.sql.Timestamp *: ts) =>
         values(idx) = conv.fromInternal(row(idx), ProtoType.TimestampType)
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (java.util.Date *: ts) =>
+        // Convert from internal microseconds to java.util.Date
+        val instant = conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
+        values(idx) = if instant == null then null else java.util.Date.from(instant)
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (java.time.OffsetDateTime *: ts) =>
+        // Convert from internal microseconds to OffsetDateTime (at UTC)
+        val instant = conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
+        values(idx) = if instant == null then null else instant.atOffset(java.time.ZoneOffset.UTC)
+        deserializeFieldsImpl[ts](row, values, idx + 1, conv)
+
+      case _: (java.time.ZonedDateTime *: ts) =>
+        // Convert from internal microseconds to ZonedDateTime (at UTC)
+        val instant = conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
+        values(idx) = if instant == null then null else instant.atZone(java.time.ZoneId.of("UTC"))
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       case _: (java.time.LocalTime *: ts) =>

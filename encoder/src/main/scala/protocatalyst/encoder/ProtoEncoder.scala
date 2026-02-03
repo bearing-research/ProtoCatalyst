@@ -167,8 +167,8 @@ object ProtoEncoder:
             "Supported types:\n" +
             "  - Primitives: Boolean, Byte, Short, Int, Long, Float, Double, String, Array[Byte], BigDecimal, UUID\n" +
             "  - Boxed: java.lang.Integer, java.lang.Long, java.lang.Double, etc.\n" +
-            "  - Temporal: java.time.LocalDate, Instant, LocalDateTime, Duration, Period\n" +
-            "  - Legacy temporal: java.sql.Date, java.sql.Timestamp\n" +
+            "  - Temporal: java.time.LocalDate, Instant, LocalDateTime, LocalTime, Duration, Period, OffsetDateTime, ZonedDateTime\n" +
+            "  - Legacy temporal: java.sql.Date, java.sql.Timestamp, java.util.Date\n" +
             "  - Wrappers: Option[T]\n" +
             "  - Collections: Seq, List, Vector, Set, Array, Map\n" +
             "  - Products: case classes, tuples\n" +
@@ -238,11 +238,21 @@ object ProtoEncoder:
   given ProtoEncoder[java.util.UUID] =
     PrimitiveEncoder(ProtoType.StringType, classTag[java.util.UUID])
 
+  // Timezone-aware timestamps (converted to UTC Instant internally)
+  given ProtoEncoder[java.time.OffsetDateTime] =
+    PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.OffsetDateTime])
+  given ProtoEncoder[java.time.ZonedDateTime] =
+    PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.ZonedDateTime])
+
   // java.sql types (legacy compatibility)
   given javaSqlDateEncoder: ProtoEncoder[java.sql.Date] =
     PrimitiveEncoder(ProtoType.DateType, classTag[java.sql.Date])
   given javaSqlTimestampEncoder: ProtoEncoder[java.sql.Timestamp] =
     PrimitiveEncoder(ProtoType.TimestampType, classTag[java.sql.Timestamp])
+
+  // java.util.Date (legacy compatibility - maps to TimestampType)
+  given javaUtilDateEncoder: ProtoEncoder[java.util.Date] =
+    PrimitiveEncoder(ProtoType.TimestampType, classTag[java.util.Date])
 
   // === Boxed primitive encoders ===
   // Java wrapper classes - nullable since they can be null (unlike primitives)

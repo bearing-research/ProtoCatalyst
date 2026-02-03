@@ -470,3 +470,23 @@ class InlineRowSerializerSuite extends munit.FunSuite:
   test("voidEncoder maps to NullType"):
     val enc = summon[ProtoEncoder[java.lang.Void]]
     assertEquals(enc.catalystType, ProtoType.NullType)
+
+  // === New temporal type encoder tests ===
+  // Note: Roundtrip tests are in MockInternalTypeConverterSuite since they
+  // require proper type conversion (default converter doesn't transform)
+
+  test("java.util.Date encoder maps to TimestampType"):
+    val enc = summon[ProtoEncoder[java.util.Date]]
+    assertEquals(enc.catalystType, ProtoType.TimestampType)
+
+  test("OffsetDateTime encoder maps to TimestampType"):
+    val enc = summon[ProtoEncoder[java.time.OffsetDateTime]]
+    assertEquals(enc.catalystType, ProtoType.TimestampType)
+
+  test("ZonedDateTime encoder maps to TimestampType"):
+    val enc = summon[ProtoEncoder[java.time.ZonedDateTime]]
+    assertEquals(enc.catalystType, ProtoType.TimestampType)
+
+  test("LocalTime encoder maps to TimeType"):
+    val enc = summon[ProtoEncoder[java.time.LocalTime]]
+    assertEquals(enc.catalystType, ProtoType.TimeType(6))
