@@ -1,7 +1,7 @@
 {
   "typeName": "WithTuple2",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T19:04:36.581635Z",
+  "generatedAt": "2026-02-03T04:29:44.433226Z",
   "schema": {"fields":[{"name":"label","type":"StringType","nullable":true},{"name":"pair","type":"StructType(_1:IntType,_2:StringType)","nullable":true}]},
   "testCases": [
     {

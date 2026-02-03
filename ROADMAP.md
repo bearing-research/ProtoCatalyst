@@ -32,8 +32,8 @@
 - [x] ArrowBatchBuilder for resource management
 
 **Testing**
-- [x] 382 unit tests passing
-- [x] 14 Spark parity tests (golden file comparison)
+- [x] 264 unit tests passing
+- [x] 21 Spark parity tests (golden file comparison)
 - [x] Benchmark infrastructure (JMH)
 
 **Documentation**
@@ -53,9 +53,9 @@
 - [ ] LocalTime encoder improvements
 
 **Parity Tests**
-- [ ] Add parity tests for remaining primitive types (Byte, Short, Float)
-- [ ] Add parity tests for date/time types (LocalDate, LocalDateTime)
-- [ ] Add parity tests for binary type
+- [x] Add parity tests for remaining primitive types (Byte, Short, Float)
+- [x] Add parity tests for date/time types (LocalDate, LocalDateTime)
+- [x] Add parity tests for binary type
 - [ ] Edge case tests (nulls, empty collections, boundary values)
 
 ---

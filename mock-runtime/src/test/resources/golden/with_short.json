@@ -1,0 +1,12 @@
+{
+  "typeName": "WithShort",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T04:29:44.500451Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"value","type":"ShortType","nullable":false}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"c2hvcnQ="},"value":{"type":"Short","value":1000}}
+    }
+  ]
+}

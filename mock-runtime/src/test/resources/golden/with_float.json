@@ -1,0 +1,12 @@
+{
+  "typeName": "WithFloat",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T04:29:44.511846Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"value","type":"FloatType","nullable":false}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"ZmxvYXQ="},"value":{"type":"Float","value":3.14}}
+    }
+  ]
+}

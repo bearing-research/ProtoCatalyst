@@ -1,7 +1,7 @@
 {
   "typeName": "Address",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-02T19:04:36.068884Z",
+  "generatedAt": "2026-02-03T04:29:43.973901Z",
   "schema": {"fields":[{"name":"street","type":"StringType","nullable":true},{"name":"city","type":"StringType","nullable":true},{"name":"zip","type":"StringType","nullable":true}]},
   "testCases": [
     {

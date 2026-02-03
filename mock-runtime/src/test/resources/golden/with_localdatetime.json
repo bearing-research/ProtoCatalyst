@@ -1,0 +1,12 @@
+{
+  "typeName": "WithLocalDateTime",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T04:29:44.552677Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"datetime","type":"TimestampNTZType","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"ZGF0ZXRpbWU="},"datetime":{"type":"TimestampNTZ","micros":1718447445000000}}
+    }
+  ]
+}

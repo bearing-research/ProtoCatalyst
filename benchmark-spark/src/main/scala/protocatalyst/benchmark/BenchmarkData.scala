@@ -50,6 +50,18 @@ case class WithTuple5(label: String, tuple: (String, Int, Double, Boolean, Long)
 // UUID test
 case class WithUUID(name: String, id: UUID)
 
+// Primitive type tests (Byte, Short, Float)
+case class WithByte(name: String, value: Byte)
+case class WithShort(name: String, value: Short)
+case class WithFloat(name: String, value: Float)
+
+// Date/Time type tests
+case class WithLocalDate(name: String, date: LocalDate)
+case class WithLocalDateTime(name: String, datetime: LocalDateTime)
+
+// Binary type test
+case class WithBinary(name: String, data: Array[Byte])
+
 /** Factory for creating test data instances */
 object BenchmarkData {
   val simple: Simple = Simple("Alice", 30)
@@ -107,4 +119,17 @@ object BenchmarkData {
   // UUID test data
   val withUUID: WithUUID =
     WithUUID("entity", UUID.fromString("550e8400-e29b-41d4-a716-446655440000"))
+
+  // Primitive type test data
+  val withByte: WithByte = WithByte("byte", 42.toByte)
+  val withShort: WithShort = WithShort("short", 1000.toShort)
+  val withFloat: WithFloat = WithFloat("float", 3.14f)
+
+  // Date/Time test data
+  val withLocalDate: WithLocalDate = WithLocalDate("date", LocalDate.of(2024, 6, 15))
+  val withLocalDateTime: WithLocalDateTime =
+    WithLocalDateTime("datetime", LocalDateTime.of(2024, 6, 15, 10, 30, 45))
+
+  // Binary test data
+  val withBinary: WithBinary = WithBinary("binary", Array[Byte](1, 2, 3, 4, 5, 0, -1, -128, 127))
 }

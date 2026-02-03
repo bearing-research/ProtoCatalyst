@@ -49,6 +49,19 @@ case class ParityWithTuple5(label: String, tuple: (String, Int, Double, Boolean,
 // UUID test (UUID stored as StringType)
 case class ParityWithUUID(name: String, id: UUID) derives InlineRowSerializer
 
+// Primitive type tests (Byte, Short, Float)
+case class ParityWithByte(name: String, value: Byte) derives InlineRowSerializer
+case class ParityWithShort(name: String, value: Short) derives InlineRowSerializer
+case class ParityWithFloat(name: String, value: Float) derives InlineRowSerializer
+
+// Date/Time type tests
+case class ParityWithLocalDate(name: String, date: java.time.LocalDate) derives InlineRowSerializer
+case class ParityWithLocalDateTime(name: String, datetime: java.time.LocalDateTime)
+    derives InlineRowSerializer
+
+// Binary type test
+case class ParityWithBinary(name: String, data: Array[Byte]) derives InlineRowSerializer
+
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
   val simple: ParitySimple = ParitySimple("Alice", 30)
@@ -108,6 +121,21 @@ object ParityTestData:
   val withUUID: ParityWithUUID =
     ParityWithUUID("entity", UUID.fromString("550e8400-e29b-41d4-a716-446655440000"))
 
+  // Primitive type test data - must match benchmark-spark BenchmarkData
+  val withByte: ParityWithByte = ParityWithByte("byte", 42.toByte)
+  val withShort: ParityWithShort = ParityWithShort("short", 1000.toShort)
+  val withFloat: ParityWithFloat = ParityWithFloat("float", 3.14f)
+
+  // Date/Time test data - must match benchmark-spark BenchmarkData
+  val withLocalDate: ParityWithLocalDate =
+    ParityWithLocalDate("date", java.time.LocalDate.of(2024, 6, 15))
+  val withLocalDateTime: ParityWithLocalDateTime =
+    ParityWithLocalDateTime("datetime", java.time.LocalDateTime.of(2024, 6, 15, 10, 30, 45))
+
+  // Binary test data - must match benchmark-spark BenchmarkData
+  val withBinary: ParityWithBinary =
+    ParityWithBinary("binary", Array[Byte](1, 2, 3, 4, 5, 0, -1, -128, 127))
+
 /** Spark parity tests using golden files.
   *
   * These tests verify that ProtoCatalyst's InlineRowSerializer produces byte-identical output to
@@ -166,11 +194,36 @@ class SparkParitySuite extends munit.FunSuite:
       case "Boolean" =>
         assertEquals(actual, expected("value").bool, s"Boolean mismatch at $path")
 
+      case "Byte" =>
+        assertEquals(actual.asInstanceOf[Byte], expected("value").num.toByte, s"Byte mismatch at $path")
+
+      case "Short" =>
+        assertEquals(
+          actual.asInstanceOf[Short],
+          expected("value").num.toShort,
+          s"Short mismatch at $path"
+        )
+
+      case "Binary" =>
+        val expectedBytes = Base64.getDecoder.decode(expected("base64").str)
+        actual match
+          case bytes: Array[Byte] =>
+            assertEquals(bytes.toSeq, expectedBytes.toSeq, s"Binary bytes mismatch at $path")
+          case other =>
+            fail(s"Expected Array[Byte] at $path, got ${
+                if other == null then "null"
+                else other.getClass.getName
+              }")
+
       case "Date" =>
         assertEquals(actual, expected("epochDays").num.toInt, s"Date mismatch at $path")
 
       case "Timestamp" =>
         assertEquals(actual, expected("micros").num.toLong, s"Timestamp mismatch at $path")
+
+      case "TimestampNTZ" =>
+        // LocalDateTime stored as microseconds (Long)
+        assertEquals(actual, expected("micros").num.toLong, s"TimestampNTZ mismatch at $path")
 
       case "DayTimeInterval" =>
         // Duration stored as microseconds (Long)
@@ -339,3 +392,21 @@ class SparkParitySuite extends munit.FunSuite:
 
   test("WithUUID (UUID as StringType) parity with Spark"):
     runParityTest("with_uuid", ParityTestData.withUUID)
+
+  test("WithByte (ByteType) parity with Spark"):
+    runParityTest("with_byte", ParityTestData.withByte)
+
+  test("WithShort (ShortType) parity with Spark"):
+    runParityTest("with_short", ParityTestData.withShort)
+
+  test("WithFloat (FloatType) parity with Spark"):
+    runParityTest("with_float", ParityTestData.withFloat)
+
+  test("WithLocalDate (DateType) parity with Spark"):
+    runParityTest("with_localdate", ParityTestData.withLocalDate)
+
+  test("WithLocalDateTime (TimestampNTZType) parity with Spark"):
+    runParityTest("with_localdatetime", ParityTestData.withLocalDateTime)
+
+  test("WithBinary (BinaryType) parity with Spark"):
+    runParityTest("with_binary", ParityTestData.withBinary)

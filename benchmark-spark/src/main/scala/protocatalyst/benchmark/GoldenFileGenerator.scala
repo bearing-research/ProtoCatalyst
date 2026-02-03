@@ -328,14 +328,69 @@ object GoldenFileGenerator {
     writeFile(new File(outputDir, "with_tuple5.json"), withTuple5Json)
     println("  ✓ with_tuple5.json")
 
-    // WithUUID (UUID as StringType)
-    val withUuidJson = generate(
-      "WithUUID",
-      ExpressionEncoder[WithUUID](),
-      Seq(("standard", BenchmarkData.withUUID))
+    // WithByte (ByteType)
+    val withByteJson = generate(
+      "WithByte",
+      ExpressionEncoder[WithByte](),
+      Seq(("standard", BenchmarkData.withByte))
     )
-    writeFile(new File(outputDir, "with_uuid.json"), withUuidJson)
-    println("  ✓ with_uuid.json")
+    writeFile(new File(outputDir, "with_byte.json"), withByteJson)
+    println("  ✓ with_byte.json")
+
+    // WithShort (ShortType)
+    val withShortJson = generate(
+      "WithShort",
+      ExpressionEncoder[WithShort](),
+      Seq(("standard", BenchmarkData.withShort))
+    )
+    writeFile(new File(outputDir, "with_short.json"), withShortJson)
+    println("  ✓ with_short.json")
+
+    // WithFloat (FloatType)
+    val withFloatJson = generate(
+      "WithFloat",
+      ExpressionEncoder[WithFloat](),
+      Seq(("standard", BenchmarkData.withFloat))
+    )
+    writeFile(new File(outputDir, "with_float.json"), withFloatJson)
+    println("  ✓ with_float.json")
+
+    // WithLocalDate (DateType)
+    val withLocalDateJson = generate(
+      "WithLocalDate",
+      ExpressionEncoder[WithLocalDate](),
+      Seq(("standard", BenchmarkData.withLocalDate))
+    )
+    writeFile(new File(outputDir, "with_localdate.json"), withLocalDateJson)
+    println("  ✓ with_localdate.json")
+
+    // WithLocalDateTime (TimestampNTZType)
+    val withLocalDateTimeJson = generate(
+      "WithLocalDateTime",
+      ExpressionEncoder[WithLocalDateTime](),
+      Seq(("standard", BenchmarkData.withLocalDateTime))
+    )
+    writeFile(new File(outputDir, "with_localdatetime.json"), withLocalDateTimeJson)
+    println("  ✓ with_localdatetime.json")
+
+    // WithBinary (BinaryType)
+    val withBinaryJson = generate(
+      "WithBinary",
+      ExpressionEncoder[WithBinary](),
+      Seq(("standard", BenchmarkData.withBinary))
+    )
+    writeFile(new File(outputDir, "with_binary.json"), withBinaryJson)
+    println("  ✓ with_binary.json")
+
+    // WithUUID (UUID as StringType) - Spark doesn't support UUID natively,
+    // so this is generated manually in mock-runtime/src/test/resources/golden/with_uuid.json
+    // val withUuidJson = generate(
+    //   "WithUUID",
+    //   ExpressionEncoder[WithUUID](),
+    //   Seq(("standard", BenchmarkData.withUUID))
+    // )
+    // writeFile(new File(outputDir, "with_uuid.json"), withUuidJson)
+    // println("  ✓ with_uuid.json")
 
     println("\nDone! Copy these files to mock-runtime/src/test/resources/golden/")
   }

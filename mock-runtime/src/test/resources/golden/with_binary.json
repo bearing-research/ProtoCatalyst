@@ -1,0 +1,12 @@
+{
+  "typeName": "WithBinary",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T04:29:44.562504Z",
+  "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"data","type":"BinaryType","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"name":{"type":"UTF8String","base64":"YmluYXJ5"},"data":{"type":"Binary","base64":"AQIDBAUA/4B/"}}
+    }
+  ]
+}
