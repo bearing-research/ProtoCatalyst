@@ -1,7 +1,7 @@
 {
   "typeName": "WithLocalDateTime",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-03T04:29:44.552677Z",
+  "generatedAt": "2026-02-03T05:02:32.756941Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"datetime","type":"TimestampNTZType","nullable":true}]},
   "testCases": [
     {

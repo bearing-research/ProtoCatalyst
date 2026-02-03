@@ -1,0 +1,12 @@
+{
+  "typeName": "WithNullString",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T05:02:32.775489Z",
+  "schema": {"fields":[{"name":"id","type":"IntType","nullable":false},{"name":"name","type":"StringType","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"id":{"type":"Int","value":1},"name":{"type":"Null"}}
+    }
+  ]
+}

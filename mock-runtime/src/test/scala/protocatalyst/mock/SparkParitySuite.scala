@@ -62,6 +62,14 @@ case class ParityWithLocalDateTime(name: String, datetime: java.time.LocalDateTi
 // Binary type test
 case class ParityWithBinary(name: String, data: Array[Byte]) derives InlineRowSerializer
 
+// Edge case tests
+case class ParityWithNullString(id: Int, name: String) derives InlineRowSerializer
+case class ParityWithOptionalNone(id: Int, person: Option[ParityPerson]) derives InlineRowSerializer
+case class ParityEmptyCollections(items: List[String], scores: Map[String, Int])
+    derives InlineRowSerializer
+case class ParityIntBoundaries(label: String, minVal: Int, maxVal: Int) derives InlineRowSerializer
+case class ParityLongBoundaries(label: String, minVal: Long, maxVal: Long) derives InlineRowSerializer
+
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
   val simple: ParitySimple = ParitySimple("Alice", 30)
@@ -135,6 +143,15 @@ object ParityTestData:
   // Binary test data - must match benchmark-spark BenchmarkData
   val withBinary: ParityWithBinary =
     ParityWithBinary("binary", Array[Byte](1, 2, 3, 4, 5, 0, -1, -128, 127))
+
+  // Edge case test data - must match benchmark-spark BenchmarkData
+  val withNullString: ParityWithNullString = ParityWithNullString(1, null)
+  val withOptionalNone: ParityWithOptionalNone = ParityWithOptionalNone(1, None)
+  val emptyCollections: ParityEmptyCollections = ParityEmptyCollections(List.empty, Map.empty)
+  val intBoundaries: ParityIntBoundaries =
+    ParityIntBoundaries("bounds", Int.MinValue, Int.MaxValue)
+  val longBoundaries: ParityLongBoundaries =
+    ParityLongBoundaries("bounds", Long.MinValue, Long.MaxValue)
 
 /** Spark parity tests using golden files.
   *
@@ -410,3 +427,20 @@ class SparkParitySuite extends munit.FunSuite:
 
   test("WithBinary (BinaryType) parity with Spark"):
     runParityTest("with_binary", ParityTestData.withBinary)
+
+  // === Edge Case Parity Tests ===
+
+  test("WithNullString (null String field) parity with Spark"):
+    runParityTest("with_null_string", ParityTestData.withNullString)
+
+  test("WithOptionalNone (Option with None) parity with Spark"):
+    runParityTest("with_optional_none", ParityTestData.withOptionalNone)
+
+  test("EmptyCollections (empty List and Map) parity with Spark"):
+    runParityTest("empty_collections", ParityTestData.emptyCollections)
+
+  test("IntBoundaries (Int.MinValue, Int.MaxValue) parity with Spark"):
+    runParityTest("int_boundaries", ParityTestData.intBoundaries)
+
+  test("LongBoundaries (Long.MinValue, Long.MaxValue) parity with Spark"):
+    runParityTest("long_boundaries", ParityTestData.longBoundaries)

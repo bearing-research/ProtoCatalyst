@@ -1,7 +1,7 @@
 {
   "typeName": "WithTuple3",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-03T04:29:44.454169Z",
+  "generatedAt": "2026-02-03T05:02:32.629691Z",
   "schema": {"fields":[{"name":"label","type":"StringType","nullable":true},{"name":"triple","type":"StructType(_1:StringType,_2:IntType,_3:DoubleType)","nullable":true}]},
   "testCases": [
     {

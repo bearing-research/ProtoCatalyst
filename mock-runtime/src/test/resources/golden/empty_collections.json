@@ -1,0 +1,12 @@
+{
+  "typeName": "EmptyCollections",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T05:02:32.815782Z",
+  "schema": {"fields":[{"name":"items","type":"ArrayType(StringType,true)","nullable":true},{"name":"scores","type":"MapType(StringType,IntType,false)","nullable":true}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"items":{"type":"ArrayData","elements":[]},"scores":{"type":"MapData","keys":[],"values":[]}}
+    }
+  ]
+}

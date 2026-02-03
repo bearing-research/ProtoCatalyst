@@ -1,7 +1,7 @@
 {
   "typeName": "WithFloat",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-03T04:29:44.511846Z",
+  "generatedAt": "2026-02-03T05:02:32.694024Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"value","type":"FloatType","nullable":false}]},
   "testCases": [
     {

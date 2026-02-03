@@ -1,7 +1,7 @@
 {
   "typeName": "WithShort",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-03T04:29:44.500451Z",
+  "generatedAt": "2026-02-03T05:02:32.670002Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"value","type":"ShortType","nullable":false}]},
   "testCases": [
     {

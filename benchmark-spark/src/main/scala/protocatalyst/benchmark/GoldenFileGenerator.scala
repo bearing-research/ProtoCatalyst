@@ -382,6 +382,53 @@ object GoldenFileGenerator {
     writeFile(new File(outputDir, "with_binary.json"), withBinaryJson)
     println("  ✓ with_binary.json")
 
+    // === Edge case tests ===
+
+    // WithNullString (null String field)
+    val withNullStringJson = generate(
+      "WithNullString",
+      ExpressionEncoder[WithNullString](),
+      Seq(("standard", BenchmarkData.withNullString))
+    )
+    writeFile(new File(outputDir, "with_null_string.json"), withNullStringJson)
+    println("  ✓ with_null_string.json")
+
+    // WithOptionalNone (Option[Person] with None)
+    val withOptionalNoneJson = generate(
+      "WithOptionalNone",
+      ExpressionEncoder[WithOptionalNone](),
+      Seq(("standard", BenchmarkData.withOptionalNone))
+    )
+    writeFile(new File(outputDir, "with_optional_none.json"), withOptionalNoneJson)
+    println("  ✓ with_optional_none.json")
+
+    // EmptyCollections (empty List and Map)
+    val emptyCollectionsJson = generate(
+      "EmptyCollections",
+      ExpressionEncoder[EmptyCollections](),
+      Seq(("standard", BenchmarkData.emptyCollections))
+    )
+    writeFile(new File(outputDir, "empty_collections.json"), emptyCollectionsJson)
+    println("  ✓ empty_collections.json")
+
+    // IntBoundaries (Int.MinValue, Int.MaxValue)
+    val intBoundariesJson = generate(
+      "IntBoundaries",
+      ExpressionEncoder[IntBoundaries](),
+      Seq(("standard", BenchmarkData.intBoundaries))
+    )
+    writeFile(new File(outputDir, "int_boundaries.json"), intBoundariesJson)
+    println("  ✓ int_boundaries.json")
+
+    // LongBoundaries (Long.MinValue, Long.MaxValue)
+    val longBoundariesJson = generate(
+      "LongBoundaries",
+      ExpressionEncoder[LongBoundaries](),
+      Seq(("standard", BenchmarkData.longBoundaries))
+    )
+    writeFile(new File(outputDir, "long_boundaries.json"), longBoundariesJson)
+    println("  ✓ long_boundaries.json")
+
     // WithUUID (UUID as StringType) - Spark doesn't support UUID natively,
     // so this is generated manually in mock-runtime/src/test/resources/golden/with_uuid.json
     // val withUuidJson = generate(

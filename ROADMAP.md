@@ -33,7 +33,7 @@
 
 **Testing**
 - [x] 264 unit tests passing
-- [x] 21 Spark parity tests (golden file comparison)
+- [x] 26 Spark parity tests (golden file comparison)
 - [x] Benchmark infrastructure (JMH)
 
 **Documentation**
@@ -56,7 +56,7 @@
 - [x] Add parity tests for remaining primitive types (Byte, Short, Float)
 - [x] Add parity tests for date/time types (LocalDate, LocalDateTime)
 - [x] Add parity tests for binary type
-- [ ] Edge case tests (nulls, empty collections, boundary values)
+- [x] Edge case tests (nulls, empty collections, boundary values)
 
 ---
 

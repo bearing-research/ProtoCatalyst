@@ -1,0 +1,12 @@
+{
+  "typeName": "IntBoundaries",
+  "sparkVersion": "4.0.0",
+  "generatedAt": "2026-02-03T05:02:32.825520Z",
+  "schema": {"fields":[{"name":"label","type":"StringType","nullable":true},{"name":"minVal","type":"IntType","nullable":false},{"name":"maxVal","type":"IntType","nullable":false}]},
+  "testCases": [
+    {
+      "name": "standard",
+      "serialized": {"label":{"type":"UTF8String","base64":"Ym91bmRz"},"minVal":{"type":"Int","value":-2147483648},"maxVal":{"type":"Int","value":2147483647}}
+    }
+  ]
+}

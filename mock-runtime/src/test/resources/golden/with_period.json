@@ -1,7 +1,7 @@
 {
   "typeName": "WithPeriod",
   "sparkVersion": "4.0.0",
-  "generatedAt": "2026-02-03T04:29:44.374765Z",
+  "generatedAt": "2026-02-03T05:02:32.548227Z",
   "schema": {"fields":[{"name":"name","type":"StringType","nullable":true},{"name":"period","type":"YearMonthIntervalType","nullable":true}]},
   "testCases": [
     {

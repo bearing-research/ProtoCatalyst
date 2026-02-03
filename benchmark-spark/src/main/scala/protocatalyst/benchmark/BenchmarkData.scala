@@ -62,6 +62,13 @@ case class WithLocalDateTime(name: String, datetime: LocalDateTime)
 // Binary type test
 case class WithBinary(name: String, data: Array[Byte])
 
+// Edge case tests
+case class WithNullString(id: Int, name: String) // name can be null
+case class WithOptionalNone(id: Int, person: Option[Person]) // Option with None
+case class EmptyCollections(items: List[String], scores: Map[String, Int])
+case class IntBoundaries(label: String, minVal: Int, maxVal: Int)
+case class LongBoundaries(label: String, minVal: Long, maxVal: Long)
+
 /** Factory for creating test data instances */
 object BenchmarkData {
   val simple: Simple = Simple("Alice", 30)
@@ -132,4 +139,11 @@ object BenchmarkData {
 
   // Binary test data
   val withBinary: WithBinary = WithBinary("binary", Array[Byte](1, 2, 3, 4, 5, 0, -1, -128, 127))
+
+  // Edge case test data
+  val withNullString: WithNullString = WithNullString(1, null)
+  val withOptionalNone: WithOptionalNone = WithOptionalNone(1, None)
+  val emptyCollections: EmptyCollections = EmptyCollections(List.empty, Map.empty)
+  val intBoundaries: IntBoundaries = IntBoundaries("bounds", Int.MinValue, Int.MaxValue)
+  val longBoundaries: LongBoundaries = LongBoundaries("bounds", Long.MinValue, Long.MaxValue)
 }
