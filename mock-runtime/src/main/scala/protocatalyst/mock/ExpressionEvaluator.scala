@@ -369,6 +369,76 @@ object ExpressionEvaluator:
           FirstValue(_, _) | LastValue(_, _) | NthValue(_, _) | WindowExpr(_, _, _, _) =>
         throw IllegalStateException("Window functions cannot be evaluated row-by-row")
 
+      // Date/time functions
+      case CurrentDate() =>
+        java.time.LocalDate.now()
+      case CurrentTimestamp() =>
+        java.time.Instant.now()
+      case DateAdd(start, days) =>
+        val s = evalInternal(start, row)
+        val d = evalInternal(days, row)
+        if s == null || d == null then null
+        else
+          s match
+            case date: java.time.LocalDate => date.plusDays(toInt(d).toLong)
+            case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong).plusDays(toInt(d).toLong)
+            case _                         => throw IllegalArgumentException(s"DATE_ADD requires a date, got $s")
+      case DateSub(start, days) =>
+        val s = evalInternal(start, row)
+        val d = evalInternal(days, row)
+        if s == null || d == null then null
+        else
+          s match
+            case date: java.time.LocalDate => date.minusDays(toInt(d).toLong)
+            case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong).minusDays(toInt(d).toLong)
+            case _                         => throw IllegalArgumentException(s"DATE_SUB requires a date, got $s")
+      case DateDiff(end, start) =>
+        val e = evalInternal(end, row)
+        val s = evalInternal(start, row)
+        if e == null || s == null then null
+        else
+          val endDate = e match
+            case date: java.time.LocalDate => date
+            case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong)
+            case _                         => throw IllegalArgumentException(s"DATE_DIFF requires dates")
+          val startDate = s match
+            case date: java.time.LocalDate => date
+            case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong)
+            case _                         => throw IllegalArgumentException(s"DATE_DIFF requires dates")
+          java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate).toInt
+      case Extract(field, source) =>
+        val v = evalInternal(source, row)
+        if v == null then null
+        else extractField(field, v)
+      case DateTrunc(field, timestamp) =>
+        val v = evalInternal(timestamp, row)
+        if v == null then null
+        else truncateTimestamp(field, v)
+      case ToDate(str, format) =>
+        val s = evalInternal(str, row)
+        if s == null then null
+        else
+          val formatStr = format.map(f => evalInternal(f, row).toString).getOrElse("yyyy-MM-dd")
+          java.time.LocalDate.parse(s.toString, java.time.format.DateTimeFormatter.ofPattern(formatStr))
+      case ToTimestamp(str, format) =>
+        val s = evalInternal(str, row)
+        if s == null then null
+        else
+          val formatStr = format.map(f => evalInternal(f, row).toString).getOrElse("yyyy-MM-dd HH:mm:ss")
+          java.time.LocalDateTime.parse(s.toString, java.time.format.DateTimeFormatter.ofPattern(formatStr)).atZone(java.time.ZoneId.systemDefault()).toInstant
+      case Year(child) =>
+        extractField(DateTimeField.Year, evalInternal(child, row))
+      case Month(child) =>
+        extractField(DateTimeField.Month, evalInternal(child, row))
+      case DayOfMonth(child) =>
+        extractField(DateTimeField.Day, evalInternal(child, row))
+      case Hour(child) =>
+        extractField(DateTimeField.Hour, evalInternal(child, row))
+      case Minute(child) =>
+        extractField(DateTimeField.Minute, evalInternal(child, row))
+      case Second(child) =>
+        extractField(DateTimeField.Second, evalInternal(child, row))
+
   private def compareNumeric(
       l: ProtoExpr,
       r: ProtoExpr,
@@ -458,3 +528,84 @@ object ExpressionEvaluator:
         i += 1
     sb.append("$")
     sb.toString
+
+  /** Extract a field from a date/time value. */
+  private def extractField(field: DateTimeField, value: Any): Any =
+    if value == null then null
+    else
+      value match
+        case date: java.time.LocalDate =>
+          field match
+            case DateTimeField.Year      => date.getYear
+            case DateTimeField.Month     => date.getMonthValue
+            case DateTimeField.Day       => date.getDayOfMonth
+            case DateTimeField.Quarter   => (date.getMonthValue - 1) / 3 + 1
+            case DateTimeField.Week      => date.get(java.time.temporal.WeekFields.ISO.weekOfYear())
+            case DateTimeField.DayOfWeek => date.getDayOfWeek.getValue
+            case DateTimeField.DayOfYear => date.getDayOfYear
+            case _                       => 0 // Time fields return 0 for dates
+        case instant: java.time.Instant =>
+          val dt = instant.atZone(java.time.ZoneId.systemDefault())
+          extractFieldFromZonedDateTime(field, dt)
+        case ldt: java.time.LocalDateTime =>
+          val zdt = ldt.atZone(java.time.ZoneId.systemDefault())
+          extractFieldFromZonedDateTime(field, zdt)
+        case epochDays: Int =>
+          extractField(field, java.time.LocalDate.ofEpochDay(epochDays.toLong))
+        case epochMicros: Long =>
+          extractField(field, java.time.Instant.ofEpochMilli(epochMicros / 1000))
+        case _ =>
+          throw IllegalArgumentException(s"Cannot extract $field from $value")
+
+  private def extractFieldFromZonedDateTime(field: DateTimeField, dt: java.time.ZonedDateTime): Int =
+    field match
+      case DateTimeField.Year        => dt.getYear
+      case DateTimeField.Month       => dt.getMonthValue
+      case DateTimeField.Day         => dt.getDayOfMonth
+      case DateTimeField.Hour        => dt.getHour
+      case DateTimeField.Minute      => dt.getMinute
+      case DateTimeField.Second      => dt.getSecond
+      case DateTimeField.Quarter     => (dt.getMonthValue - 1) / 3 + 1
+      case DateTimeField.Week        => dt.get(java.time.temporal.WeekFields.ISO.weekOfYear())
+      case DateTimeField.DayOfWeek   => dt.getDayOfWeek.getValue
+      case DateTimeField.DayOfYear   => dt.getDayOfYear
+      case DateTimeField.Microsecond => dt.getNano / 1000
+      case DateTimeField.Millisecond => dt.getNano / 1000000
+
+  /** Truncate a timestamp to the specified field. */
+  private def truncateTimestamp(field: DateTimeField, value: Any): Any =
+    if value == null then null
+    else
+      value match
+        case instant: java.time.Instant =>
+          val dt = instant.atZone(java.time.ZoneId.systemDefault())
+          truncateZonedDateTime(field, dt).toInstant
+        case ldt: java.time.LocalDateTime =>
+          val zdt = ldt.atZone(java.time.ZoneId.systemDefault())
+          truncateZonedDateTime(field, zdt).toLocalDateTime
+        case epochMicros: Long =>
+          truncateTimestamp(field, java.time.Instant.ofEpochMilli(epochMicros / 1000))
+        case _ =>
+          throw IllegalArgumentException(s"Cannot truncate $value to $field")
+
+  private def truncateZonedDateTime(field: DateTimeField, dt: java.time.ZonedDateTime): java.time.ZonedDateTime =
+    field match
+      case DateTimeField.Year =>
+        dt.withMonth(1).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
+      case DateTimeField.Month =>
+        dt.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
+      case DateTimeField.Day =>
+        dt.withHour(0).withMinute(0).withSecond(0).withNano(0)
+      case DateTimeField.Hour =>
+        dt.withMinute(0).withSecond(0).withNano(0)
+      case DateTimeField.Minute =>
+        dt.withSecond(0).withNano(0)
+      case DateTimeField.Second =>
+        dt.withNano(0)
+      case DateTimeField.Quarter =>
+        val quarterMonth = ((dt.getMonthValue - 1) / 3) * 3 + 1
+        dt.withMonth(quarterMonth).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
+      case DateTimeField.Week =>
+        dt.`with`(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+          .withHour(0).withMinute(0).withSecond(0).withNano(0)
+      case _ => dt

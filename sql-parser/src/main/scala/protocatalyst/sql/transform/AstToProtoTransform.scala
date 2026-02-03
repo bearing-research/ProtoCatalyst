@@ -774,6 +774,66 @@ object AstToProtoTransform:
             case "IF" | "IIF" if transformedArgs.size == 3 =>
               Right(ProtoExpr.If(transformedArgs(0), transformedArgs(1), transformedArgs(2)))
 
+            // Date/Time functions
+            case "CURRENT_DATE" if transformedArgs.isEmpty =>
+              Right(ProtoExpr.CurrentDate())
+            case "CURRENT_TIMESTAMP" | "NOW" if transformedArgs.isEmpty =>
+              Right(ProtoExpr.CurrentTimestamp())
+            case "DATE_ADD" | "DATEADD" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.DateAdd(transformedArgs(0), transformedArgs(1)))
+            case "DATE_SUB" | "DATESUB" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.DateSub(transformedArgs(0), transformedArgs(1)))
+            case "DATE_DIFF" | "DATEDIFF" if transformedArgs.size == 2 =>
+              Right(ProtoExpr.DateDiff(transformedArgs(0), transformedArgs(1)))
+            case "DATE_TRUNC" | "DATETRUNC" if transformedArgs.size == 2 =>
+              // DATE_TRUNC(field, timestamp) - field should be a string literal
+              transformedArgs(0) match
+                case ProtoExpr.Literal(LiteralValue.StringValue(field)) =>
+                  parseDateTimeField(field) match
+                    case Some(dtf) => Right(ProtoExpr.DateTrunc(dtf, transformedArgs(1)))
+                    case None =>
+                      Left(
+                        TransformError.InvalidExpression(s"Unknown date/time field: $field")
+                      )
+                case _ =>
+                  Left(
+                    TransformError.InvalidExpression(
+                      "DATE_TRUNC first argument must be a string literal"
+                    )
+                  )
+            case "TO_DATE" if transformedArgs.size >= 1 =>
+              Right(ProtoExpr.ToDate(transformedArgs(0), transformedArgs.lift(1)))
+            case "TO_TIMESTAMP" if transformedArgs.size >= 1 =>
+              Right(ProtoExpr.ToTimestamp(transformedArgs(0), transformedArgs.lift(1)))
+            case "YEAR" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Year(transformedArgs.head))
+            case "MONTH" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Month(transformedArgs.head))
+            case "DAY" | "DAYOFMONTH" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.DayOfMonth(transformedArgs.head))
+            case "HOUR" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Hour(transformedArgs.head))
+            case "MINUTE" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Minute(transformedArgs.head))
+            case "SECOND" if transformedArgs.size == 1 =>
+              Right(ProtoExpr.Second(transformedArgs.head))
+            case "EXTRACT" if transformedArgs.size == 2 =>
+              // EXTRACT(field, source) - field is a string literal
+              transformedArgs(0) match
+                case ProtoExpr.Literal(LiteralValue.StringValue(field)) =>
+                  parseDateTimeField(field) match
+                    case Some(dtf) => Right(ProtoExpr.Extract(dtf, transformedArgs(1)))
+                    case None =>
+                      Left(
+                        TransformError.InvalidExpression(s"Unknown EXTRACT field: $field")
+                      )
+                case _ =>
+                  Left(
+                    TransformError.InvalidExpression(
+                      "EXTRACT first argument must be a field name"
+                    )
+                  )
+
             // Aggregate functions
             case "SUM" if transformedArgs.size == 1 =>
               Right(ProtoExpr.Sum(transformedArgs.head))
@@ -818,6 +878,23 @@ object AstToProtoTransform:
             Right(ProtoExpr.ColumnRef(name, None, field.dataType, field.nullable))
           case multiple =>
             Left(TransformError.AmbiguousColumn(name, multiple.map(_._1)))
+
+  /** Parse a date/time field name to DateTimeField. */
+  private def parseDateTimeField(field: String): Option[DateTimeField] =
+    field.toUpperCase match
+      case "YEAR"        => Some(DateTimeField.Year)
+      case "MONTH"       => Some(DateTimeField.Month)
+      case "DAY"         => Some(DateTimeField.Day)
+      case "HOUR"        => Some(DateTimeField.Hour)
+      case "MINUTE"      => Some(DateTimeField.Minute)
+      case "SECOND"      => Some(DateTimeField.Second)
+      case "QUARTER"     => Some(DateTimeField.Quarter)
+      case "WEEK"        => Some(DateTimeField.Week)
+      case "DAYOFWEEK" | "DOW" => Some(DateTimeField.DayOfWeek)
+      case "DAYOFYEAR" | "DOY" => Some(DateTimeField.DayOfYear)
+      case "MICROSECOND" => Some(DateTimeField.Microsecond)
+      case "MILLISECOND" => Some(DateTimeField.Millisecond)
+      case _             => None
 
 /** Context for transformation. */
 case class TransformContext(

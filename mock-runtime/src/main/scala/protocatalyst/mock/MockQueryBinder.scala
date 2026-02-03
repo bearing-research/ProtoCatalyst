@@ -355,6 +355,23 @@ object MockQueryBinder:
           frameSpec
         )
 
+      // Date/Time functions
+      case CurrentDate()           => CurrentDate()
+      case CurrentTimestamp()      => CurrentTimestamp()
+      case DateAdd(start, days)    => DateAdd(bindExpr(start, ctx), bindExpr(days, ctx))
+      case DateSub(start, days)    => DateSub(bindExpr(start, ctx), bindExpr(days, ctx))
+      case DateDiff(end, start)    => DateDiff(bindExpr(end, ctx), bindExpr(start, ctx))
+      case Extract(field, source)  => Extract(field, bindExpr(source, ctx))
+      case DateTrunc(field, ts)    => DateTrunc(field, bindExpr(ts, ctx))
+      case ToDate(str, format)     => ToDate(bindExpr(str, ctx), format.map(bindExpr(_, ctx)))
+      case ToTimestamp(str, format) => ToTimestamp(bindExpr(str, ctx), format.map(bindExpr(_, ctx)))
+      case Year(child)             => Year(bindExpr(child, ctx))
+      case Month(child)            => Month(bindExpr(child, ctx))
+      case DayOfMonth(child)       => DayOfMonth(bindExpr(child, ctx))
+      case Hour(child)             => Hour(bindExpr(child, ctx))
+      case Minute(child)           => Minute(bindExpr(child, ctx))
+      case Second(child)           => Second(bindExpr(child, ctx))
+
       // Leaf nodes that don't need binding
       case lit: Literal  => lit
       case ref: BoundRef => ref

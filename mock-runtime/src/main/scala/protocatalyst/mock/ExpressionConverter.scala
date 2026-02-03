@@ -160,6 +160,23 @@ object ExpressionConverter:
           )
         )
 
+      // === Date/Time Functions ===
+      case CurrentDate()           => ME.CurrentDate()
+      case CurrentTimestamp()      => ME.CurrentTimestamp()
+      case DateAdd(start, days)    => ME.DateAdd(toMock(start), toMock(days))
+      case DateSub(start, days)    => ME.DateSub(toMock(start), toMock(days))
+      case DateDiff(end, start)    => ME.DateDiff(toMock(end), toMock(start))
+      case Extract(field, source)  => ME.Extract(toMockDateTimeField(field), toMock(source))
+      case DateTrunc(field, ts)    => ME.DateTrunc(toMockDateTimeField(field), toMock(ts))
+      case ToDate(str, format)     => ME.ToDate(toMock(str), format.map(toMock))
+      case ToTimestamp(str, format) => ME.ToTimestamp(toMock(str), format.map(toMock))
+      case Year(child)             => ME.Year(toMock(child))
+      case Month(child)            => ME.Month(toMock(child))
+      case DayOfMonth(child)       => ME.DayOfMonth(toMock(child))
+      case Hour(child)             => ME.Hour(toMock(child))
+      case Minute(child)           => ME.Minute(toMock(child))
+      case Second(child)           => ME.Second(toMock(child))
+
       // === Opaque Function ===
       case OpaqueCall(name, args, returnType, deterministic) =>
         ME.UnresolvedFunction(name, args.map(toMock))
@@ -224,6 +241,38 @@ object ExpressionConverter:
     expr match
       case ProtoExpr.Literal(LiteralValue.StringValue(s)) => s
       case _                                              => ""
+
+  private def toMockDateTimeField(field: DateTimeField): MockExpression.DateTimeField =
+    import MockExpression.{DateTimeField as MDTF}
+    field match
+      case DateTimeField.Year        => MDTF.Year
+      case DateTimeField.Month       => MDTF.Month
+      case DateTimeField.Day         => MDTF.Day
+      case DateTimeField.Hour        => MDTF.Hour
+      case DateTimeField.Minute      => MDTF.Minute
+      case DateTimeField.Second      => MDTF.Second
+      case DateTimeField.Quarter     => MDTF.Quarter
+      case DateTimeField.Week        => MDTF.Week
+      case DateTimeField.DayOfWeek   => MDTF.DayOfWeek
+      case DateTimeField.DayOfYear   => MDTF.DayOfYear
+      case DateTimeField.Microsecond => MDTF.Microsecond
+      case DateTimeField.Millisecond => MDTF.Millisecond
+
+  private def fromMockDateTimeField(field: MockExpression.DateTimeField): DateTimeField =
+    import MockExpression.{DateTimeField as MDTF}
+    field match
+      case MDTF.Year        => DateTimeField.Year
+      case MDTF.Month       => DateTimeField.Month
+      case MDTF.Day         => DateTimeField.Day
+      case MDTF.Hour        => DateTimeField.Hour
+      case MDTF.Minute      => DateTimeField.Minute
+      case MDTF.Second      => DateTimeField.Second
+      case MDTF.Quarter     => DateTimeField.Quarter
+      case MDTF.Week        => DateTimeField.Week
+      case MDTF.DayOfWeek   => DateTimeField.DayOfWeek
+      case MDTF.DayOfYear   => DateTimeField.DayOfYear
+      case MDTF.Microsecond => DateTimeField.Microsecond
+      case MDTF.Millisecond => DateTimeField.Millisecond
 
   // ============================================
   // MockExpression → ProtoExpr
@@ -374,6 +423,23 @@ object ExpressionConverter:
       case ME.FirstValue(input, ignoreNulls) => PE.FirstValue(fromMock(input), ignoreNulls)
       case ME.LastValue(input, ignoreNulls)  => PE.LastValue(fromMock(input), ignoreNulls)
       case ME.NthValue(input, n)             => PE.NthValue(fromMock(input), fromMock(n))
+
+      // === Date/Time Functions ===
+      case ME.CurrentDate()              => PE.CurrentDate()
+      case ME.CurrentTimestamp()         => PE.CurrentTimestamp()
+      case ME.DateAdd(start, days)       => PE.DateAdd(fromMock(start), fromMock(days))
+      case ME.DateSub(start, days)       => PE.DateSub(fromMock(start), fromMock(days))
+      case ME.DateDiff(end, start)       => PE.DateDiff(fromMock(end), fromMock(start))
+      case ME.Extract(field, source)     => PE.Extract(fromMockDateTimeField(field), fromMock(source))
+      case ME.DateTrunc(field, ts)       => PE.DateTrunc(fromMockDateTimeField(field), fromMock(ts))
+      case ME.ToDate(str, format)        => PE.ToDate(fromMock(str), format.map(fromMock))
+      case ME.ToTimestamp(str, format)   => PE.ToTimestamp(fromMock(str), format.map(fromMock))
+      case ME.Year(child)                => PE.Year(fromMock(child))
+      case ME.Month(child)               => PE.Month(fromMock(child))
+      case ME.DayOfMonth(child)          => PE.DayOfMonth(fromMock(child))
+      case ME.Hour(child)                => PE.Hour(fromMock(child))
+      case ME.Minute(child)              => PE.Minute(fromMock(child))
+      case ME.Second(child)              => PE.Second(fromMock(child))
 
       case ME.WindowExpression(function, spec) =>
         PE.WindowExpr(

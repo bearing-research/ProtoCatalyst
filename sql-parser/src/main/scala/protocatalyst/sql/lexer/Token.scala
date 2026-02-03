@@ -10,6 +10,8 @@ enum Token:
   case GROUP, HAVING
   case CASE, WHEN, THEN, ELSE, END, CAST
   case EXISTS
+  // Date/time keywords
+  case EXTRACT, INTERVAL
   case UNION, INTERSECT, EXCEPT, ALL
   // CTE keywords
   case WITH, RECURSIVE
@@ -100,5 +102,7 @@ object Token:
     "PRECEDING" -> Token.PRECEDING,
     "FOLLOWING" -> Token.FOLLOWING,
     "CURRENT" -> Token.CURRENT,
-    "ROW" -> Token.ROW
+    "ROW" -> Token.ROW,
+    "EXTRACT" -> Token.EXTRACT,
+    "INTERVAL" -> Token.INTERVAL
   )

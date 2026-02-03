@@ -113,6 +113,23 @@ enum ProtoExpr extends Serializable:
       frameSpec: Option[WindowFrame]
   )
 
+  // Date/Time functions
+  case CurrentDate()
+  case CurrentTimestamp()
+  case DateAdd(start: ProtoExpr, days: ProtoExpr)
+  case DateSub(start: ProtoExpr, days: ProtoExpr)
+  case DateDiff(end: ProtoExpr, start: ProtoExpr)
+  case Extract(field: DateTimeField, source: ProtoExpr)
+  case DateTrunc(field: DateTimeField, timestamp: ProtoExpr)
+  case ToDate(str: ProtoExpr, format: Option[ProtoExpr])
+  case ToTimestamp(str: ProtoExpr, format: Option[ProtoExpr])
+  case Year(child: ProtoExpr)
+  case Month(child: ProtoExpr)
+  case DayOfMonth(child: ProtoExpr)
+  case Hour(child: ProtoExpr)
+  case Minute(child: ProtoExpr)
+  case Second(child: ProtoExpr)
+
   // Opaque function call (UDFs and unknown functions)
   case OpaqueCall(
       functionName: String,
@@ -141,6 +158,12 @@ enum FrameBound extends Serializable:
 /** Trim type for TRIM function. */
 enum TrimType extends Serializable:
   case Both, Leading, Trailing
+
+/** Date/time field for EXTRACT and DATE_TRUNC. */
+enum DateTimeField extends Serializable:
+  case Year, Month, Day, Hour, Minute, Second
+  case Quarter, Week, DayOfWeek, DayOfYear
+  case Microsecond, Millisecond
 
 object ProtoExpr:
   // Convenience constructors for literals

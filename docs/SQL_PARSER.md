@@ -27,7 +27,7 @@ sql-parser/
     ├── LexerSuite.scala
     ├── ParserSuite.scala
     ├── TransformSuite.scala
-    └── SqlMacroSuite.scala
+    └── SqlVerifier.scala
 ```
 
 ## Implementation Phases
@@ -230,23 +230,43 @@ WHERE LENGTH(name) > 5
   AND MOD(id, 2) = 0
 ```
 
-## Future Phases
+### Phase 11: Date/Time Functions (Complete)
 
-### Phase 11: Date/Time Functions
+Date and time function support aligned with Spark SQL:
 
-- CURRENT_DATE, CURRENT_TIMESTAMP
-- DATE_ADD, DATE_SUB, DATE_DIFF
-- EXTRACT (YEAR, MONTH, DAY, etc.)
-- DATE_TRUNC
-- TO_DATE, TO_TIMESTAMP
+**Current Date/Time:**
+- CURRENT_DATE(), CURRENT_TIMESTAMP(), NOW()
+
+**Date Arithmetic:**
+- DATE_ADD(date, days), DATEADD(date, days)
+- DATE_SUB(date, days), DATESUB(date, days)
+- DATE_DIFF(end, start), DATEDIFF(end, start)
+
+**Field Extraction:**
+- EXTRACT(field FROM expr) - supports YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, QUARTER, WEEK, DAYOFWEEK, DAYOFYEAR, MILLISECOND, MICROSECOND
+- YEAR(date), MONTH(date), DAY(date), DAYOFMONTH(date)
+- HOUR(timestamp), MINUTE(timestamp), SECOND(timestamp)
+
+**Truncation:**
+- DATE_TRUNC(field, timestamp)
+
+**Parsing:**
+- TO_DATE(str), TO_DATE(str, format)
+- TO_TIMESTAMP(str), TO_TIMESTAMP(str, format)
 
 ```sql
 SELECT
+  CURRENT_DATE() AS today,
   EXTRACT(YEAR FROM hire_date) AS hire_year,
   DATE_ADD(hire_date, 30) AS probation_end,
-  DATE_DIFF(CURRENT_DATE, hire_date) AS days_employed
+  DATE_DIFF(CURRENT_DATE(), hire_date) AS days_employed,
+  YEAR(birth_date) AS birth_year,
+  DATE_TRUNC('MONTH', created_at) AS month_start,
+  TO_DATE('2024-01-15') AS parsed_date
 FROM users
 ```
+
+## Future Phases
 
 ### Phase 12: Advanced Grouping
 
@@ -349,10 +369,10 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (218 total tests in sql-parser module):
+Current test statistics (262 total tests in sql-parser module):
 - Lexer tests: 18 tests
-- Parser tests: 90 tests (including CTEs, window functions, set operations)
-- Transform tests: 46 tests
+- Parser tests: 107 tests (including CTEs, window functions, set operations, date/time functions)
+- Transform tests: 73 tests
 - **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
 

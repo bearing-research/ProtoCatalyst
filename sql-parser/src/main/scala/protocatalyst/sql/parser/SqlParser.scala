@@ -681,8 +681,42 @@ class SqlParser(tokens: Vector[Token]):
       case Token.EXISTS =>
         parseExists()
 
+      case Token.EXTRACT =>
+        parseExtract()
+
       case t =>
         Left(ParseError.UnexpectedToken(t, "expression", currentPosition))
+
+  /** Parse EXTRACT(field FROM expr) */
+  private def parseExtract(): Either[ParseError, SqlExpr] =
+    advance() // consume EXTRACT
+    for
+      _ <- expect(Token.LParen, "(")
+      field <- parseExtractField()
+      _ <- expect(Token.FROM, "FROM")
+      expr <- parseExpr()
+      _ <- expect(Token.RParen, ")")
+    yield SqlExpr.FunctionCall("EXTRACT", Vector(SqlExpr.StringLit(field), expr), false)
+
+  /** Parse the field name in EXTRACT (YEAR, MONTH, DAY, etc.) */
+  private def parseExtractField(): Either[ParseError, String] =
+    current match
+      case Token.Identifier(name) =>
+        val upper = name.toUpperCase
+        if isValidExtractField(upper) then
+          advance()
+          Right(upper)
+        else
+          Left(ParseError.SyntaxError(s"Invalid EXTRACT field: $name", currentPosition))
+      case t =>
+        Left(ParseError.UnexpectedToken(t, "date/time field (YEAR, MONTH, DAY, etc.)", currentPosition))
+
+  private def isValidExtractField(field: String): Boolean =
+    field match
+      case "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND" => true
+      case "QUARTER" | "WEEK" | "DAYOFWEEK" | "DOW" | "DAYOFYEAR" | "DOY" => true
+      case "MICROSECOND" | "MILLISECOND" => true
+      case _ => false
 
   /** Parse CASE WHEN expr THEN result [WHEN ...] [ELSE result] END */
   private def parseCaseWhen(): Either[ParseError, SqlExpr] =

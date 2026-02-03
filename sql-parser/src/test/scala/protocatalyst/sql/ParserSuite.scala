@@ -1129,3 +1129,122 @@ class ParserSuite extends munit.FunSuite:
           case FromClause.Join(_, _, _, _) => () // ok
           case _                           => fail("Expected JOIN in CTE")
       case _ => fail("Expected SelectStatement in CTE")
+
+  // ============================================
+  // Phase 11 - Date/Time Functions
+  // ============================================
+
+  test("parses EXTRACT function"):
+    val result = SqlParser.parse("SELECT EXTRACT(YEAR FROM hire_date) FROM users")
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("EXTRACT", args, false) =>
+        assertEquals(args.size, 2)
+        args(0) match
+          case SqlExpr.StringLit("YEAR") => () // ok
+          case _ => fail(s"Expected StringLit('YEAR'), got ${args(0)}")
+      case other => fail(s"Expected EXTRACT function call, got $other")
+
+  test("parses EXTRACT with various fields"):
+    for field <- Seq("YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND", "QUARTER", "WEEK") do
+      val result = SqlParser.parse(s"SELECT EXTRACT($field FROM created_at) FROM events")
+      assert(result.isRight, s"Parse failed for $field: ${result.left.getOrElse("")}")
+
+  test("parses CURRENT_DATE function"):
+    val result = SqlParser.parse("SELECT CURRENT_DATE() FROM users")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("CURRENT_DATE", args, false) =>
+        assertEquals(args.size, 0)
+      case other => fail(s"Expected CURRENT_DATE function, got $other")
+
+  test("parses CURRENT_TIMESTAMP function"):
+    val result = SqlParser.parse("SELECT CURRENT_TIMESTAMP() FROM users")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("CURRENT_TIMESTAMP", args, false) =>
+        assertEquals(args.size, 0)
+      case other => fail(s"Expected CURRENT_TIMESTAMP function, got $other")
+
+  test("parses DATE_ADD function"):
+    val result = SqlParser.parse("SELECT DATE_ADD(hire_date, 30) FROM users")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("DATE_ADD", args, false) =>
+        assertEquals(args.size, 2)
+      case other => fail(s"Expected DATE_ADD function, got $other")
+
+  test("parses DATE_DIFF function"):
+    val result = SqlParser.parse("SELECT DATE_DIFF(end_date, start_date) FROM events")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("DATE_DIFF", args, false) =>
+        assertEquals(args.size, 2)
+      case other => fail(s"Expected DATE_DIFF function, got $other")
+
+  test("parses YEAR, MONTH, DAY functions"):
+    val result = SqlParser.parse("SELECT YEAR(date), MONTH(date), DAY(date) FROM events")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.projections.size, 3)
+    stmt.projections(0).expr match
+      case SqlExpr.FunctionCall("YEAR", _, _) => () // ok
+      case other => fail(s"Expected YEAR function, got $other")
+
+  test("parses TO_DATE function"):
+    val result = SqlParser.parse("SELECT TO_DATE(date_str, 'yyyy-MM-dd') FROM events")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("TO_DATE", args, false) =>
+        assertEquals(args.size, 2)
+      case other => fail(s"Expected TO_DATE function, got $other")
+
+  test("parses TO_TIMESTAMP function"):
+    val result = SqlParser.parse("SELECT TO_TIMESTAMP(ts_str) FROM events")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("TO_TIMESTAMP", args, false) =>
+        assertEquals(args.size, 1)
+      case other => fail(s"Expected TO_TIMESTAMP function, got $other")
+
+  test("parses DATE_TRUNC function"):
+    val result = SqlParser.parse("SELECT DATE_TRUNC('month', created_at) FROM events")
+
+    assert(result.isRight)
+    val stmt = asSelect(result.toOption.get)
+    stmt.projections.head.expr match
+      case SqlExpr.FunctionCall("DATE_TRUNC", args, false) =>
+        assertEquals(args.size, 2)
+      case other => fail(s"Expected DATE_TRUNC function, got $other")
+
+  test("parses complex date query"):
+    val result = SqlParser.parse("""
+      SELECT
+        EXTRACT(YEAR FROM hire_date) AS hire_year,
+        DATE_ADD(hire_date, 30) AS probation_end,
+        YEAR(hire_date) AS year_hired
+      FROM users
+      WHERE hire_date > TO_DATE('2020-01-01', 'yyyy-MM-dd')
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    assertEquals(stmt.projections.size, 3)
+    assertEquals(stmt.projections(0).alias, Some("hire_year"))
+    assertEquals(stmt.projections(1).alias, Some("probation_end"))
+    assertEquals(stmt.projections(2).alias, Some("year_hired"))

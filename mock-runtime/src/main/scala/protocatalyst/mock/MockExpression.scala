@@ -434,6 +434,88 @@ object MockExpression:
     case Preceding(n: Long)
     case Following(n: Long)
 
+  // === Date/Time Expressions ===
+
+  case class CurrentDate() extends MockExpression:
+    def dataType: MockDataType = DateType
+    def nullable: Boolean = false
+    def children: Seq[MockExpression] = Seq.empty
+
+  case class CurrentTimestamp() extends MockExpression:
+    def dataType: MockDataType = TimestampType
+    def nullable: Boolean = false
+    def children: Seq[MockExpression] = Seq.empty
+
+  case class DateAdd(startDate: MockExpression, days: MockExpression) extends MockExpression:
+    def dataType: MockDataType = DateType
+    def nullable: Boolean = startDate.nullable || days.nullable
+    def children: Seq[MockExpression] = Seq(startDate, days)
+
+  case class DateSub(startDate: MockExpression, days: MockExpression) extends MockExpression:
+    def dataType: MockDataType = DateType
+    def nullable: Boolean = startDate.nullable || days.nullable
+    def children: Seq[MockExpression] = Seq(startDate, days)
+
+  case class DateDiff(endDate: MockExpression, startDate: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = endDate.nullable || startDate.nullable
+    def children: Seq[MockExpression] = Seq(endDate, startDate)
+
+  enum DateTimeField:
+    case Year, Month, Day, Hour, Minute, Second
+    case Quarter, Week, DayOfWeek, DayOfYear
+    case Microsecond, Millisecond
+
+  case class Extract(field: DateTimeField, source: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = source.nullable
+    def children: Seq[MockExpression] = Seq(source)
+
+  case class DateTrunc(field: DateTimeField, timestamp: MockExpression) extends MockExpression:
+    def dataType: MockDataType = timestamp.dataType
+    def nullable: Boolean = timestamp.nullable
+    def children: Seq[MockExpression] = Seq(timestamp)
+
+  case class ToDate(str: MockExpression, format: Option[MockExpression]) extends MockExpression:
+    def dataType: MockDataType = DateType
+    def nullable: Boolean = true
+    def children: Seq[MockExpression] = str +: format.toSeq
+
+  case class ToTimestamp(str: MockExpression, format: Option[MockExpression]) extends MockExpression:
+    def dataType: MockDataType = TimestampType
+    def nullable: Boolean = true
+    def children: Seq[MockExpression] = str +: format.toSeq
+
+  case class Year(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Month(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class DayOfMonth(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Hour(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Minute(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
+  case class Second(child: MockExpression) extends MockExpression:
+    def dataType: MockDataType = IntegerType
+    def nullable: Boolean = child.nullable
+    def children: Seq[MockExpression] = Seq(child)
+
   // === Unresolved Function ===
 
   case class UnresolvedFunction(

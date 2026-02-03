@@ -806,3 +806,295 @@ class TransformSuite extends munit.FunSuite:
     )
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
+
+  // === Phase 11: Date/Time Functions ===
+
+  test("transforms CURRENT_DATE function"):
+    val stmt = asSelect(SqlParser.parse("SELECT CURRENT_DATE() FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findCurrentDate(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.CurrentDate() => true
+          case _                       => false
+        }
+      case _ => false
+
+    assert(findCurrentDate(result.toOption.get), "Expected CurrentDate in projection")
+
+  test("transforms CURRENT_TIMESTAMP function"):
+    val stmt = asSelect(SqlParser.parse("SELECT CURRENT_TIMESTAMP() FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findCurrentTimestamp(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.CurrentTimestamp() => true
+          case _                            => false
+        }
+      case _ => false
+
+    assert(findCurrentTimestamp(result.toOption.get), "Expected CurrentTimestamp in projection")
+
+  test("transforms NOW function (alias for CURRENT_TIMESTAMP)"):
+    val stmt = asSelect(SqlParser.parse("SELECT NOW() FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findCurrentTimestamp(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.CurrentTimestamp() => true
+          case _                            => false
+        }
+      case _ => false
+
+    assert(findCurrentTimestamp(result.toOption.get), "Expected CurrentTimestamp from NOW()")
+
+  test("transforms DATE_ADD function"):
+    val stmt = asSelect(SqlParser.parse("SELECT DATE_ADD(CURRENT_DATE(), 30) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findDateAdd(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.DateAdd(_, _) => true
+          case _                       => false
+        }
+      case _ => false
+
+    assert(findDateAdd(result.toOption.get), "Expected DateAdd in projection")
+
+  test("transforms DATE_SUB function"):
+    val stmt = asSelect(SqlParser.parse("SELECT DATE_SUB(CURRENT_DATE(), 30) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findDateSub(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.DateSub(_, _) => true
+          case _                       => false
+        }
+      case _ => false
+
+    assert(findDateSub(result.toOption.get), "Expected DateSub in projection")
+
+  test("transforms DATE_DIFF function"):
+    val stmt = asSelect(
+      SqlParser.parse("SELECT DATE_DIFF(CURRENT_DATE(), CURRENT_DATE()) FROM users").toOption.get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findDateDiff(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.DateDiff(_, _) => true
+          case _                        => false
+        }
+      case _ => false
+
+    assert(findDateDiff(result.toOption.get), "Expected DateDiff in projection")
+
+  test("transforms EXTRACT function"):
+    val stmt = asSelect(
+      SqlParser.parse("SELECT EXTRACT(YEAR FROM CURRENT_TIMESTAMP()) FROM users").toOption.get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findExtract(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.Extract(DateTimeField.Year, _) => true
+          case _                                        => false
+        }
+      case _ => false
+
+    assert(findExtract(result.toOption.get), "Expected Extract with Year field")
+
+  test("transforms EXTRACT with different fields"):
+    val fields = Vector("YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND")
+    for field <- fields do
+      val stmt = asSelect(
+        SqlParser.parse(s"SELECT EXTRACT($field FROM CURRENT_TIMESTAMP()) FROM users").toOption.get
+      )
+      val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+      assert(result.isRight, s"Failed for EXTRACT($field)")
+
+  test("transforms DATE_TRUNC function"):
+    val stmt = asSelect(
+      SqlParser.parse("SELECT DATE_TRUNC('MONTH', CURRENT_TIMESTAMP()) FROM users").toOption.get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findDateTrunc(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.DateTrunc(DateTimeField.Month, _) => true
+          case _                                           => false
+        }
+      case _ => false
+
+    assert(findDateTrunc(result.toOption.get), "Expected DateTrunc with Month field")
+
+  test("transforms TO_DATE function"):
+    val stmt = asSelect(SqlParser.parse("SELECT TO_DATE('2024-01-15') FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findToDate(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.ToDate(_, _) => true
+          case _                      => false
+        }
+      case _ => false
+
+    assert(findToDate(result.toOption.get), "Expected ToDate in projection")
+
+  test("transforms TO_DATE with format"):
+    val stmt = asSelect(
+      SqlParser.parse("SELECT TO_DATE('15/01/2024', 'dd/MM/yyyy') FROM users").toOption.get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findToDateWithFormat(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.ToDate(_, Some(_)) => true
+          case _                            => false
+        }
+      case _ => false
+
+    assert(findToDateWithFormat(result.toOption.get), "Expected ToDate with format")
+
+  test("transforms TO_TIMESTAMP function"):
+    val stmt = asSelect(
+      SqlParser.parse("SELECT TO_TIMESTAMP('2024-01-15 10:30:00') FROM users").toOption.get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findToTimestamp(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.ToTimestamp(_, _) => true
+          case _                           => false
+        }
+      case _ => false
+
+    assert(findToTimestamp(result.toOption.get), "Expected ToTimestamp in projection")
+
+  test("transforms YEAR function"):
+    val stmt = asSelect(SqlParser.parse("SELECT YEAR(CURRENT_DATE()) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findYear(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.Year(_) => true
+          case _                 => false
+        }
+      case _ => false
+
+    assert(findYear(result.toOption.get), "Expected Year in projection")
+
+  test("transforms MONTH function"):
+    val stmt = asSelect(SqlParser.parse("SELECT MONTH(CURRENT_DATE()) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findMonth(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.Month(_) => true
+          case _                  => false
+        }
+      case _ => false
+
+    assert(findMonth(result.toOption.get), "Expected Month in projection")
+
+  test("transforms DAY function"):
+    val stmt = asSelect(SqlParser.parse("SELECT DAY(CURRENT_DATE()) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findDay(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.DayOfMonth(_) => true
+          case _                       => false
+        }
+      case _ => false
+
+    assert(findDay(result.toOption.get), "Expected DayOfMonth in projection")
+
+  test("transforms HOUR function"):
+    val stmt = asSelect(SqlParser.parse("SELECT HOUR(CURRENT_TIMESTAMP()) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findHour(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.Hour(_) => true
+          case _                 => false
+        }
+      case _ => false
+
+    assert(findHour(result.toOption.get), "Expected Hour in projection")
+
+  test("transforms MINUTE function"):
+    val stmt = asSelect(SqlParser.parse("SELECT MINUTE(CURRENT_TIMESTAMP()) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findMinute(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.Minute(_) => true
+          case _                   => false
+        }
+      case _ => false
+
+    assert(findMinute(result.toOption.get), "Expected Minute in projection")
+
+  test("transforms SECOND function"):
+    val stmt = asSelect(SqlParser.parse("SELECT SECOND(CURRENT_TIMESTAMP()) FROM users").toOption.get)
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
+
+    def findSecond(plan: ProtoLogicalPlan): Boolean = plan match
+      case ProtoLogicalPlan.Project(exprs, _) =>
+        exprs.exists {
+          case ProtoExpr.Second(_) => true
+          case _                   => false
+        }
+      case _ => false
+
+    assert(findSecond(result.toOption.get), "Expected Second in projection")
+
+  test("transforms complex date/time query"):
+    val stmt = asSelect(
+      SqlParser
+        .parse("""
+      SELECT
+        YEAR(CURRENT_DATE()) AS current_year,
+        MONTH(CURRENT_DATE()) AS current_month,
+        DATE_ADD(CURRENT_DATE(), 30) AS next_month,
+        EXTRACT(HOUR FROM CURRENT_TIMESTAMP()) AS current_hour
+      FROM users
+    """).toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+    assert(result.isRight)
