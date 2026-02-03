@@ -122,6 +122,9 @@ object SqlVerifier:
     case FromClause.LateralView(source, spec) =>
       val outerStr = if spec.outer then " OUTER" else ""
       s"${prettyPrintFrom(source)} LATERAL VIEW$outerStr ${prettyPrintExpr(spec.generator)} ${spec.tableAlias} AS ${spec.columnAliases.mkString(", ")}"
+    case FromClause.Values(rows, alias, cols) =>
+      val colsStr = cols.map(c => s"(${c.mkString(", ")})").getOrElse("")
+      s"(VALUES ${rows.size} rows) AS $alias$colsStr"
 
   private def prettyPrintGroupBy(gb: GroupByClause): String = gb match
     case GroupByClause.Simple(exprs)      => exprs.map(prettyPrintExpr).mkString(", ")

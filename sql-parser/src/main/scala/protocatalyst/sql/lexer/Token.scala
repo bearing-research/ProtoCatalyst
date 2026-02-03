@@ -25,6 +25,8 @@ enum Token:
   case LATERAL
   // LATERAL VIEW keywords
   case VIEW
+  // VALUES keyword
+  case VALUES
 
   // Literals
   case IntegerLiteral(value: Long)
@@ -121,5 +123,6 @@ object Token:
     "UNPIVOT" -> Token.UNPIVOT,
     "FOR" -> Token.FOR,
     "LATERAL" -> Token.LATERAL,
-    "VIEW" -> Token.VIEW
+    "VIEW" -> Token.VIEW,
+    "VALUES" -> Token.VALUES
   )

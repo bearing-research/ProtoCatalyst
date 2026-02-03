@@ -1634,3 +1634,104 @@ class TransformSuite extends munit.FunSuite:
     val generate = findGenerate(result.toOption.get)
     assert(generate.isDefined, "Expected Generate in plan")
     assertEquals(generate.get.generatorOutput, Vector("key", "value"))
+
+  // === Phase 16: VALUES Clause ===
+
+  test("transforms simple VALUES clause"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, name)"
+        )
+        .toOption
+        .get
+    )
+    // For VALUES, we don't need an external schema - the types are inferred from literals
+    val dummySchema = ProtoSchema(Vector.empty)
+    val result = AstToProtoTransform.transform(stmt, dummySchema, "t")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
+      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
+      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
+      case _ => None
+
+    val values = findValues(result.toOption.get)
+    assert(values.isDefined, "Expected Values in plan")
+    assertEquals(values.get.rows.size, 3)
+
+  test("transforms VALUES with single row"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM (VALUES (42, 'hello')) AS single(num, text)"
+        )
+        .toOption
+        .get
+    )
+    val dummySchema = ProtoSchema(Vector.empty)
+    val result = AstToProtoTransform.transform(stmt, dummySchema, "single")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
+      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
+      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
+      case _ => None
+
+    val values = findValues(result.toOption.get)
+    assert(values.isDefined, "Expected Values in plan")
+    assertEquals(values.get.rows.size, 1)
+
+  test("transforms VALUES with various literal types"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM (VALUES (1, 2.5, 'text', true)) AS t(a, b, c, d)"
+        )
+        .toOption
+        .get
+    )
+    val dummySchema = ProtoSchema(Vector.empty)
+    val result = AstToProtoTransform.transform(stmt, dummySchema, "t")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
+      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
+      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
+      case _ => None
+
+    val values = findValues(result.toOption.get)
+    assert(values.isDefined, "Expected Values in plan")
+    val row = values.get.rows.head
+    assertEquals(row.size, 4)
+
+  test("transforms VALUES infers schema from column aliases"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM (VALUES (1, 'a')) AS t(id, name)"
+        )
+        .toOption
+        .get
+    )
+    val dummySchema = ProtoSchema(Vector.empty)
+    val result = AstToProtoTransform.transform(stmt, dummySchema, "t")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
+      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
+      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
+      case _ => None
+
+    val values = findValues(result.toOption.get)
+    assert(values.isDefined, "Expected Values in plan")
+    // Schema should have column names from aliases
+    assertEquals(values.get.schema.fields.map(_.name), Vector("id", "name"))

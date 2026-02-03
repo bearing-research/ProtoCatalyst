@@ -168,6 +168,9 @@ object AstToProtoTransform:
         // For LATERAL VIEW, only collect schemas from source
         // The table alias refers to the generated columns, not the source columns
         collectTableSchemas(source, defaultSchema, defaultTableName)
+      case FromClause.Values(_, alias, _) =>
+        // For VALUES, use the alias as the schema key
+        Map(alias -> defaultSchema)
 
   /** Transform the FROM clause to a plan. */
   private def transformFromClause(
@@ -230,6 +233,40 @@ object AstToProtoTransform:
           generator <- transformExpr(spec.generator, ctx)
           generatorExpr <- transformToGenerator(generator)
         yield ProtoLogicalPlan.Generate(generatorExpr, spec.columnAliases, spec.outer, sourcePlan)
+      case FromClause.Values(rows, alias, columnAliases) =>
+        // Transform each row of VALUES
+        transformValuesRows(rows, ctx).map { protoRows =>
+          // Build schema from column aliases or generate default names
+          val columnNames = columnAliases.getOrElse(
+            (1 to protoRows.headOption.map(_.size).getOrElse(0)).map(i => s"col$i").toVector
+          )
+          // Infer types from first row (simplified - would need proper type analysis)
+          val valueSchema = ProtoSchema(
+            columnNames.zipWithIndex.map { (name, idx) =>
+              val dataType = protoRows.headOption.flatMap(_.lift(idx)) match
+                case Some(ProtoExpr.Literal(LiteralValue.IntValue(_)))     => ProtoType.IntegerType
+                case Some(ProtoExpr.Literal(LiteralValue.LongValue(_)))    => ProtoType.LongType
+                case Some(ProtoExpr.Literal(LiteralValue.DoubleValue(_)))  => ProtoType.DoubleType
+                case Some(ProtoExpr.Literal(LiteralValue.StringValue(_)))  => ProtoType.StringType
+                case Some(ProtoExpr.Literal(LiteralValue.BooleanValue(_))) => ProtoType.BooleanType
+                case _                                                     => ProtoType.StringType
+              ProtoStructField(name, dataType, nullable = true)
+            }
+          )
+          val valuesPlan = ProtoLogicalPlan.Values(protoRows, valueSchema)
+          ProtoLogicalPlan.SubqueryAlias(alias, valuesPlan)
+        }
+
+  /** Transform VALUES rows to ProtoExpr vectors. */
+  private def transformValuesRows(
+      rows: Vector[Vector[SqlExpr]],
+      ctx: TransformContext
+  ): Either[TransformError, Vector[Vector[ProtoExpr]]] =
+    rows.foldLeft[Either[TransformError, Vector[Vector[ProtoExpr]]]](Right(Vector.empty)) {
+      case (Right(acc), row) =>
+        transformExprList(row, ctx).map(acc :+ _)
+      case (Left(err), _) => Left(err)
+    }
 
   /** Convert a general expression to a generator expression. */
   private def transformToGenerator(expr: ProtoExpr): Either[TransformError, ProtoExpr] =
@@ -717,6 +754,7 @@ object AstToProtoTransform:
       case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
       case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
       case FromClause.LateralView(source, spec) => spec.tableAlias
+      case FromClause.Values(_, alias, _)    => alias
 
   private def transformCaseWhenBranches(
       branches: Vector[(SqlExpr, SqlExpr)],

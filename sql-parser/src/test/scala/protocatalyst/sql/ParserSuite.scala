@@ -19,6 +19,7 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
     case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
     case FromClause.LateralView(source, spec) => spec.tableAlias
+    case FromClause.Values(_, alias, _)    => alias
 
   // Helper to extract simple GROUP BY expressions
   def extractSimpleGroupBy(gb: Option[GroupByClause]): Vector[SqlExpr] = gb match
@@ -33,6 +34,7 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Pivot(_, _, alias)     => alias
     case FromClause.Unpivot(_, _, alias)   => alias
     case FromClause.LateralView(_, spec)   => Some(spec.tableAlias)
+    case FromClause.Values(_, alias, _)    => Some(alias)
 
   test("parses simple SELECT"):
     val result = SqlParser.parse("SELECT name FROM users")
@@ -1727,3 +1729,98 @@ class ParserSuite extends munit.FunSuite:
           case SqlExpr.FunctionCall("INLINE", _, _) => () // ok
           case _ => fail(s"Expected INLINE function")
       case other => fail(s"Expected LateralView, got $other")
+
+  // === Phase 16: VALUES Clause ===
+
+  test("parses simple VALUES clause"):
+    val result = SqlParser.parse("""
+      SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, name)
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Values(rows, alias, columnAliases) =>
+        assertEquals(alias, "t")
+        assertEquals(rows.size, 3)
+        assertEquals(columnAliases, Some(Vector("id", "name")))
+      case other => fail(s"Expected Values, got $other")
+
+  test("parses VALUES clause without column aliases"):
+    val result = SqlParser.parse("""
+      SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS data
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Values(rows, alias, columnAliases) =>
+        assertEquals(alias, "data")
+        assertEquals(rows.size, 2)
+        assertEquals(columnAliases, None)
+      case other => fail(s"Expected Values, got $other")
+
+  test("parses VALUES clause with single row"):
+    val result = SqlParser.parse("""
+      SELECT * FROM (VALUES (42, 'hello')) AS single(num, text)
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Values(rows, "single", Some(cols)) =>
+        assertEquals(rows.size, 1)
+        assertEquals(cols, Vector("num", "text"))
+        rows.head match
+          case Vector(SqlExpr.IntLit(42), SqlExpr.StringLit("hello")) => () // ok
+          case _ => fail(s"Expected (42, 'hello'), got ${rows.head}")
+      case other => fail(s"Expected Values, got $other")
+
+  test("parses VALUES with various literal types"):
+    val result = SqlParser.parse("""
+      SELECT * FROM (VALUES (1, 2.5, 'text', true, null)) AS t(a, b, c, d, e)
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Values(rows, _, _) =>
+        assertEquals(rows.size, 1)
+        val row = rows.head
+        row(0) match { case SqlExpr.IntLit(1) => () case _ => fail("Expected int") }
+        row(1) match { case SqlExpr.DoubleLit(2.5) => () case _ => fail("Expected double") }
+        row(2) match { case SqlExpr.StringLit("text") => () case _ => fail("Expected string") }
+        row(3) match { case SqlExpr.BoolLit(true) => () case _ => fail("Expected bool") }
+        row(4) match { case SqlExpr.NullLit => () case _ => fail("Expected null") }
+      case other => fail(s"Expected Values, got $other")
+
+  test("parses VALUES in join"):
+    val result = SqlParser.parse("""
+      SELECT * FROM users u
+      CROSS JOIN (VALUES (1), (2), (3)) AS nums(n)
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Join(_, FromClause.Values(rows, "nums", Some(Vector("n"))), JoinType.Cross, None) =>
+        assertEquals(rows.size, 3)
+      case other => fail(s"Expected Join with Values, got $other")
+
+  test("parses VALUES with many rows"):
+    val result = SqlParser.parse("""
+      SELECT * FROM (VALUES
+        (1, 'Alice'),
+        (2, 'Bob'),
+        (3, 'Charlie'),
+        (4, 'Diana'),
+        (5, 'Eve')
+      ) AS people(id, name)
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Values(rows, "people", Some(Vector("id", "name"))) =>
+        assertEquals(rows.size, 5)
+      case other => fail(s"Expected Values, got $other")

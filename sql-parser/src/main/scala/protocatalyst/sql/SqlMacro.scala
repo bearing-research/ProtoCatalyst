@@ -97,6 +97,7 @@ object SqlMacro:
       case FromClause.Pivot(source, _, alias)     => alias.getOrElse(extractTableName(source))
       case FromClause.Unpivot(source, _, alias)   => alias.getOrElse(extractTableName(source))
       case FromClause.LateralView(source, spec)   => spec.tableAlias
+      case FromClause.Values(_, alias, _)         => alias
 
   /** Convert SqlStatement to Expr for runtime use. */
   private def sqlStmtToExpr(stmt: SqlStatement)(using Quotes): Expr[SqlStatement] =
@@ -195,6 +196,13 @@ object SqlMacro:
         val sourceExpr = fromClauseToExpr(source)
         val specExpr = lateralViewSpecToExpr(spec)
         '{ FromClause.LateralView($sourceExpr, $specExpr) }
+      case FromClause.Values(rows, alias, columnAliases) =>
+        val rowsExpr = Expr.ofSeq(rows.map(row => Expr.ofSeq(row.map(sqlExprToExpr)).asExprOf[Seq[SqlExpr]]))
+        val aliasExpr = Expr(alias)
+        val columnAliasesExpr = columnAliases match
+          case Some(cols) => '{ Some(${ Expr.ofSeq(cols.map(Expr(_))) }.toVector) }
+          case None       => '{ None }
+        '{ FromClause.Values($rowsExpr.map(_.toVector).toVector, $aliasExpr, $columnAliasesExpr) }
 
   private def lateralViewSpecToExpr(spec: LateralViewSpec)(using Quotes): Expr[LateralViewSpec] =
     val generatorExpr = sqlExprToExpr(spec.generator)
@@ -464,6 +472,8 @@ object SqlMacro:
         case FromClause.LateralView(source, spec) =>
           validateFromClause(source) ++
             validateExpr(spec.generator)
+        case FromClause.Values(rows, _, _) =>
+          rows.flatten.flatMap(validateExpr)
 
     def validateGroupByClause(gb: GroupByClause): Vector[String] =
       gb match

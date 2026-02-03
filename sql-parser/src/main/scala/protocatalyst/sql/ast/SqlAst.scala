@@ -52,6 +52,8 @@ enum FromClause:
   case Unpivot(source: FromClause, spec: UnpivotSpec, alias: Option[String])
   /** LATERAL VIEW: applies a generator function to produce multiple rows from each input row */
   case LateralView(source: FromClause, spec: LateralViewSpec)
+  /** VALUES: inline table values with alias and optional column names */
+  case Values(rows: Vector[Vector[SqlExpr]], alias: String, columnAliases: Option[Vector[String]])
 
 /** PIVOT specification. */
 case class PivotSpec(

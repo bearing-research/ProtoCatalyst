@@ -403,15 +403,36 @@ LATERAL VIEW EXPLODE(tags) t1 AS tag
 LATERAL VIEW EXPLODE(items) t2 AS item
 ```
 
-## Future Phases
+### Phase 16: VALUES Clause (Complete)
 
-### Phase 16: VALUES Clause
-
-Inline table values:
+Inline table values for creating temporary result sets:
 
 ```sql
+-- Basic VALUES with column aliases
 SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, name)
+
+-- VALUES without column aliases (defaults to col1, col2, ...)
+SELECT * FROM (VALUES (1, 'Alice'), (2, 'Bob')) AS data
+
+-- VALUES in JOIN
+SELECT u.*, nums.n
+FROM users u
+CROSS JOIN (VALUES (1), (2), (3)) AS nums(n)
+
+-- VALUES with various literal types
+SELECT * FROM (VALUES (1, 2.5, 'text', true, null)) AS t(a, b, c, d, e)
+
+-- VALUES with many rows
+SELECT * FROM (VALUES
+  (1, 'Alice'),
+  (2, 'Bob'),
+  (3, 'Charlie'),
+  (4, 'Diana'),
+  (5, 'Eve')
+) AS people(id, name)
 ```
+
+## Future Phases
 
 ### Phase 17: Query Hints
 
@@ -478,10 +499,10 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (315 total tests in sql-parser module):
+Current test statistics (325 total tests in sql-parser module):
 - Lexer tests: 18 tests
-- Parser tests: 138 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW)
-- Transform tests: 95 tests
+- Parser tests: 144 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW, VALUES)
+- Transform tests: 99 tests
 - **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
 

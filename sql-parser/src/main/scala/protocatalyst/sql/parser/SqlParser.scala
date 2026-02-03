@@ -213,7 +213,7 @@ class SqlParser(tokens: Vector[Token]):
       parseJoinClauses(firstItem)
     }
 
-  /** Parse a single FROM item: table, subquery, lateral, or pivot/unpivot. */
+  /** Parse a single FROM item: table, subquery, lateral, values, or pivot/unpivot. */
   private def parseFromItem(): Either[ParseError, FromClause] =
     val baseItem =
       if check(Token.LATERAL) then
@@ -230,11 +230,55 @@ class SqlParser(tokens: Vector[Token]):
               }
             }
           }
-        else Left(ParseError.SyntaxError("Expected SELECT in subquery", currentPosition))
+        else if check(Token.VALUES) then
+          // VALUES clause in FROM
+          parseValuesClause()
+        else Left(ParseError.SyntaxError("Expected SELECT or VALUES in subquery", currentPosition))
       else parseTableRef().map(FromClause.Table(_))
 
     // Check for PIVOT, UNPIVOT, or LATERAL VIEW after the base item
     baseItem.flatMap(parseTableModifiers)
+
+  /** Parse VALUES clause: VALUES (row1), (row2), ... ) AS alias(col1, col2) */
+  private def parseValuesClause(): Either[ParseError, FromClause] =
+    advance() // consume VALUES
+    for
+      rows <- parseValuesRows()
+      _ <- expect(Token.RParen, ")")
+      alias <- parseRequiredAlias()
+      columnAliases <- parseOptionalColumnAliases()
+    yield FromClause.Values(rows, alias, columnAliases)
+
+  /** Parse VALUES rows: (expr, ...), (expr, ...), ... */
+  private def parseValuesRows(): Either[ParseError, Vector[Vector[SqlExpr]]] =
+    parseValuesRow().flatMap { first =>
+      parseRestOfValuesRows(Vector(first))
+    }
+
+  private def parseRestOfValuesRows(acc: Vector[Vector[SqlExpr]]): Either[ParseError, Vector[Vector[SqlExpr]]] =
+    if check(Token.Comma) then
+      advance()
+      parseValuesRow().flatMap { row =>
+        parseRestOfValuesRows(acc :+ row)
+      }
+    else Right(acc)
+
+  /** Parse a single VALUES row: (expr, expr, ...) */
+  private def parseValuesRow(): Either[ParseError, Vector[SqlExpr]] =
+    for
+      _ <- expect(Token.LParen, "(")
+      exprs <- parseExprList()
+      _ <- expect(Token.RParen, ")")
+    yield exprs
+
+  /** Parse optional column aliases after VALUES alias: (col1, col2, ...) */
+  private def parseOptionalColumnAliases(): Either[ParseError, Option[Vector[String]]] =
+    if check(Token.LParen) then
+      advance()
+      parseIdentifierList().flatMap { cols =>
+        expect(Token.RParen, ")").map(_ => Some(cols))
+      }
+    else Right(None)
 
   private def parseRequiredAlias(): Either[ParseError, String] =
     if check(Token.AS) then advance()
