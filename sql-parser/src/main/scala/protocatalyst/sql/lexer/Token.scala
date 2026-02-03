@@ -21,6 +21,8 @@ enum Token:
   case OVER, PARTITION, ROWS, RANGE, UNBOUNDED, PRECEDING, FOLLOWING, CURRENT, ROW
   // PIVOT/UNPIVOT keywords
   case PIVOT, UNPIVOT, FOR
+  // LATERAL keyword
+  case LATERAL
 
   // Literals
   case IntegerLiteral(value: Long)
@@ -115,5 +117,6 @@ object Token:
     "INTERVAL" -> Token.INTERVAL,
     "PIVOT" -> Token.PIVOT,
     "UNPIVOT" -> Token.UNPIVOT,
-    "FOR" -> Token.FOR
+    "FOR" -> Token.FOR,
+    "LATERAL" -> Token.LATERAL
   )

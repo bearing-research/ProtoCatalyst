@@ -215,6 +215,13 @@ object Canonicalizer:
           transformPlan(child, exprTransform)
         )
 
+      case LateralJoin(left, lateral, condition) =>
+        LateralJoin(
+          transformPlan(left, exprTransform),
+          transformPlan(lateral, exprTransform),
+          condition.map(exprTransform)
+        )
+
       case r: RelationRef => r
 
   private def transformExpr(

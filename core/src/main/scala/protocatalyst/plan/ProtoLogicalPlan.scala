@@ -117,6 +117,16 @@ enum ProtoLogicalPlan extends Serializable:
       child: ProtoLogicalPlan
   )
 
+  /** LATERAL subquery: correlated subquery that can reference columns from left-side tables */
+  case LateralJoin(
+      /** The left side of the join */
+      left: ProtoLogicalPlan,
+      /** The correlated subquery (right side) */
+      lateral: ProtoLogicalPlan,
+      /** Optional join condition (for LATERAL with ON clause) */
+      condition: Option[ProtoExpr]
+  )
+
 enum JoinType extends Serializable:
   case Inner, LeftOuter, RightOuter, FullOuter, LeftSemi, LeftAnti, Cross
 

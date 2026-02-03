@@ -93,6 +93,7 @@ object SqlMacro:
       case FromClause.Table(ref)             => ref.name
       case FromClause.Join(left, _, _, _)    => extractTableName(left)
       case FromClause.Subquery(_, alias)     => alias
+      case FromClause.Lateral(_, alias)      => alias
       case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
       case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
 
@@ -173,6 +174,8 @@ object SqlMacro:
         '{ FromClause.Join($leftExpr, $rightExpr, $joinTypeExpr, $condExpr) }
       case FromClause.Subquery(stmt, alias) =>
         '{ FromClause.Subquery(${ stmtToExpr(stmt) }, ${ Expr(alias) }) }
+      case FromClause.Lateral(stmt, alias) =>
+        '{ FromClause.Lateral(${ stmtToExpr(stmt) }, ${ Expr(alias) }) }
       case FromClause.Pivot(source, spec, alias) =>
         val sourceExpr = fromClauseToExpr(source)
         val specExpr = pivotSpecToExpr(spec)
@@ -439,6 +442,7 @@ object SqlMacro:
           validateFromClause(left) ++ validateFromClause(right) ++
             condition.map(validateExpr).getOrElse(Vector.empty)
         case FromClause.Subquery(stmt, _) => validateSubquery(stmt)
+        case FromClause.Lateral(stmt, _) => validateSubquery(stmt)
         case FromClause.Pivot(source, spec, _) =>
           validateFromClause(source) ++
             spec.aggregates.flatMap(a => validateExpr(a.aggregate)) ++

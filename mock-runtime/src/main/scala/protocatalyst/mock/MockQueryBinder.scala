@@ -133,6 +133,12 @@ object MockQueryBinder:
       case Unpivot(_, _, _, _, child) =>
         collectSchemas(child, catalog)
 
+      case LateralJoin(left, lateral, _) =>
+        for
+          l <- collectSchemas(left, catalog)
+          r <- collectSchemas(lateral, catalog)
+        yield l ++ r
+
   private def bindPlan(plan: ProtoLogicalPlan, ctx: BindingContext): BindingResult =
     import ProtoLogicalPlan.*
     plan match
@@ -254,6 +260,14 @@ object MockQueryBinder:
             val boundCols = columns.map((e, alias) => (bindExpr(e, ctx), alias))
             BoundPlan(Unpivot(valueCol, varCol, boundCols, includeNulls, boundChild))
           case err => err
+
+      case LateralJoin(left, lateral, condition) =>
+        (bindPlan(left, ctx), bindPlan(lateral, ctx)) match
+          case (BoundPlan(boundLeft), BoundPlan(boundLateral)) =>
+            val boundCond = condition.map(bindExpr(_, ctx))
+            BoundPlan(LateralJoin(boundLeft, boundLateral, boundCond))
+          case (err: BindingError, _) => err
+          case (_, err: BindingError) => err
 
   private def bindExpr(expr: ProtoExpr, ctx: BindingContext): ProtoExpr =
     import ProtoExpr.*

@@ -114,6 +114,7 @@ object SqlVerifier:
     case FromClause.Join(left, right, joinType, cond) =>
       s"${prettyPrintFrom(left)} $joinType JOIN ${prettyPrintFrom(right)}${cond.map(c => s" ON ${prettyPrintExpr(c)}").getOrElse("")}"
     case FromClause.Subquery(_, alias) => s"(subquery) AS $alias"
+    case FromClause.Lateral(_, alias) => s"LATERAL (subquery) AS $alias"
     case FromClause.Pivot(source, _, alias) =>
       s"${prettyPrintFrom(source)} PIVOT (...)${alias.map(a => s" AS $a").getOrElse("")}"
     case FromClause.Unpivot(source, _, alias) =>
@@ -213,6 +214,10 @@ object SqlVerifier:
 
       case ProtoLogicalPlan.Unpivot(valueCol, varCol, columns, includeNulls, child) =>
         s"${pad}Unpivot(valueCol=$valueCol, varCol=$varCol, columns=[${columns.size}], includeNulls=$includeNulls)\n${prettyPrintPlan(child, indent + 1)}"
+
+      case ProtoLogicalPlan.LateralJoin(left, lateral, cond) =>
+        val condStr = cond.map(c => s", cond=${prettyPrintProtoExpr(c)}").getOrElse("")
+        s"${pad}LateralJoin$condStr\n${prettyPrintPlan(left, indent + 1)}${prettyPrintPlan(lateral, indent + 1)}"
 
   private def prettyPrintProtoExpr(expr: ProtoExpr): String = expr match
     case ProtoExpr.Literal(value)              => value.toString

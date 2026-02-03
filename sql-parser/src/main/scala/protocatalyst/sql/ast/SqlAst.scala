@@ -42,11 +42,12 @@ case class Projection(expr: SqlExpr, alias: Option[String])
 /** A table reference with optional alias. */
 case class TableRef(name: String, alias: Option[String])
 
-/** The FROM clause - can be a simple table, a join, a subquery, or pivot/unpivot. */
+/** The FROM clause - can be a simple table, a join, a subquery, lateral, or pivot/unpivot. */
 enum FromClause:
   case Table(ref: TableRef)
   case Join(left: FromClause, right: FromClause, joinType: JoinType, condition: Option[SqlExpr])
   case Subquery(stmt: SqlStatement.SelectStatement, alias: String)
+  case Lateral(stmt: SqlStatement.SelectStatement, alias: String)
   case Pivot(source: FromClause, spec: PivotSpec, alias: Option[String])
   case Unpivot(source: FromClause, spec: UnpivotSpec, alias: Option[String])
 

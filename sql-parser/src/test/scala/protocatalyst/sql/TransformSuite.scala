@@ -1417,3 +1417,95 @@ class TransformSuite extends munit.FunSuite:
     val unpivot = findUnpivot(result.toOption.get)
     assert(unpivot.isDefined, "Expected Unpivot in plan")
     assertEquals(unpivot.get.columns.size, 2)
+
+  // === Phase 14: LATERAL Subquery ===
+
+  test("transforms simple LATERAL subquery"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users CROSS JOIN LATERAL (SELECT name FROM users LIMIT 5) AS sub"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findJoin(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Join] = plan match
+      case j @ ProtoLogicalPlan.Join(_, _, _, _) => Some(j)
+      case ProtoLogicalPlan.Project(_, child)    => findJoin(child)
+      case ProtoLogicalPlan.Filter(_, child)     => findJoin(child)
+      case _                                     => None
+
+    val join = findJoin(result.toOption.get)
+    assert(join.isDefined, "Expected Join in plan")
+    assertEquals(join.get.joinType, protocatalyst.plan.JoinType.Cross)
+
+  test("transforms LATERAL with LEFT JOIN"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users LEFT JOIN LATERAL (SELECT name FROM users WHERE age > 18) AS sub ON true"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findJoin(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Join] = plan match
+      case j @ ProtoLogicalPlan.Join(_, _, _, _) => Some(j)
+      case ProtoLogicalPlan.Project(_, child)    => findJoin(child)
+      case ProtoLogicalPlan.Filter(_, child)     => findJoin(child)
+      case _                                     => None
+
+    val join = findJoin(result.toOption.get)
+    assert(join.isDefined, "Expected Join in plan")
+    assertEquals(join.get.joinType, protocatalyst.plan.JoinType.LeftOuter)
+
+  test("transforms LATERAL with comma syntax"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users, LATERAL (SELECT name FROM users) AS sub"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def findJoin(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Join] = plan match
+      case j @ ProtoLogicalPlan.Join(_, _, _, _) => Some(j)
+      case ProtoLogicalPlan.Project(_, child)    => findJoin(child)
+      case ProtoLogicalPlan.Filter(_, child)     => findJoin(child)
+      case _                                     => None
+
+    val join = findJoin(result.toOption.get)
+    assert(join.isDefined, "Expected Join in plan")
+    assertEquals(join.get.joinType, protocatalyst.plan.JoinType.Cross)
+
+  test("transforms nested LATERAL subqueries"):
+    val stmt = asSelect(
+      SqlParser
+        .parse(
+          "SELECT * FROM users, LATERAL (SELECT name FROM users) AS a, LATERAL (SELECT age FROM users) AS b"
+        )
+        .toOption
+        .get
+    )
+    val result = AstToProtoTransform.transform(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    def countJoins(plan: ProtoLogicalPlan): Int = plan match
+      case ProtoLogicalPlan.Join(left, _, _, _) => 1 + countJoins(left)
+      case ProtoLogicalPlan.Project(_, child)   => countJoins(child)
+      case ProtoLogicalPlan.Filter(_, child)    => countJoins(child)
+      case _                                    => 0
+
+    assertEquals(countJoins(result.toOption.get), 2)

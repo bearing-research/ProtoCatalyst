@@ -64,6 +64,8 @@ class ParserComparisonSuite extends FunSuite:
       extractTablesFromClause(left) ++ extractTablesFromClause(right)
     case FromClause.Subquery(stmt, _) =>
       extractTablesOurs(stmt)
+    case FromClause.Lateral(stmt, _) =>
+      extractTablesOurs(stmt)
     case FromClause.Pivot(source, _, _) =>
       extractTablesFromClause(source)
     case FromClause.Unpivot(source, _, _) =>

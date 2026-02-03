@@ -161,6 +161,9 @@ object AstToProtoTransform:
         // For UNPIVOT, collect schemas from the source and optionally add alias
         val sourceSchemas = collectTableSchemas(source, defaultSchema, defaultTableName)
         alias.map(a => sourceSchemas + (a -> defaultSchema)).getOrElse(sourceSchemas)
+      case FromClause.Lateral(_, alias) =>
+        // For LATERAL subqueries, use the alias as the schema key
+        Map(alias -> defaultSchema)
 
   /** Transform the FROM clause to a plan. */
   private def transformFromClause(
@@ -210,6 +213,13 @@ object AstToProtoTransform:
             sourcePlan
           )
         yield alias.map(a => ProtoLogicalPlan.SubqueryAlias(a, unpivotPlan)).getOrElse(unpivotPlan)
+      case FromClause.Lateral(stmt, alias) =>
+        // Transform the lateral subquery and wrap in SubqueryAlias
+        // Note: LATERAL alone creates a subquery alias; the actual LateralJoin is formed
+        // when LATERAL appears as part of a join (e.g., FROM t1, LATERAL (...) t2)
+        transformSubquery(stmt, ctx).map { subPlan =>
+          ProtoLogicalPlan.SubqueryAlias(alias, subPlan)
+        }
 
   /** Convert SQL JoinType to ProtoLogicalPlan JoinType. */
   private def toProtoJoinType(jt: protocatalyst.sql.ast.JoinType): protocatalyst.plan.JoinType =
@@ -676,6 +686,7 @@ object AstToProtoTransform:
       case FromClause.Table(ref)             => ref.alias.getOrElse(ref.name)
       case FromClause.Join(left, _, _, _)    => extractTableName(left)
       case FromClause.Subquery(_, alias)     => alias
+      case FromClause.Lateral(_, alias)      => alias
       case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
       case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
 

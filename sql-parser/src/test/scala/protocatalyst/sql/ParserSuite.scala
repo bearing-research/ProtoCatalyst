@@ -15,6 +15,7 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Table(ref)             => ref.name
     case FromClause.Join(left, _, _, _)    => extractTableName(left)
     case FromClause.Subquery(_, alias)     => alias
+    case FromClause.Lateral(_, alias)      => alias
     case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
     case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
 
@@ -27,6 +28,7 @@ class ParserSuite extends munit.FunSuite:
     case FromClause.Table(ref)             => ref.alias
     case FromClause.Join(left, _, _, _)    => extractTableAlias(left)
     case FromClause.Subquery(_, alias)     => Some(alias)
+    case FromClause.Lateral(_, alias)      => Some(alias)
     case FromClause.Pivot(_, _, alias)     => alias
     case FromClause.Unpivot(_, _, alias)   => alias
 
@@ -1526,3 +1528,86 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.projections(0).alias, Some("hire_year"))
     assertEquals(stmt.projections(1).alias, Some("probation_end"))
     assertEquals(stmt.projections(2).alias, Some("year_hired"))
+
+  // === Phase 14: LATERAL Subquery Tests ===
+
+  test("parses simple LATERAL subquery"):
+    val result = SqlParser.parse("""
+      SELECT u.name, recent.*
+      FROM users u, LATERAL (
+        SELECT * FROM orders WHERE user_id = u.id LIMIT 5
+      ) recent
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Join(FromClause.Table(TableRef("users", Some("u"))), FromClause.Lateral(subq, "recent"), JoinType.Cross, None) =>
+        // Verify the lateral subquery has the right structure
+        assertEquals(subq.limit, Some(5L))
+      case other => fail(s"Expected Cross Join with Lateral, got $other")
+
+  test("parses LATERAL with CROSS JOIN"):
+    val result = SqlParser.parse("""
+      SELECT *
+      FROM users u
+      CROSS JOIN LATERAL (
+        SELECT order_id FROM orders WHERE user_id = u.id
+      ) AS latest_orders
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Join(_, FromClause.Lateral(_, "latest_orders"), JoinType.Cross, None) => () // ok
+      case other => fail(s"Expected Cross Join with Lateral, got $other")
+
+  test("parses LATERAL with LEFT JOIN"):
+    val result = SqlParser.parse("""
+      SELECT *
+      FROM users u
+      LEFT JOIN LATERAL (
+        SELECT * FROM orders WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
+      ) last_order ON true
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Join(_, FromClause.Lateral(_, "last_order"), JoinType.LeftOuter, Some(_)) => () // ok
+      case other => fail(s"Expected Left Join with Lateral, got $other")
+
+  test("parses LATERAL with aggregate in subquery"):
+    val result = SqlParser.parse("""
+      SELECT u.name, stats.total
+      FROM users u, LATERAL (
+        SELECT COUNT(*) AS total FROM orders WHERE user_id = u.id
+      ) stats
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    stmt.from match
+      case FromClause.Join(_, FromClause.Lateral(subq, "stats"), _, _) =>
+        assertEquals(subq.projections.size, 1)
+        assertEquals(subq.projections.head.alias, Some("total"))
+      case other => fail(s"Expected Join with Lateral, got $other")
+
+  test("parses nested LATERAL subqueries"):
+    val result = SqlParser.parse("""
+      SELECT *
+      FROM users u, LATERAL (
+        SELECT * FROM orders WHERE user_id = u.id
+      ) o, LATERAL (
+        SELECT * FROM items WHERE order_id = o.id
+      ) i
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asSelect(result.toOption.get)
+    // Should have nested joins with lateral subqueries
+    def countLateral(from: FromClause): Int = from match
+      case FromClause.Lateral(_, _) => 1
+      case FromClause.Join(left, right, _, _) => countLateral(left) + countLateral(right)
+      case _ => 0
+    assertEquals(countLateral(stmt.from), 2)

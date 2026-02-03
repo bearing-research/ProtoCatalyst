@@ -118,6 +118,9 @@ object PlanConverter:
       case Unpivot(_, _, _, _, _) =>
         throw UnsupportedOperationException("UNPIVOT is not yet supported in mock runtime")
 
+      case LateralJoin(_, _, _) =>
+        throw UnsupportedOperationException("LATERAL JOIN is not yet supported in mock runtime")
+
   private def convertSortOrder(so: SortOrder): MockExpression.SortOrder =
     import MockExpression.{SortDirection as MSD, NullOrdering as MNO}
     MockExpression.SortOrder(

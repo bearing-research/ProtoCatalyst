@@ -213,10 +213,12 @@ class SqlParser(tokens: Vector[Token]):
       parseJoinClauses(firstItem)
     }
 
-  /** Parse a single FROM item: table, subquery, or pivot/unpivot. */
+  /** Parse a single FROM item: table, subquery, lateral, or pivot/unpivot. */
   private def parseFromItem(): Either[ParseError, FromClause] =
     val baseItem =
-      if check(Token.LParen) then
+      if check(Token.LATERAL) then
+        parseLateralSubquery()
+      else if check(Token.LParen) then
         advance()
         if check(Token.SELECT) then
           // Subquery in FROM clause
@@ -249,6 +251,16 @@ class SqlParser(tokens: Vector[Token]):
         Right(name)
       case _ =>
         Left(ParseError.SyntaxError("Subquery in FROM clause requires an alias", currentPosition))
+
+  /** Parse LATERAL (SELECT ...) alias */
+  private def parseLateralSubquery(): Either[ParseError, FromClause] =
+    advance() // consume LATERAL
+    for
+      _ <- expect(Token.LParen, "(")
+      stmt <- parseSelectStatement()
+      _ <- expect(Token.RParen, ")")
+      alias <- parseRequiredAlias()
+    yield FromClause.Lateral(stmt, alias)
 
   private def parseTableRef(): Either[ParseError, TableRef] =
     current match
@@ -316,6 +328,9 @@ class SqlParser(tokens: Vector[Token]):
     else if check(Token.JOIN) then
       advance()
       Some(JoinType.Inner) // Plain JOIN is INNER JOIN
+    else if check(Token.Comma) then
+      advance()
+      Some(JoinType.Cross) // Comma is implicit CROSS JOIN
     else None
 
   private def parseJoinCondition(joinType: JoinType): Either[ParseError, Option[SqlExpr]] =
