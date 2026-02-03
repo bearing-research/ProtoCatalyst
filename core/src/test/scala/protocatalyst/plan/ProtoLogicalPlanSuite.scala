@@ -369,12 +369,14 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     )
     val plan = ProtoLogicalPlan.With(
       Vector(("cte1", cteRelation)),
+      false,
       baseRelation
     )
     plan match
-      case ProtoLogicalPlan.With(ctes, child) =>
+      case ProtoLogicalPlan.With(ctes, recursive, child) =>
         assertEquals(ctes.size, 1)
         assertEquals(ctes.head._1, "cte1")
+        assertEquals(recursive, false)
         assertEquals(child, baseRelation)
       case _ => fail(s"Expected With, got $plan")
 
@@ -383,10 +385,11 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     val cte2 = ProtoLogicalPlan.Project(Vector(ProtoExpr.lit(2)), baseRelation)
     val plan = ProtoLogicalPlan.With(
       Vector(("a", cte1), ("b", cte2)),
+      false,
       baseRelation
     )
     plan match
-      case ProtoLogicalPlan.With(ctes, _) =>
+      case ProtoLogicalPlan.With(ctes, _, _) =>
         assertEquals(ctes.size, 2)
         assertEquals(ctes(0)._1, "a")
         assertEquals(ctes(1)._1, "b")

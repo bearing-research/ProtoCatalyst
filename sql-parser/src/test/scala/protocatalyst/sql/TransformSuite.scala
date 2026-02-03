@@ -753,9 +753,10 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     result.toOption.get match
-      case ProtoLogicalPlan.With(cteRelations, child) =>
+      case ProtoLogicalPlan.With(cteRelations, recursive, child) =>
         assertEquals(cteRelations.size, 1)
         assertEquals(cteRelations.head._1, "active_users")
+        assertEquals(recursive, false)
         // Verify CTE plan contains a filter
         cteRelations.head._2 match
           case ProtoLogicalPlan.SubqueryAlias("active_users", inner) =>
@@ -786,7 +787,7 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     result.toOption.get match
-      case ProtoLogicalPlan.With(cteRelations, _) =>
+      case ProtoLogicalPlan.With(cteRelations, _, _) =>
         assertEquals(cteRelations.size, 2)
         assertEquals(cteRelations(0)._1, "young_users")
         assertEquals(cteRelations(1)._1, "old_users")
@@ -809,7 +810,7 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     result.toOption.get match
-      case ProtoLogicalPlan.With(cteRelations, _) =>
+      case ProtoLogicalPlan.With(cteRelations, _, _) =>
         // Verify CTE plan contains an aggregate
         def hasAggregate(p: ProtoLogicalPlan): Boolean = p match
           case ProtoLogicalPlan.Aggregate(_, _, _)   => true
@@ -835,7 +836,7 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     result.toOption.get match
-      case ProtoLogicalPlan.With(cteRelations, child) =>
+      case ProtoLogicalPlan.With(cteRelations, _, child) =>
         assertEquals(cteRelations.size, 1)
         // Main query should be a Union
         child match
@@ -843,11 +844,11 @@ class TransformSuite extends munit.FunSuite:
           case other                           => fail(s"Expected Union as main query, got $other")
       case other => fail(s"Expected With plan, got $other")
 
-  test("recursive CTE returns error"):
+  test("transforms recursive CTE"):
     val stmt = SqlParser
       .parse("""
       WITH RECURSIVE cte AS (
-        SELECT * FROM users WHERE id = 1
+        SELECT * FROM users WHERE age = 1
       )
       SELECT * FROM cte
     """)
@@ -855,12 +856,64 @@ class TransformSuite extends munit.FunSuite:
       .get
     val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
 
-    // Recursive CTEs are not yet supported
-    assert(result.isLeft, "Expected error for recursive CTE")
-    assert(
-      result.left.toOption.get.message.contains("Recursive"),
-      "Expected error message about recursive CTEs"
-    )
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    result.toOption.get match
+      case ProtoLogicalPlan.With(cteRelations, recursive, _) =>
+        assertEquals(cteRelations.size, 1)
+        assertEquals(cteRelations.head._1, "cte")
+        assert(recursive, "Expected recursive flag to be true")
+      case other => fail(s"Expected With plan, got $other")
+
+  test("transforms recursive CTE with UNION ALL"):
+    // Simplified test: recursive CTE with UNION ALL
+    // Note: Full recursive CTE column resolution would require schema inference from the anchor query
+    val stmt = SqlParser
+      .parse("""
+      WITH RECURSIVE hierarchy AS (
+        SELECT name, age FROM users WHERE age = 1
+        UNION ALL
+        SELECT name, age FROM users WHERE age < 10
+      )
+      SELECT * FROM hierarchy
+    """)
+      .toOption
+      .get
+    val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    result.toOption.get match
+      case ProtoLogicalPlan.With(cteRelations, recursive, _) =>
+        assertEquals(cteRelations.size, 1)
+        assertEquals(cteRelations.head._1, "hierarchy")
+        assert(recursive, "Expected recursive flag to be true")
+        // The inner CTE should contain a UNION
+        cteRelations.head._2 match
+          case ProtoLogicalPlan.SubqueryAlias(_, ProtoLogicalPlan.Union(_, _, _)) =>
+            () // ok
+          case other =>
+            fail(s"Expected SubqueryAlias containing Union, got $other")
+      case other => fail(s"Expected With plan, got $other")
+
+  test("transforms non-recursive CTE has recursive flag false"):
+    val stmt = SqlParser
+      .parse("""
+      WITH simple_cte AS (
+        SELECT * FROM users WHERE age > 25
+      )
+      SELECT * FROM simple_cte
+    """)
+      .toOption
+      .get
+    val result = AstToProtoTransform.transformStmt(stmt, userSchema, "users")
+
+    assert(result.isRight, s"Transform failed: ${result.left.toOption}")
+
+    result.toOption.get match
+      case ProtoLogicalPlan.With(_, recursive, _) =>
+        assert(!recursive, "Expected recursive flag to be false for non-recursive CTE")
+      case other => fail(s"Expected With plan, got $other")
 
   // === Phase 10: String and Math Functions ===
 

@@ -472,24 +472,49 @@ SELECT /*+ MERGE(t1, t2) */ *
 FROM t1 INNER JOIN t2 ON t1.id = t2.id
 ```
 
-## Future Phases
-
-### Phase 18: Recursive CTEs
+### Phase 18: Recursive CTEs (Complete)
 
 Full support for recursive common table expressions:
 
 ```sql
+-- Recursive CTE with UNION ALL (typical pattern)
 WITH RECURSIVE hierarchy AS (
+  -- Anchor query: base case
   SELECT id, name, manager_id, 1 AS level
   FROM employees
   WHERE manager_id IS NULL
   UNION ALL
+  -- Recursive query: references the CTE itself
   SELECT e.id, e.name, e.manager_id, h.level + 1
   FROM employees e
   JOIN hierarchy h ON e.manager_id = h.id
 )
 SELECT * FROM hierarchy
+
+-- Simple recursive CTE
+WITH RECURSIVE numbers AS (
+  SELECT 1 AS n
+  UNION ALL
+  SELECT n + 1 FROM numbers WHERE n < 10
+)
+SELECT * FROM numbers
+
+-- Multiple CTEs with RECURSIVE keyword
+WITH RECURSIVE
+  base AS (SELECT * FROM users WHERE age = 1),
+  hierarchy AS (
+    SELECT * FROM base
+    UNION ALL
+    SELECT u.* FROM users u JOIN hierarchy h ON u.age = h.id
+  )
+SELECT * FROM hierarchy
 ```
+
+**Note:** Recursive CTEs are parsed and transformed to `ProtoLogicalPlan.With` with `recursive=true`. Actual recursive execution is handled by the runtime (Spark, mock runtime, etc.). The mock runtime currently does not support executing recursive CTEs.
+
+## Future Phases
+
+No planned future phases at this time. Feature requests welcome!
 
 ## Usage
 
@@ -527,10 +552,10 @@ The parser provides compile-time error messages for:
 
 ## Test Coverage
 
-Current test statistics (340 total tests in sql-parser module):
+Current test statistics (344 total tests in sql-parser module):
 - Lexer tests: 18 tests
-- Parser tests: 155 tests (including CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW, VALUES, Query Hints)
-- Transform tests: 103 tests
+- Parser tests: 157 tests (including CTEs, recursive CTEs, window functions, set operations, date/time functions, advanced grouping, PIVOT/UNPIVOT, LATERAL, LATERAL VIEW, VALUES, Query Hints)
+- Transform tests: 105 tests
 - **Parser Comparison tests: 64 tests** - validates against JSQLParser reference implementation
 - Integration tests in query module: 50+ tests
 

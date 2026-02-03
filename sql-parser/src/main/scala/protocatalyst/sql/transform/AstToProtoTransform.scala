@@ -45,35 +45,30 @@ object AstToProtoTransform:
       tableName: String
   ): Either[TransformError, ProtoLogicalPlan] =
     // Transform each CTE definition into a plan
-    // Note: For recursive CTEs, we would need special handling (not implemented yet)
-    if recursive then
-      Left(TransformError.UnsupportedFeature("Recursive CTEs are not yet supported"))
-    else
-      // Transform each CTE
-      val cteResults = ctes
-        .foldLeft[Either[TransformError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
-          case (Right(acc), CteDefinition(cteName, columnAliases, cteQuery)) =>
-            // Transform the CTE query
-            transformStmt(cteQuery, schema, tableName).map { ctePlan =>
-              // Wrap with SubqueryAlias if needed and apply column aliases
-              val aliasedPlan = columnAliases match
-                case Some(_) =>
-                  // Create a Project with renamed columns if column aliases are specified
-                  // For now, just use SubqueryAlias (proper column renaming would need type analysis)
-                  ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
-                case None =>
-                  ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
-              acc :+ (cteName, aliasedPlan)
-            }
-          case (Left(err), _) => Left(err)
-        }
-
-      // Transform the main query and wrap with With
-      cteResults.flatMap { cteRelations =>
-        transformStmt(query, schema, tableName).map { mainPlan =>
-          ProtoLogicalPlan.With(cteRelations, mainPlan)
-        }
+    val cteResults = ctes
+      .foldLeft[Either[TransformError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
+        case (Right(acc), CteDefinition(cteName, columnAliases, cteQuery)) =>
+          // Transform the CTE query
+          transformStmt(cteQuery, schema, tableName).map { ctePlan =>
+            // Wrap with SubqueryAlias if needed and apply column aliases
+            val aliasedPlan = columnAliases match
+              case Some(_) =>
+                // Create a Project with renamed columns if column aliases are specified
+                // For now, just use SubqueryAlias (proper column renaming would need type analysis)
+                ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
+              case None =>
+                ProtoLogicalPlan.SubqueryAlias(cteName, ctePlan)
+            acc :+ (cteName, aliasedPlan)
+          }
+        case (Left(err), _) => Left(err)
       }
+
+    // Transform the main query and wrap with With
+    cteResults.flatMap { cteRelations =>
+      transformStmt(query, schema, tableName).map { mainPlan =>
+        ProtoLogicalPlan.With(cteRelations, recursive, mainPlan)
+      }
+    }
 
   /** Transform a SELECT statement to a ProtoLogicalPlan. */
   def transform(

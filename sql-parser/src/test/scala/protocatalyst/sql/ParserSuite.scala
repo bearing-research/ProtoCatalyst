@@ -1414,6 +1414,47 @@ class ParserSuite extends munit.FunSuite:
           case _                           => fail("Expected JOIN in CTE")
       case _ => fail("Expected SelectStatement in CTE")
 
+  test("parses RECURSIVE CTE with UNION ALL"):
+    val result = SqlParser.parse("""
+      WITH RECURSIVE hierarchy AS (
+        SELECT id, name, 1 AS level FROM users WHERE age = 1
+        UNION ALL
+        SELECT u.id, u.name, h.level + 1
+        FROM users u
+        JOIN hierarchy h ON u.age = h.id
+      )
+      SELECT * FROM hierarchy
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asWithStmt(result.toOption.get)
+    assertEquals(stmt.recursive, true)
+    assertEquals(stmt.ctes.size, 1)
+    assertEquals(stmt.ctes.head.name, "hierarchy")
+    // Inner query should be a CompoundStatement with UNION ALL
+    stmt.ctes.head.query match
+      case SqlStatement.CompoundStatement(_, SetOperation.Union(true), _) => () // ok
+      case _ => fail("Expected CompoundStatement with UNION ALL in recursive CTE")
+
+  test("parses RECURSIVE CTE with multiple CTEs"):
+    val result = SqlParser.parse("""
+      WITH RECURSIVE
+        base AS (SELECT * FROM users WHERE age = 1),
+        hierarchy AS (
+          SELECT * FROM base
+          UNION ALL
+          SELECT u.* FROM users u JOIN hierarchy h ON u.age = h.id
+        )
+      SELECT * FROM hierarchy
+    """)
+
+    assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
+    val stmt = asWithStmt(result.toOption.get)
+    assertEquals(stmt.recursive, true)
+    assertEquals(stmt.ctes.size, 2)
+    assertEquals(stmt.ctes(0).name, "base")
+    assertEquals(stmt.ctes(1).name, "hierarchy")
+
   // ============================================
   // Phase 11 - Date/Time Functions
   // ============================================

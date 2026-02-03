@@ -125,6 +125,16 @@ object JsonArtifactCodec extends ArtifactCodec:
 
   given ReadWriter[SortOrder] = macroRW
 
+  given ReadWriter[PlanHint] = ReadWriter.merge(
+    macroRW[PlanHint.Broadcast],
+    macroRW[PlanHint.Merge],
+    macroRW[PlanHint.ShuffleHash],
+    macroRW[PlanHint.ShuffleReplicateNL],
+    macroRW[PlanHint.Coalesce],
+    macroRW[PlanHint.Repartition],
+    macroRW[PlanHint.RepartitionByRange]
+  )
+
   given ReadWriter[ProtoLogicalPlan] = ReadWriter.merge(
     macroRW[ProtoLogicalPlan.RelationRef],
     macroRW[ProtoLogicalPlan.Values],
@@ -139,7 +149,13 @@ object JsonArtifactCodec extends ArtifactCodec:
     macroRW[ProtoLogicalPlan.Union],
     macroRW[ProtoLogicalPlan.Intersect],
     macroRW[ProtoLogicalPlan.Except],
-    macroRW[ProtoLogicalPlan.Window]
+    macroRW[ProtoLogicalPlan.Window],
+    macroRW[ProtoLogicalPlan.With],
+    macroRW[ProtoLogicalPlan.Pivot],
+    macroRW[ProtoLogicalPlan.Unpivot],
+    macroRW[ProtoLogicalPlan.LateralJoin],
+    macroRW[ProtoLogicalPlan.Generate],
+    macroRW[ProtoLogicalPlan.ResolvedHint]
   )
 
   // === Schema ReadWriters ===

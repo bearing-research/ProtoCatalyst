@@ -207,9 +207,10 @@ object SqlVerifier:
       case ProtoLogicalPlan.SubqueryAlias(alias, child) =>
         s"${pad}SubqueryAlias($alias)\n${prettyPrintPlan(child, indent + 1)}"
 
-      case ProtoLogicalPlan.With(ctes, child) =>
+      case ProtoLogicalPlan.With(ctes, recursive, child) =>
         val ctesStr = ctes.map((name, _) => name).mkString(", ")
-        s"${pad}With([$ctesStr])\n${ctes.map((n, p) => s"${pad}  CTE($n):\n${prettyPrintPlan(p, indent + 2)}").mkString}${prettyPrintPlan(child, indent + 1)}"
+        val recursiveStr = if recursive then " RECURSIVE" else ""
+        s"${pad}With$recursiveStr([$ctesStr])\n${ctes.map((n, p) => s"${pad}  CTE($n):\n${prettyPrintPlan(p, indent + 2)}").mkString}${prettyPrintPlan(child, indent + 1)}"
 
       case ProtoLogicalPlan.Window(exprs, partition, order, child) =>
         s"${pad}Window(exprs=[${exprs.size}], partition=[${partition.size}], order=[${order.size}])\n${prettyPrintPlan(child, indent + 1)}"
@@ -354,10 +355,12 @@ object SqlVerifier:
       LIMIT 5
     """)
 
+    // Recursive CTEs
+    verify(
+      "WITH RECURSIVE cte AS (SELECT * FROM users) SELECT * FROM cte"
+    )
+
     // Error cases
     println("Testing error cases:")
     verify("SELECT unknown_column FROM users") // Unknown column
     verify("SELECT * FROM") // Syntax error
-    verify(
-      "WITH RECURSIVE cte AS (SELECT * FROM users) SELECT * FROM cte"
-    ) // Recursive CTE not supported

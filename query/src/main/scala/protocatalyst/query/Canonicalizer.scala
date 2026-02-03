@@ -191,9 +191,10 @@ object Canonicalizer:
       case Values(rows, schema) =>
         Values(rows.map(_.map(exprTransform)), schema)
 
-      case With(cteRelations, child) =>
+      case With(cteRelations, recursive, child) =>
         With(
           cteRelations.map((name, plan) => (name, transformPlan(plan, exprTransform))),
+          recursive,
           transformPlan(child, exprTransform)
         )
 

@@ -106,7 +106,9 @@ object PlanConverter:
           toMock(child)
         )
 
-      case With(cteRelations, child) =>
+      case With(cteRelations, recursive, child) =>
+        if recursive then
+          throw UnsupportedOperationException("Recursive CTEs are not yet supported in mock runtime")
         MLP.WithCTE(
           cteRelations.map((name, plan) => (name, toMock(plan))),
           toMock(child)
@@ -276,6 +278,7 @@ object PlanConverter:
       case MLP.WithCTE(cteRelations, child) =>
         PLP.With(
           cteRelations.map((name, plan) => (name, fromMock(plan))).toVector,
+          false, // MockLogicalPlan doesn't support recursive CTEs
           fromMock(child)
         )
 

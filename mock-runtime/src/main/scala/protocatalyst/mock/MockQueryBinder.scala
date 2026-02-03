@@ -110,7 +110,7 @@ object MockQueryBinder:
       case Values(_, schema) =>
         Right(Map("values" -> MockSchemaConverter.toMockSchema(schema)))
 
-      case With(cteRelations, child) =>
+      case With(cteRelations, _, child) =>
         // Collect schemas from all CTE relations and the main child
         val cteSchemas = cteRelations.foldLeft(
           Right(Map.empty): Either[String, Map[String, MockDataType.StructType]]
@@ -233,7 +233,7 @@ object MockQueryBinder:
 
       case v: Values => BoundPlan(v)
 
-      case With(cteRelations, child) =>
+      case With(cteRelations, recursive, child) =>
         // Bind all CTE plans
         val boundCtes = cteRelations
           .foldLeft[Either[BindingError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
@@ -247,7 +247,7 @@ object MockQueryBinder:
           case Left(err)   => err
           case Right(ctes) =>
             bindPlan(child, ctx) match
-              case BoundPlan(boundChild) => BoundPlan(With(ctes, boundChild))
+              case BoundPlan(boundChild) => BoundPlan(With(ctes, recursive, boundChild))
               case err                   => err
 
       case Pivot(grouping, pivotCol, pivotVals, aggs, child) =>

@@ -88,6 +88,7 @@ enum ProtoLogicalPlan extends Serializable:
 
   case With(
       cteRelations: Vector[(String, ProtoLogicalPlan)],
+      recursive: Boolean,
       child: ProtoLogicalPlan
   )
 
