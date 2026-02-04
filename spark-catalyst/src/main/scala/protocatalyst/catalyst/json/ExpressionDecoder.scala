@@ -11,7 +11,35 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{
   Min,
   Sum
 }
-import org.apache.spark.sql.catalyst.expressions.{Add, Alias, And, BoundReference, CaseWhen, Cast, Coalesce, Concat, EqualTo, EvalMode, Expression, GreaterThan, GreaterThanOrEqual, If, In, IsNotNull, IsNull, LessThan, LessThanOrEqual, Literal, Lower, Multiply, Not, Or, Substring, Subtract, Upper}
+import org.apache.spark.sql.catalyst.expressions.{
+  Add,
+  Alias,
+  And,
+  BoundReference,
+  CaseWhen,
+  Cast,
+  Coalesce,
+  Concat,
+  EqualTo,
+  EvalMode,
+  Expression,
+  GreaterThan,
+  GreaterThanOrEqual,
+  If,
+  In,
+  IsNotNull,
+  IsNull,
+  LessThan,
+  LessThanOrEqual,
+  Literal,
+  Lower,
+  Multiply,
+  Not,
+  Or,
+  Substring,
+  Subtract,
+  Upper
+}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
