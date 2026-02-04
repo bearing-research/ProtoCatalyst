@@ -22,7 +22,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark)
+  .aggregate(core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark, sparkCatalyst)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -189,4 +189,30 @@ lazy val benchmarkSpark = project
       "--add-opens=java.base/java.util=ALL-UNNAMED"
     ),
     run / fork := true
+  )
+
+// Spark Catalyst integration module (Scala 2.13) - Convert ProtoLogicalPlan to Spark LogicalPlan
+// Note: This module is standalone (no dependency on Scala 3 modules) to avoid version conflicts
+lazy val sparkCatalyst = project
+  .in(file("spark-catalyst"))
+  .settings(
+    name := "protocatalyst-spark-catalyst",
+    scalaVersion := "2.13.16",
+    scalacOptions ++= Seq(
+      "-deprecation",
+      "-feature",
+      "-unchecked",
+      "-Wunused:imports"
+    ),
+    semanticdbEnabled := true,
+    semanticdbVersion := scalafixSemanticdb.revision,
+    libraryDependencies ++= Seq(
+      "org.apache.spark" %% "spark-sql" % "4.0.0",
+      "org.apache.spark" %% "spark-catalyst" % "4.0.0",
+      "io.circe" %% "circe-core" % "0.14.6",
+      "io.circe" %% "circe-parser" % "0.14.6",
+      "org.scalameta" %% "munit" % "1.0.0" % Test
+    ),
+    testFrameworks += new TestFramework("munit.Framework"),
+    Test / fork := true
   )
