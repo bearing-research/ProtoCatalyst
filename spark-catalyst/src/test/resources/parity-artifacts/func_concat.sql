@@ -1,0 +1,1 @@
+SELECT CONCAT(name, ' - ', email) FROM users

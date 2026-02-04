@@ -2,36 +2,16 @@ package protocatalyst.catalyst.json
 
 import io.circe.{DecodingFailure, HCursor, Json}
 import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedFunction}
-import org.apache.spark.sql.catalyst.expressions.{
-  Add,
-  Alias,
-  And,
-  BoundReference,
-  CaseWhen,
-  Cast,
-  Coalesce,
-  Concat,
-  EqualTo,
-  EvalMode,
-  Expression,
-  GreaterThan,
-  GreaterThanOrEqual,
-  If,
-  In,
-  IsNotNull,
-  IsNull,
-  LessThan,
-  LessThanOrEqual,
-  Literal,
-  Lower,
-  Multiply,
-  Not,
-  Or,
-  Subtract,
-  Substring,
-  Upper
+import org.apache.spark.sql.catalyst.expressions.aggregate.{
+  AggregateExpression,
+  Average,
+  Complete,
+  Count,
+  Max,
+  Min,
+  Sum
 }
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, Average, Complete, Count, Max, Min, Sum}
+import org.apache.spark.sql.catalyst.expressions.{Add, Alias, And, BoundReference, CaseWhen, Cast, Coalesce, Concat, EqualTo, EvalMode, Expression, GreaterThan, GreaterThanOrEqual, If, In, IsNotNull, IsNull, LessThan, LessThanOrEqual, Literal, Lower, Multiply, Not, Or, Substring, Subtract, Upper}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -50,8 +30,15 @@ object ExpressionDecoder {
   def decode(json: Json): EitherResult[Expression] =
     decode(json.hcursor)
 
+  /** Normalize short type name to full path or return as-is if already full path */
+  private def normalizeExprType(shortName: String): String = {
+    if (shortName.contains(".")) shortName
+    else s"protocatalyst.expr.ProtoExpr.$shortName"
+  }
+
   def decode(c: HCursor): EitherResult[Expression] = {
-    c.get[String]("$type").flatMap { exprType =>
+    c.get[String]("$type").flatMap { rawExprType =>
+      val exprType = normalizeExprType(rawExprType)
       exprType match {
         // === Leaf nodes ===
         case "protocatalyst.expr.ProtoExpr.Literal" =>
@@ -63,7 +50,7 @@ object ExpressionDecoder {
             qualifier <- c.get[Option[String]]("qualifier")
           } yield qualifier match {
             case Some(q) => UnresolvedAttribute(Seq(q, name))
-            case None => UnresolvedAttribute(Seq(name))
+            case None    => UnresolvedAttribute(Seq(name))
           }
 
         case "protocatalyst.expr.ProtoExpr.BoundRef" =>
@@ -133,7 +120,10 @@ object ExpressionDecoder {
           decodeBinary(c, Multiply.apply(_, _, EvalMode.LEGACY))
 
         case "protocatalyst.expr.ProtoExpr.Divide" =>
-          decodeBinary(c, (l, r) => org.apache.spark.sql.catalyst.expressions.Divide(l, r, EvalMode.LEGACY))
+          decodeBinary(
+            c,
+            (l, r) => org.apache.spark.sql.catalyst.expressions.Divide(l, r, EvalMode.LEGACY)
+          )
 
         // === String functions ===
         case "protocatalyst.expr.ProtoExpr.Concat" =>
@@ -160,18 +150,14 @@ object ExpressionDecoder {
 
         // === Aggregates ===
         case "protocatalyst.expr.ProtoExpr.Count" =>
-          for {
-            childJson <- c.get[Json]("child")
-            child <- decode(childJson)
-            distinct <- c.get[Boolean]("distinct")
-          } yield {
-            val aggFunc = Count(Seq(child))
-            AggregateExpression(
-              aggFunc,
-              Complete,
-              distinct,
-              None
-            )
+          // Count can use either "child" (single) or "children" (array) depending on JSON format
+          val childResult = c.get[Json]("child").flatMap(decode).map(ch => Seq(ch))
+          val childrenResult = c.get[Vector[Json]]("children").flatMap(decodeExprs)
+
+          childResult.orElse(childrenResult).map { children =>
+            // COUNT(*) has empty children, COUNT(col) has one child
+            val aggFunc = if (children.isEmpty) Count(Seq(Literal(1))) else Count(children)
+            AggregateExpression(aggFunc, Complete, false, None)
           }
 
         case "protocatalyst.expr.ProtoExpr.Sum" =>
@@ -243,10 +229,21 @@ object ExpressionDecoder {
     }
   }
 
+  /** Normalize short literal value type name */
+  private def normalizeLiteralType(shortName: String): String = {
+    if (shortName.contains(".")) {
+      // Handle both protocatalyst.expr.LiteralValue and protocatalyst.types.LiteralValue
+      shortName.replace("protocatalyst.expr.LiteralValue", "protocatalyst.types.LiteralValue")
+    } else {
+      s"protocatalyst.types.LiteralValue.$shortName"
+    }
+  }
+
   private def decodeLiteral(c: HCursor): EitherResult[Literal] = {
     c.get[Json]("value").flatMap { valueJson =>
       val vc = valueJson.hcursor
-      vc.get[String]("$type").flatMap { litType =>
+      vc.get[String]("$type").flatMap { rawLitType =>
+        val litType = normalizeLiteralType(rawLitType)
         litType match {
           case "protocatalyst.types.LiteralValue.BooleanValue" =>
             vc.get[Boolean]("value").map(Literal(_))
@@ -309,7 +306,10 @@ object ExpressionDecoder {
     } yield f(child)
   }
 
-  private def decodeBinary(c: HCursor, f: (Expression, Expression) => Expression): EitherResult[Expression] = {
+  private def decodeBinary(
+      c: HCursor,
+      f: (Expression, Expression) => Expression
+  ): EitherResult[Expression] = {
     for {
       leftJson <- c.get[Json]("left")
       left <- decode(leftJson)
@@ -325,12 +325,12 @@ object ExpressionDecoder {
     while (iter.hasNext && error.isEmpty) {
       decode(iter.next()) match {
         case scala.Right(expr) => result = result :+ expr
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)   => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -341,12 +341,12 @@ object ExpressionDecoder {
     while (iter.hasNext && error.isEmpty) {
       decodeBranch(iter.next().hcursor) match {
         case scala.Right(branch) => result = result :+ branch
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)     => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -366,7 +366,7 @@ object ExpressionDecoder {
   // Helper for Option[EitherResult].sequence
   implicit class OptionOps[A](opt: Option[EitherResult[A]]) {
     def sequence: EitherResult[Option[A]] = opt match {
-      case None => scala.Right(None)
+      case None         => scala.Right(None)
       case Some(either) => either.map(Some(_))
     }
   }

@@ -1,0 +1,1 @@
+SELECT name, MIN(age), MAX(age) FROM users GROUP BY name

@@ -3,6 +3,7 @@ package protocatalyst.catalyst.parity
 import io.circe.parser.parse
 import munit.FunSuite
 import org.apache.spark.sql.SparkSession
+
 import protocatalyst.catalyst.json.ArtifactParser
 
 /** Parity tests comparing ProtoCatalyst's parsed plans against Spark's SQL parser.
@@ -568,7 +569,8 @@ class ParityTestSuite extends FunSuite {
       val result = ArtifactParser.parseType(parse(json).toOption.get)
       assert(result.isRight, s"Failed to parse $json: ${result.left.getOrElse("")}")
       assert(
-        result.toOption.get.typeName.contains(expectedName) || result.toOption.get.toString.contains(expectedName),
+        result.toOption.get.typeName.contains(expectedName) || result.toOption.get.toString
+          .contains(expectedName),
         s"Expected $expectedName but got ${result.toOption.get}"
       )
     }
@@ -576,9 +578,18 @@ class ParityTestSuite extends FunSuite {
 
   test("ExpressionDecoder handles literals") {
     val literals = List(
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.IntValue", "value": 42}}""", "42"),
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.StringValue", "value": "hello"}}""", "hello"),
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.BooleanValue", "value": true}}""", "true")
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.IntValue", "value": 42}}""",
+        "42"
+      ),
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.StringValue", "value": "hello"}}""",
+        "hello"
+      ),
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.BooleanValue", "value": true}}""",
+        "true"
+      )
     )
 
     literals.foreach { case (json, expectedContains) =>
@@ -1087,31 +1098,48 @@ class ParityTestSuite extends FunSuite {
   // === Aggregate Function Tests (Decoder-only, since Spark wraps in Project) ===
 
   test("ExpressionDecoder handles SUM") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Sum", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "amount", "qualifier": null}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Sum", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "amount", "qualifier": null}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
-    assert(result.toOption.get.toString.toLowerCase.contains("sum") || result.toOption.get.toString.toLowerCase.contains("aggregate"))
+    assert(
+      result.toOption.get.toString.toLowerCase
+        .contains("sum") || result.toOption.get.toString.toLowerCase.contains("aggregate")
+    )
   }
 
   test("ExpressionDecoder handles AVG") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Avg", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "amount", "qualifier": null}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Avg", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "amount", "qualifier": null}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
-    assert(result.toOption.get.toString.toLowerCase.contains("avg") || result.toOption.get.toString.toLowerCase.contains("average") || result.toOption.get.toString.toLowerCase.contains("aggregate"))
+    assert(
+      result.toOption.get.toString.toLowerCase
+        .contains("avg") || result.toOption.get.toString.toLowerCase
+        .contains("average") || result.toOption.get.toString.toLowerCase.contains("aggregate")
+    )
   }
 
   test("ExpressionDecoder handles MIN") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Min", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "price", "qualifier": null}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Min", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "price", "qualifier": null}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
-    assert(result.toOption.get.toString.toLowerCase.contains("min") || result.toOption.get.toString.toLowerCase.contains("aggregate"))
+    assert(
+      result.toOption.get.toString.toLowerCase
+        .contains("min") || result.toOption.get.toString.toLowerCase.contains("aggregate")
+    )
   }
 
   test("ExpressionDecoder handles MAX") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Max", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "price", "qualifier": null}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Max", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "price", "qualifier": null}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
-    assert(result.toOption.get.toString.toLowerCase.contains("max") || result.toOption.get.toString.toLowerCase.contains("aggregate"))
+    assert(
+      result.toOption.get.toString.toLowerCase
+        .contains("max") || result.toOption.get.toString.toLowerCase.contains("aggregate")
+    )
   }
 
   // === IF Expression Test ===
@@ -1434,10 +1462,14 @@ class ParityTestSuite extends FunSuite {
   }
 
   test("TypeDecoder handles DecimalType") {
-    val json = """{"$type": "protocatalyst.types.ProtoType.DecimalType", "precision": 10, "scale": 2}"""
+    val json =
+      """{"$type": "protocatalyst.types.ProtoType.DecimalType", "precision": 10, "scale": 2}"""
     val result = ArtifactParser.parseType(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
-    assert(result.toOption.get.toString.contains("decimal") || result.toOption.get.toString.contains("Decimal"))
+    assert(
+      result.toOption.get.toString.contains("decimal") || result.toOption.get.toString
+        .contains("Decimal")
+    )
   }
 
   test("TypeDecoder handles ArrayType") {
@@ -1495,11 +1527,26 @@ class ParityTestSuite extends FunSuite {
 
   test("ExpressionDecoder handles all literal types") {
     val literals = List(
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.ByteValue", "value": 127}}""", "127"),
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.ShortValue", "value": 32767}}""", "32767"),
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.LongValue", "value": 9223372036854775807}}""", "9223372036854775807"),
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.FloatValue", "value": 3.14}}""", "3.14"),
-      ("""{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.DecimalValue", "value": "123.45"}}""", "123.45")
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.ByteValue", "value": 127}}""",
+        "127"
+      ),
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.ShortValue", "value": 32767}}""",
+        "32767"
+      ),
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.LongValue", "value": 9223372036854775807}}""",
+        "9223372036854775807"
+      ),
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.FloatValue", "value": 3.14}}""",
+        "3.14"
+      ),
+      (
+        """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.DecimalValue", "value": "123.45"}}""",
+        "123.45"
+      )
     )
 
     literals.foreach { case (json, expectedContains) =>
@@ -1509,26 +1556,30 @@ class ParityTestSuite extends FunSuite {
   }
 
   test("ExpressionDecoder handles DateValue") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.DateValue", "epochDays": 19000}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.DateValue", "epochDays": 19000}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
   }
 
   test("ExpressionDecoder handles TimestampValue") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.TimestampValue", "epochMicros": 1640000000000000}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.TimestampValue", "epochMicros": 1640000000000000}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
   }
 
   test("ExpressionDecoder handles NullValue") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.NullValue", "dataType": {"$type": "protocatalyst.types.ProtoType.StringType"}}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.NullValue", "dataType": {"$type": "protocatalyst.types.ProtoType.StringType"}}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
   }
 
   test("ExpressionDecoder handles BinaryValue") {
     // Base64 encoded bytes for "hello"
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.BinaryValue", "value": "aGVsbG8="}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.BinaryValue", "value": "aGVsbG8="}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
   }
@@ -2008,20 +2059,26 @@ class ParityTestSuite extends FunSuite {
   test("ParityTester.runBatch processes multiple test cases") {
     implicit val s: SparkSession = spark
     val testCases = Seq(
-      ("SELECT a FROM t1", """{
+      (
+        "SELECT a FROM t1",
+        """{
         "plan": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "a", "qualifier": null}],
           "child": {"$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef", "name": "t1", "alias": null, "schemaContract": {"fields": [], "fingerprint": 0}}
         }
-      }"""),
-      ("SELECT b FROM t2", """{
+      }"""
+      ),
+      (
+        "SELECT b FROM t2",
+        """{
         "plan": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "b", "qualifier": null}],
           "child": {"$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef", "name": "t2", "alias": null, "schemaContract": {"fields": [], "fingerprint": 0}}
         }
-      }""")
+      }"""
+      )
     )
     val batchResult = ParityTester.runBatch(testCases)
     assertEquals(batchResult.total, 2)
@@ -2034,13 +2091,16 @@ class ParityTestSuite extends FunSuite {
   test("BatchResult.summary includes header and details") {
     implicit val s: SparkSession = spark
     val testCases = Seq(
-      ("SELECT a FROM t1", """{
+      (
+        "SELECT a FROM t1",
+        """{
         "plan": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "a", "qualifier": null}],
           "child": {"$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef", "name": "t1", "alias": null, "schemaContract": {"fields": [], "fingerprint": 0}}
         }
-      }""")
+      }"""
+      )
     )
     val batchResult = ParityTester.runBatch(testCases)
     val summary = batchResult.summary
@@ -2125,7 +2185,8 @@ class ParityTestSuite extends FunSuite {
   }
 
   test("ExpressionDecoder fails with unknown literal type") {
-    val json = """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.UnknownValue"}}"""
+    val json =
+      """{"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.UnknownValue"}}"""
     val result = ArtifactParser.parseExpression(parse(json).toOption.get)
     assert(result.isLeft)
     assert(result.left.getOrElse("").contains("Unknown"))
@@ -2494,20 +2555,26 @@ class ParityTestSuite extends FunSuite {
   test("BatchResult includes failed results") {
     implicit val s: SparkSession = spark
     val testCases = Seq(
-      ("SELECT a FROM t1", """{
+      (
+        "SELECT a FROM t1",
+        """{
         "plan": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "a", "qualifier": null}],
           "child": {"$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef", "name": "t1", "alias": null, "schemaContract": {"fields": [], "fingerprint": 0}}
         }
-      }"""),
-      ("SELECT b FROM t2", """{
+      }"""
+      ),
+      (
+        "SELECT b FROM t2",
+        """{
         "plan": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "wrong_col", "qualifier": null}],
           "child": {"$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef", "name": "t2", "alias": null, "schemaContract": {"fields": [], "fingerprint": 0}}
         }
-      }""")
+      }"""
+      )
     )
     val batchResult = ParityTester.runBatch(testCases)
     assertEquals(batchResult.total, 2)

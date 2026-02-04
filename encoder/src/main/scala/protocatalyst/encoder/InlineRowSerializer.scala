@@ -266,17 +266,17 @@ object InlineRowSerializer:
   /** Get ProtoType for a type at compile time */
   private inline def getProtoType[T]: ProtoType =
     inline erasedValue[T] match
-      case _: Boolean                 => ProtoType.BooleanType
-      case _: Byte                    => ProtoType.ByteType
-      case _: Short                   => ProtoType.ShortType
-      case _: Int                     => ProtoType.IntegerType
-      case _: Long                    => ProtoType.LongType
-      case _: Float                   => ProtoType.FloatType
-      case _: Double                  => ProtoType.DoubleType
-      case _: String                  => ProtoType.StringType
-      case _: BigDecimal              => ProtoType.DecimalType(38, 18)
-      case _: BigInt                  => ProtoType.DecimalType(38, 0)
-      case _: Array[Byte]             => ProtoType.BinaryType
+      case _: Boolean                  => ProtoType.BooleanType
+      case _: Byte                     => ProtoType.ByteType
+      case _: Short                    => ProtoType.ShortType
+      case _: Int                      => ProtoType.IntegerType
+      case _: Long                     => ProtoType.LongType
+      case _: Float                    => ProtoType.FloatType
+      case _: Double                   => ProtoType.DoubleType
+      case _: String                   => ProtoType.StringType
+      case _: BigDecimal               => ProtoType.DecimalType(38, 18)
+      case _: BigInt                   => ProtoType.DecimalType(38, 0)
+      case _: Array[Byte]              => ProtoType.BinaryType
       case _: java.time.LocalDate      => ProtoType.DateType
       case _: java.time.Instant        => ProtoType.TimestampType
       case _: java.time.LocalDateTime  => ProtoType.TimestampNTZType
@@ -419,19 +419,22 @@ object InlineRowSerializer:
 
       case _: (java.util.Date *: ts) =>
         // Convert from internal microseconds to java.util.Date
-        val instant = conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
+        val instant =
+          conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
         values(idx) = if instant == null then null else java.util.Date.from(instant)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       case _: (java.time.OffsetDateTime *: ts) =>
         // Convert from internal microseconds to OffsetDateTime (at UTC)
-        val instant = conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
+        val instant =
+          conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
         values(idx) = if instant == null then null else instant.atOffset(java.time.ZoneOffset.UTC)
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 
       case _: (java.time.ZonedDateTime *: ts) =>
         // Convert from internal microseconds to ZonedDateTime (at UTC)
-        val instant = conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
+        val instant =
+          conv.fromInternal(row(idx), ProtoType.TimestampType).asInstanceOf[java.time.Instant]
         values(idx) = if instant == null then null else instant.atZone(java.time.ZoneId.of("UTC"))
         deserializeFieldsImpl[ts](row, values, idx + 1, conv)
 

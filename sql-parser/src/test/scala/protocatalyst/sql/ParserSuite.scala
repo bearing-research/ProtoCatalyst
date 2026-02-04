@@ -12,29 +12,29 @@ class ParserSuite extends munit.FunSuite:
 
   // Helper to extract table name from FromClause
   def extractTableName(from: FromClause): String = from match
-    case FromClause.Table(ref)             => ref.name
-    case FromClause.Join(left, _, _, _)    => extractTableName(left)
-    case FromClause.Subquery(_, alias)     => alias
-    case FromClause.Lateral(_, alias)      => alias
-    case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+    case FromClause.Table(ref)                => ref.name
+    case FromClause.Join(left, _, _, _)       => extractTableName(left)
+    case FromClause.Subquery(_, alias)        => alias
+    case FromClause.Lateral(_, alias)         => alias
+    case FromClause.Pivot(source, _, alias)   => alias.getOrElse(extractTableName(source))
     case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
     case FromClause.LateralView(source, spec) => spec.tableAlias
-    case FromClause.Values(_, alias, _)    => alias
+    case FromClause.Values(_, alias, _)       => alias
 
   // Helper to extract simple GROUP BY expressions
   def extractSimpleGroupBy(gb: Option[GroupByClause]): Vector[SqlExpr] = gb match
     case Some(GroupByClause.Simple(exprs)) => exprs
-    case other                             => fail(s"Expected Simple GROUP BY, got $other").asInstanceOf[Vector[SqlExpr]]
+    case other => fail(s"Expected Simple GROUP BY, got $other").asInstanceOf[Vector[SqlExpr]]
 
   def extractTableAlias(from: FromClause): Option[String] = from match
-    case FromClause.Table(ref)             => ref.alias
-    case FromClause.Join(left, _, _, _)    => extractTableAlias(left)
-    case FromClause.Subquery(_, alias)     => Some(alias)
-    case FromClause.Lateral(_, alias)      => Some(alias)
-    case FromClause.Pivot(_, _, alias)     => alias
-    case FromClause.Unpivot(_, _, alias)   => alias
-    case FromClause.LateralView(_, spec)   => Some(spec.tableAlias)
-    case FromClause.Values(_, alias, _)    => Some(alias)
+    case FromClause.Table(ref)           => ref.alias
+    case FromClause.Join(left, _, _, _)  => extractTableAlias(left)
+    case FromClause.Subquery(_, alias)   => Some(alias)
+    case FromClause.Lateral(_, alias)    => Some(alias)
+    case FromClause.Pivot(_, _, alias)   => alias
+    case FromClause.Unpivot(_, _, alias) => alias
+    case FromClause.LateralView(_, spec) => Some(spec.tableAlias)
+    case FromClause.Values(_, alias, _)  => Some(alias)
 
   test("parses simple SELECT"):
     val result = SqlParser.parse("SELECT name FROM users")
@@ -710,7 +710,7 @@ class ParserSuite extends munit.FunSuite:
       case FromClause.Pivot(_, spec, Some("pivoted")) =>
         spec.aggregates.head.alias match
           case Some("total") => () // ok
-          case _ => fail(s"Expected alias 'total', got ${spec.aggregates.head.alias}")
+          case _             => fail(s"Expected alias 'total', got ${spec.aggregates.head.alias}")
       case _ => fail(s"Expected PIVOT with alias, got ${stmt.from}")
 
   test("parses PIVOT with multiple aggregates"):
@@ -1469,7 +1469,7 @@ class ParserSuite extends munit.FunSuite:
         assertEquals(args.size, 2)
         args(0) match
           case SqlExpr.StringLit("YEAR") => () // ok
-          case _ => fail(s"Expected StringLit('YEAR'), got ${args(0)}")
+          case _                         => fail(s"Expected StringLit('YEAR'), got ${args(0)}")
       case other => fail(s"Expected EXTRACT function call, got $other")
 
   test("parses EXTRACT with various fields"):
@@ -1525,7 +1525,7 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.projections.size, 3)
     stmt.projections(0).expr match
       case SqlExpr.FunctionCall("YEAR", _, _) => () // ok
-      case other => fail(s"Expected YEAR function, got $other")
+      case other                              => fail(s"Expected YEAR function, got $other")
 
   test("parses TO_DATE function"):
     val result = SqlParser.parse("SELECT TO_DATE(date_str, 'yyyy-MM-dd') FROM events")
@@ -1587,7 +1587,12 @@ class ParserSuite extends munit.FunSuite:
     assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
     val stmt = asSelect(result.toOption.get)
     stmt.from match
-      case FromClause.Join(FromClause.Table(TableRef("users", Some("u"))), FromClause.Lateral(subq, "recent"), JoinType.Cross, None) =>
+      case FromClause.Join(
+            FromClause.Table(TableRef("users", Some("u"))),
+            FromClause.Lateral(subq, "recent"),
+            JoinType.Cross,
+            None
+          ) =>
         // Verify the lateral subquery has the right structure
         assertEquals(subq.limit, Some(5L))
       case other => fail(s"Expected Cross Join with Lateral, got $other")
@@ -1604,7 +1609,8 @@ class ParserSuite extends munit.FunSuite:
     assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
     val stmt = asSelect(result.toOption.get)
     stmt.from match
-      case FromClause.Join(_, FromClause.Lateral(_, "latest_orders"), JoinType.Cross, None) => () // ok
+      case FromClause.Join(_, FromClause.Lateral(_, "latest_orders"), JoinType.Cross, None) =>
+        () // ok
       case other => fail(s"Expected Cross Join with Lateral, got $other")
 
   test("parses LATERAL with LEFT JOIN"):
@@ -1619,7 +1625,8 @@ class ParserSuite extends munit.FunSuite:
     assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
     val stmt = asSelect(result.toOption.get)
     stmt.from match
-      case FromClause.Join(_, FromClause.Lateral(_, "last_order"), JoinType.LeftOuter, Some(_)) => () // ok
+      case FromClause.Join(_, FromClause.Lateral(_, "last_order"), JoinType.LeftOuter, Some(_)) =>
+        () // ok
       case other => fail(s"Expected Left Join with Lateral, got $other")
 
   test("parses LATERAL with aggregate in subquery"):
@@ -1652,9 +1659,9 @@ class ParserSuite extends munit.FunSuite:
     val stmt = asSelect(result.toOption.get)
     // Should have nested joins with lateral subqueries
     def countLateral(from: FromClause): Int = from match
-      case FromClause.Lateral(_, _) => 1
+      case FromClause.Lateral(_, _)           => 1
       case FromClause.Join(left, right, _, _) => countLateral(left) + countLateral(right)
-      case _ => 0
+      case _                                  => 0
     assertEquals(countLateral(stmt.from), 2)
 
   // === Phase 15: LATERAL VIEW Tests ===
@@ -1722,7 +1729,7 @@ class ParserSuite extends munit.FunSuite:
         assertEquals(spec.columnAliases, Vector("pos", "tag"))
         spec.generator match
           case SqlExpr.FunctionCall("POSEXPLODE", _, _) => () // ok
-          case _ => fail(s"Expected POSEXPLODE function")
+          case _                                        => fail(s"Expected POSEXPLODE function")
       case other => fail(s"Expected LateralView, got $other")
 
   test("parses multiple LATERAL VIEWs"):
@@ -1738,7 +1745,7 @@ class ParserSuite extends munit.FunSuite:
     // Should have nested LateralViews
     def countLateralViews(from: FromClause): Int = from match
       case FromClause.LateralView(source, _) => 1 + countLateralViews(source)
-      case _ => 0
+      case _                                 => 0
     assertEquals(countLateralViews(stmt.from), 2)
 
   test("parses LATERAL VIEW with table alias"):
@@ -1768,7 +1775,7 @@ class ParserSuite extends munit.FunSuite:
       case FromClause.LateralView(_, spec) =>
         spec.generator match
           case SqlExpr.FunctionCall("INLINE", _, _) => () // ok
-          case _ => fail(s"Expected INLINE function")
+          case _                                    => fail(s"Expected INLINE function")
       case other => fail(s"Expected LateralView, got $other")
 
   // === Phase 16: VALUES Clause ===
@@ -1828,11 +1835,26 @@ class ParserSuite extends munit.FunSuite:
       case FromClause.Values(rows, _, _) =>
         assertEquals(rows.size, 1)
         val row = rows.head
-        row(0) match { case SqlExpr.IntLit(1) => () case _ => fail("Expected int") }
-        row(1) match { case SqlExpr.DoubleLit(2.5) => () case _ => fail("Expected double") }
-        row(2) match { case SqlExpr.StringLit("text") => () case _ => fail("Expected string") }
-        row(3) match { case SqlExpr.BoolLit(true) => () case _ => fail("Expected bool") }
-        row(4) match { case SqlExpr.NullLit => () case _ => fail("Expected null") }
+        row(0) match {
+          case SqlExpr.IntLit(1) => ()
+          case _                 => fail("Expected int")
+        }
+        row(1) match {
+          case SqlExpr.DoubleLit(2.5) => ()
+          case _                      => fail("Expected double")
+        }
+        row(2) match {
+          case SqlExpr.StringLit("text") => ()
+          case _                         => fail("Expected string")
+        }
+        row(3) match {
+          case SqlExpr.BoolLit(true) => ()
+          case _                     => fail("Expected bool")
+        }
+        row(4) match {
+          case SqlExpr.NullLit => ()
+          case _               => fail("Expected null")
+        }
       case other => fail(s"Expected Values, got $other")
 
   test("parses VALUES in join"):
@@ -1844,7 +1866,12 @@ class ParserSuite extends munit.FunSuite:
     assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
     val stmt = asSelect(result.toOption.get)
     stmt.from match
-      case FromClause.Join(_, FromClause.Values(rows, "nums", Some(Vector("n"))), JoinType.Cross, None) =>
+      case FromClause.Join(
+            _,
+            FromClause.Values(rows, "nums", Some(Vector("n"))),
+            JoinType.Cross,
+            None
+          ) =>
         assertEquals(rows.size, 3)
       case other => fail(s"Expected Join with Values, got $other")
 
@@ -1876,17 +1903,18 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.hints.size, 1)
     stmt.hints.head match
       case QueryHint.Broadcast(tables) => assertEquals(tables, Vector("t1"))
-      case other => fail(s"Expected Broadcast hint, got $other")
+      case other                       => fail(s"Expected Broadcast hint, got $other")
 
   test("parses BROADCAST hint with multiple tables"):
-    val result = SqlParser.parse("SELECT /*+ BROADCAST(t1, t2) */ * FROM users AS t1 CROSS JOIN orders AS t2")
+    val result =
+      SqlParser.parse("SELECT /*+ BROADCAST(t1, t2) */ * FROM users AS t1 CROSS JOIN orders AS t2")
 
     assert(result.isRight, s"Parse failed: ${result.left.getOrElse("")}")
     val stmt = asSelect(result.toOption.get)
     assertEquals(stmt.hints.size, 1)
     stmt.hints.head match
       case QueryHint.Broadcast(tables) => assertEquals(tables, Vector("t1", "t2"))
-      case other => fail(s"Expected Broadcast hint, got $other")
+      case other                       => fail(s"Expected Broadcast hint, got $other")
 
   test("parses REPARTITION hint"):
     val result = SqlParser.parse("SELECT /*+ REPARTITION(3) */ * FROM users")
@@ -1920,7 +1948,7 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.hints.size, 1)
     stmt.hints.head match
       case QueryHint.Coalesce(partitions) => assertEquals(partitions, 1)
-      case other => fail(s"Expected Coalesce hint, got $other")
+      case other                          => fail(s"Expected Coalesce hint, got $other")
 
   test("parses multiple hints"):
     val result = SqlParser.parse("SELECT /*+ BROADCAST(t1) REPARTITION(4) */ * FROM users AS t1")
@@ -1937,7 +1965,7 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.hints.size, 1)
     stmt.hints.head match
       case QueryHint.Merge(tables) => assertEquals(tables, Vector("t1"))
-      case other => fail(s"Expected Merge hint, got $other")
+      case other                   => fail(s"Expected Merge hint, got $other")
 
   test("parses SHUFFLE_HASH hint"):
     val result = SqlParser.parse("SELECT /*+ SHUFFLE_HASH(t1) */ * FROM users AS t1")
@@ -1947,7 +1975,7 @@ class ParserSuite extends munit.FunSuite:
     assertEquals(stmt.hints.size, 1)
     stmt.hints.head match
       case QueryHint.ShuffleHash(tables) => assertEquals(tables, Vector("t1"))
-      case other => fail(s"Expected ShuffleHash hint, got $other")
+      case other                         => fail(s"Expected ShuffleHash hint, got $other")
 
   test("parses hint with DISTINCT"):
     val result = SqlParser.parse("SELECT /*+ BROADCAST(t1) */ DISTINCT name FROM users AS t1")

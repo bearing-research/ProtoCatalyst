@@ -115,8 +115,8 @@ object SqlVerifier:
     case FromClause.Table(ref) => ref.alias.map(a => s"${ref.name} AS $a").getOrElse(ref.name)
     case FromClause.Join(left, right, joinType, cond) =>
       s"${prettyPrintFrom(left)} $joinType JOIN ${prettyPrintFrom(right)}${cond.map(c => s" ON ${prettyPrintExpr(c)}").getOrElse("")}"
-    case FromClause.Subquery(_, alias) => s"(subquery) AS $alias"
-    case FromClause.Lateral(_, alias) => s"LATERAL (subquery) AS $alias"
+    case FromClause.Subquery(_, alias)      => s"(subquery) AS $alias"
+    case FromClause.Lateral(_, alias)       => s"LATERAL (subquery) AS $alias"
     case FromClause.Pivot(source, _, alias) =>
       s"${prettyPrintFrom(source)} PIVOT (...)${alias.map(a => s" AS $a").getOrElse("")}"
     case FromClause.Unpivot(source, _, alias) =>
@@ -132,8 +132,8 @@ object SqlVerifier:
     case GroupByClause.Simple(exprs)      => exprs.map(prettyPrintExpr).mkString(", ")
     case GroupByClause.GroupingSets(sets) =>
       s"GROUPING SETS (${sets.map(s => s"(${s.map(prettyPrintExpr).mkString(", ")})").mkString(", ")})"
-    case GroupByClause.Cube(exprs)        => s"CUBE(${exprs.map(prettyPrintExpr).mkString(", ")})"
-    case GroupByClause.Rollup(exprs)      => s"ROLLUP(${exprs.map(prettyPrintExpr).mkString(", ")})"
+    case GroupByClause.Cube(exprs)   => s"CUBE(${exprs.map(prettyPrintExpr).mkString(", ")})"
+    case GroupByClause.Rollup(exprs) => s"ROLLUP(${exprs.map(prettyPrintExpr).mkString(", ")})"
 
   private def prettyPrintExpr(expr: SqlExpr): String = expr match
     case SqlExpr.ColumnRef(name, qual) => qual.map(q => s"$q.$name").getOrElse(name)

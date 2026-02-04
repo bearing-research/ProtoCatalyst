@@ -1,0 +1,1 @@
+SELECT CAST(age AS DOUBLE) FROM users

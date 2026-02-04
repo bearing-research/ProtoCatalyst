@@ -1,0 +1,1 @@
+SELECT salary * 1.1 FROM users

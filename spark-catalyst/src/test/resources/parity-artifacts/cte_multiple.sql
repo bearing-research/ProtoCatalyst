@@ -1,0 +1,1 @@
+WITH young AS (SELECT * FROM users WHERE age < 30), old AS (SELECT * FROM users WHERE age >= 30) SELECT * FROM young

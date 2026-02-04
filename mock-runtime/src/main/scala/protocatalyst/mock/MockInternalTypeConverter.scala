@@ -83,14 +83,14 @@ object MockInternalTypeConverter extends InternalTypeConverter:
 
         case ProtoType.TimestampType =>
           value match
-            case ts: java.sql.Timestamp       => ts.toInstant.toEpochMilli * 1000L
-            case i: java.time.Instant         => i.toEpochMilli * 1000L
-            case d: java.util.Date            => d.toInstant.toEpochMilli * 1000L
+            case ts: java.sql.Timestamp        => ts.toInstant.toEpochMilli * 1000L
+            case i: java.time.Instant          => i.toEpochMilli * 1000L
+            case d: java.util.Date             => d.toInstant.toEpochMilli * 1000L
             case odt: java.time.OffsetDateTime => odt.toInstant.toEpochMilli * 1000L
             case zdt: java.time.ZonedDateTime  => zdt.toInstant.toEpochMilli * 1000L
-            case s: String                    => java.time.Instant.parse(s).toEpochMilli * 1000L
-            case micros: Long                 => micros // Already internal representation
-            case other                        =>
+            case s: String                     => java.time.Instant.parse(s).toEpochMilli * 1000L
+            case micros: Long                  => micros // Already internal representation
+            case other                         =>
               throw IllegalArgumentException(
                 s"TimestampType expects Timestamp, Instant, Date, OffsetDateTime, ZonedDateTime, String, or Long, got: ${other.getClass}"
               )
@@ -159,9 +159,9 @@ object MockInternalTypeConverter extends InternalTypeConverter:
               )
 
         // Other primitive types - no conversion needed
-        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntegerType |
-            ProtoType.LongType | ProtoType.FloatType | ProtoType.DoubleType |
-            _: ProtoType.DecimalType =>
+        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
+            ProtoType.IntegerType | ProtoType.LongType | ProtoType.FloatType |
+            ProtoType.DoubleType | _: ProtoType.DecimalType =>
           value
 
         // UDT types - convert using the underlying SQL type
@@ -280,9 +280,9 @@ object MockInternalTypeConverter extends InternalTypeConverter:
           java.time.Period.ofMonths(value.asInstanceOf[Int])
 
         // Other primitive types - no conversion needed
-        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType | ProtoType.IntegerType |
-            ProtoType.LongType | ProtoType.FloatType | ProtoType.DoubleType |
-            _: ProtoType.DecimalType =>
+        case ProtoType.BooleanType | ProtoType.ByteType | ProtoType.ShortType |
+            ProtoType.IntegerType | ProtoType.LongType | ProtoType.FloatType |
+            ProtoType.DoubleType | _: ProtoType.DecimalType =>
           value
 
         // UDT types - convert using the underlying SQL type

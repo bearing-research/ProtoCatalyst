@@ -1046,7 +1046,8 @@ class TransformSuite extends munit.FunSuite:
     assert(findCurrentTimestamp(result.toOption.get), "Expected CurrentTimestamp from NOW()")
 
   test("transforms DATE_ADD function"):
-    val stmt = asSelect(SqlParser.parse("SELECT DATE_ADD(CURRENT_DATE(), 30) FROM users").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT DATE_ADD(CURRENT_DATE(), 30) FROM users").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
 
@@ -1061,7 +1062,8 @@ class TransformSuite extends munit.FunSuite:
     assert(findDateAdd(result.toOption.get), "Expected DateAdd in projection")
 
   test("transforms DATE_SUB function"):
-    val stmt = asSelect(SqlParser.parse("SELECT DATE_SUB(CURRENT_DATE(), 30) FROM users").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT DATE_SUB(CURRENT_DATE(), 30) FROM users").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
 
@@ -1245,7 +1247,8 @@ class TransformSuite extends munit.FunSuite:
     assert(findHour(result.toOption.get), "Expected Hour in projection")
 
   test("transforms MINUTE function"):
-    val stmt = asSelect(SqlParser.parse("SELECT MINUTE(CURRENT_TIMESTAMP()) FROM users").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT MINUTE(CURRENT_TIMESTAMP()) FROM users").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
 
@@ -1260,7 +1263,8 @@ class TransformSuite extends munit.FunSuite:
     assert(findMinute(result.toOption.get), "Expected Minute in projection")
 
   test("transforms SECOND function"):
-    val stmt = asSelect(SqlParser.parse("SELECT SECOND(CURRENT_TIMESTAMP()) FROM users").toOption.get)
+    val stmt =
+      asSelect(SqlParser.parse("SELECT SECOND(CURRENT_TIMESTAMP()) FROM users").toOption.get)
     val result = AstToProtoTransform.transform(stmt, userSchema, "users")
     assert(result.isRight)
 
@@ -1570,7 +1574,11 @@ class TransformSuite extends munit.FunSuite:
     Vector(
       ProtoStructField("name", ProtoType.StringType, nullable = false),
       ProtoStructField("tags", ProtoType.ArrayType(ProtoType.StringType, true), nullable = true),
-      ProtoStructField("attributes", ProtoType.MapType(ProtoType.StringType, ProtoType.StringType, true), nullable = true)
+      ProtoStructField(
+        "attributes",
+        ProtoType.MapType(ProtoType.StringType, ProtoType.StringType, true),
+        nullable = true
+      )
     )
   )
 
@@ -1643,7 +1651,7 @@ class TransformSuite extends munit.FunSuite:
     assertEquals(generate.get.generatorOutput, Vector("pos", "tag"))
     generate.get.generator match
       case ProtoExpr.PosExplode(_) => () // ok
-      case _ => fail(s"Expected PosExplode, got ${generate.get.generator}")
+      case _                       => fail(s"Expected PosExplode, got ${generate.get.generator}")
 
   test("transforms multiple LATERAL VIEWs"):
     val stmt = asSelect(
@@ -1706,10 +1714,10 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
-      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
-      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case v @ ProtoLogicalPlan.Values(_, _)        => Some(v)
+      case ProtoLogicalPlan.Project(_, child)       => findValues(child)
       case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
-      case _ => None
+      case _                                        => None
 
     val values = findValues(result.toOption.get)
     assert(values.isDefined, "Expected Values in plan")
@@ -1730,10 +1738,10 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
-      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
-      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case v @ ProtoLogicalPlan.Values(_, _)        => Some(v)
+      case ProtoLogicalPlan.Project(_, child)       => findValues(child)
       case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
-      case _ => None
+      case _                                        => None
 
     val values = findValues(result.toOption.get)
     assert(values.isDefined, "Expected Values in plan")
@@ -1754,10 +1762,10 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
-      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
-      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case v @ ProtoLogicalPlan.Values(_, _)        => Some(v)
+      case ProtoLogicalPlan.Project(_, child)       => findValues(child)
       case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
-      case _ => None
+      case _                                        => None
 
     val values = findValues(result.toOption.get)
     assert(values.isDefined, "Expected Values in plan")
@@ -1779,10 +1787,10 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     def findValues(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Values] = plan match
-      case v @ ProtoLogicalPlan.Values(_, _) => Some(v)
-      case ProtoLogicalPlan.Project(_, child) => findValues(child)
+      case v @ ProtoLogicalPlan.Values(_, _)        => Some(v)
+      case ProtoLogicalPlan.Project(_, child)       => findValues(child)
       case ProtoLogicalPlan.SubqueryAlias(_, child) => findValues(child)
-      case _ => None
+      case _                                        => None
 
     val values = findValues(result.toOption.get)
     assert(values.isDefined, "Expected Values in plan")
@@ -1805,11 +1813,11 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight, s"Transform failed: ${result.left.toOption}")
 
     def findHint(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.ResolvedHint] = plan match
-      case h @ ProtoLogicalPlan.ResolvedHint(_, _) => Some(h)
-      case ProtoLogicalPlan.Project(_, child)      => findHint(child)
-      case ProtoLogicalPlan.Filter(_, child)       => findHint(child)
+      case h @ ProtoLogicalPlan.ResolvedHint(_, _)  => Some(h)
+      case ProtoLogicalPlan.Project(_, child)       => findHint(child)
+      case ProtoLogicalPlan.Filter(_, child)        => findHint(child)
       case ProtoLogicalPlan.SubqueryAlias(_, child) => findHint(child)
-      case _                                       => None
+      case _                                        => None
 
     val hint = findHint(result.toOption.get)
     assert(hint.isDefined, "Expected ResolvedHint in plan")

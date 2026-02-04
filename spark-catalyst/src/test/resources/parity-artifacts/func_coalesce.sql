@@ -1,0 +1,1 @@
+SELECT COALESCE(email, 'unknown') FROM users

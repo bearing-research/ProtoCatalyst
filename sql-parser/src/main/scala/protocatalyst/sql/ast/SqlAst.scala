@@ -51,8 +51,10 @@ enum FromClause:
   case Lateral(stmt: SqlStatement.SelectStatement, alias: String)
   case Pivot(source: FromClause, spec: PivotSpec, alias: Option[String])
   case Unpivot(source: FromClause, spec: UnpivotSpec, alias: Option[String])
+
   /** LATERAL VIEW: applies a generator function to produce multiple rows from each input row */
   case LateralView(source: FromClause, spec: LateralViewSpec)
+
   /** VALUES: inline table values with alias and optional column names */
   case Values(rows: Vector[Vector[SqlExpr]], alias: String, columnAliases: Option[Vector[String]])
 
@@ -123,10 +125,13 @@ case class OrderSpec(expr: SqlExpr, ascending: Boolean)
 enum GroupByClause:
   /** Simple GROUP BY: GROUP BY col1, col2 */
   case Simple(exprs: Vector[SqlExpr])
+
   /** GROUPING SETS: GROUP BY GROUPING SETS ((a, b), (a), ()) */
   case GroupingSets(sets: Vector[Vector[SqlExpr]])
+
   /** CUBE: GROUP BY CUBE(a, b) or GROUP BY a, b WITH CUBE */
   case Cube(exprs: Vector[SqlExpr])
+
   /** ROLLUP: GROUP BY ROLLUP(a, b) or GROUP BY a, b WITH ROLLUP */
   case Rollup(exprs: Vector[SqlExpr])
 
@@ -246,15 +251,21 @@ enum SqlType:
 enum QueryHint:
   /** BROADCAST hint - suggests broadcast join for the specified tables */
   case Broadcast(tables: Vector[String])
+
   /** MERGE hint - suggests merge/sort-merge join for the specified tables */
   case Merge(tables: Vector[String])
+
   /** SHUFFLE_HASH hint - suggests shuffle hash join */
   case ShuffleHash(tables: Vector[String])
+
   /** SHUFFLE_REPLICATE_NL hint - suggests nested loop join with shuffle replication */
   case ShuffleReplicateNL(tables: Vector[String])
+
   /** COALESCE hint - reduce partitions to the specified number */
   case Coalesce(partitions: Int)
+
   /** REPARTITION hint - repartition to the specified number and optional columns */
   case Repartition(partitions: Int, columns: Vector[String])
+
   /** REPARTITION_BY_RANGE hint - range repartition */
   case RepartitionByRange(partitions: Int, columns: Vector[String])

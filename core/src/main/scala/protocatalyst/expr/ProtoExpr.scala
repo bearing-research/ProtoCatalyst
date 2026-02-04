@@ -137,10 +137,13 @@ enum ProtoExpr extends Serializable:
   // Generator functions (for LATERAL VIEW)
   /** EXPLODE: produces one row per element in an array or per key-value pair in a map */
   case Explode(child: ProtoExpr)
+
   /** POSEXPLODE: like EXPLODE but also outputs the position/index */
   case PosExplode(child: ProtoExpr)
+
   /** INLINE: explodes an array of structs into rows */
   case Inline(child: ProtoExpr)
+
   /** STACK: separates expressions into n rows */
   case Stack(numRows: ProtoExpr, children: Vector[ProtoExpr])
 

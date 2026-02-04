@@ -1,0 +1,1 @@
+SELECT name FROM users WHERE age > 18 AND salary > 50000

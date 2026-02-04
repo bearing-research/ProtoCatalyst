@@ -229,7 +229,8 @@ class ConverterSuite extends munit.FunSuite:
   test("convert Filter"):
     val schema = SchemaContract("users", Vector.empty, SchemaFingerprint.fromLong(0L))
     val proto = ProtoLogicalPlan.Filter(
-      ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false), ProtoExpr.lit(18)),
+      ProtoExpr
+        .Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false), ProtoExpr.lit(18)),
       ProtoLogicalPlan.RelationRef("users", None, schema)
     )
 
@@ -370,7 +371,8 @@ class ConverterSuite extends munit.FunSuite:
         ProtoExpr.ColumnRef("name", None, ProtoType.StringType, false)
       ),
       ProtoLogicalPlan.Filter(
-        ProtoExpr.Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false), ProtoExpr.lit(18)),
+        ProtoExpr
+          .Gt(ProtoExpr.ColumnRef("age", None, ProtoType.IntegerType, false), ProtoExpr.lit(18)),
         ProtoLogicalPlan.RelationRef("users", None, schema)
       )
     )

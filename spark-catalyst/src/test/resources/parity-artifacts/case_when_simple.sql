@@ -1,0 +1,1 @@
+SELECT CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END FROM users

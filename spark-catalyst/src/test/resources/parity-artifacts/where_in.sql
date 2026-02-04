@@ -1,0 +1,1 @@
+SELECT name FROM users WHERE age IN (18, 21, 30)

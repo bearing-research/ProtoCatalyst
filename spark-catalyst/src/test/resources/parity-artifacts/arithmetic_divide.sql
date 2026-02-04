@@ -1,0 +1,1 @@
+SELECT salary / 12 FROM users

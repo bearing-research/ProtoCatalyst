@@ -141,10 +141,11 @@ class ParserComparisonSuite extends FunSuite:
 
   private def extractColumnsFromGroupBy(gb: Option[GroupByClause]): Set[String] =
     gb match
-      case None => Set.empty
-      case Some(GroupByClause.Simple(exprs)) => exprs.flatMap(extractColumnsFromExpr).toSet
-      case Some(GroupByClause.GroupingSets(sets)) => sets.flatten.flatMap(extractColumnsFromExpr).toSet
-      case Some(GroupByClause.Cube(exprs)) => exprs.flatMap(extractColumnsFromExpr).toSet
+      case None                                   => Set.empty
+      case Some(GroupByClause.Simple(exprs))      => exprs.flatMap(extractColumnsFromExpr).toSet
+      case Some(GroupByClause.GroupingSets(sets)) =>
+        sets.flatten.flatMap(extractColumnsFromExpr).toSet
+      case Some(GroupByClause.Cube(exprs))   => exprs.flatMap(extractColumnsFromExpr).toSet
       case Some(GroupByClause.Rollup(exprs)) => exprs.flatMap(extractColumnsFromExpr).toSet
 
   private def extractColumnsFromExpr(expr: SqlExpr): Set[String] = expr match

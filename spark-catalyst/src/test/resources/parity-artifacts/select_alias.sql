@@ -1,0 +1,1 @@
+SELECT name AS n, age AS a FROM users

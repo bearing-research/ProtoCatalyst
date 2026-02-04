@@ -68,7 +68,8 @@ case class ParityWithOptionalNone(id: Int, person: Option[ParityPerson]) derives
 case class ParityEmptyCollections(items: List[String], scores: Map[String, Int])
     derives InlineRowSerializer
 case class ParityIntBoundaries(label: String, minVal: Int, maxVal: Int) derives InlineRowSerializer
-case class ParityLongBoundaries(label: String, minVal: Long, maxVal: Long) derives InlineRowSerializer
+case class ParityLongBoundaries(label: String, minVal: Long, maxVal: Long)
+    derives InlineRowSerializer
 
 /** Test data matching benchmark-spark BenchmarkData object */
 object ParityTestData:
@@ -212,7 +213,11 @@ class SparkParitySuite extends munit.FunSuite:
         assertEquals(actual, expected("value").bool, s"Boolean mismatch at $path")
 
       case "Byte" =>
-        assertEquals(actual.asInstanceOf[Byte], expected("value").num.toByte, s"Byte mismatch at $path")
+        assertEquals(
+          actual.asInstanceOf[Byte],
+          expected("value").num.toByte,
+          s"Byte mismatch at $path"
+        )
 
       case "Short" =>
         assertEquals(

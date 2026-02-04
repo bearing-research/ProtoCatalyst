@@ -164,9 +164,8 @@ object BenchmarkData:
   val largeMap: Map[String, Int] = (1 to 1000).map(i => s"key_$i" -> i).toMap
 
   // Nested collection scaling (List[Person])
-  val smallTeam: List[Person] = (1 to 10).map(i =>
-    Person(s"Person_$i", 20 + i, Address(s"Street $i", "City", s"ZIP$i"))
-  ).toList
-  val mediumTeam: List[Person] = (1 to 100).map(i =>
-    Person(s"Person_$i", 20 + i, Address(s"Street $i", "City", s"ZIP$i"))
-  ).toList
+  val smallTeam: List[Person] =
+    (1 to 10).map(i => Person(s"Person_$i", 20 + i, Address(s"Street $i", "City", s"ZIP$i"))).toList
+  val mediumTeam: List[Person] = (1 to 100)
+    .map(i => Person(s"Person_$i", 20 + i, Address(s"Street $i", "City", s"ZIP$i")))
+    .toList

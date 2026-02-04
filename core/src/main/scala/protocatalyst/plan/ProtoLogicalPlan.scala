@@ -164,15 +164,21 @@ enum NullOrdering extends Serializable:
 enum PlanHint extends Serializable:
   /** Broadcast hint - suggests broadcast join for the specified tables */
   case Broadcast(tables: Vector[String])
+
   /** Merge hint - suggests merge/sort-merge join for the specified tables */
   case Merge(tables: Vector[String])
+
   /** Shuffle hash hint - suggests shuffle hash join */
   case ShuffleHash(tables: Vector[String])
+
   /** Shuffle replicate nested loop hint */
   case ShuffleReplicateNL(tables: Vector[String])
+
   /** Coalesce hint - reduce partitions */
   case Coalesce(partitions: Int)
+
   /** Repartition hint - repartition with optional columns */
   case Repartition(partitions: Int, columns: Vector[String])
+
   /** Repartition by range hint */
   case RepartitionByRange(partitions: Int, columns: Vector[String])

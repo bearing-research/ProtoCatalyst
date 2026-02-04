@@ -11,7 +11,8 @@ import protocatalyst.encoder.{InlineRowSerializer, InternalTypeConverter}
 
 /** Memory allocation benchmarks for InlineRowSerializer.
   *
-  * Run with GC profiler to measure allocations: sbt "benchmarks/Jmh/run -prof gc AllocationBenchmarks"
+  * Run with GC profiler to measure allocations: sbt "benchmarks/Jmh/run -prof gc
+  * AllocationBenchmarks"
   *
   * Key metrics:
   *   - gc.alloc.rate: Allocation rate in MB/sec

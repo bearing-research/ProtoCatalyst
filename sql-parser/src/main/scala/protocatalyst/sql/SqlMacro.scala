@@ -90,14 +90,14 @@ object SqlMacro:
   /** Extract the primary table name from a FROM clause. */
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref)                  => ref.name
-      case FromClause.Join(left, _, _, _)         => extractTableName(left)
-      case FromClause.Subquery(_, alias)          => alias
-      case FromClause.Lateral(_, alias)           => alias
-      case FromClause.Pivot(source, _, alias)     => alias.getOrElse(extractTableName(source))
-      case FromClause.Unpivot(source, _, alias)   => alias.getOrElse(extractTableName(source))
-      case FromClause.LateralView(source, spec)   => spec.tableAlias
-      case FromClause.Values(_, alias, _)         => alias
+      case FromClause.Table(ref)                => ref.name
+      case FromClause.Join(left, _, _, _)       => extractTableName(left)
+      case FromClause.Subquery(_, alias)        => alias
+      case FromClause.Lateral(_, alias)         => alias
+      case FromClause.Pivot(source, _, alias)   => alias.getOrElse(extractTableName(source))
+      case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+      case FromClause.LateralView(source, spec) => spec.tableAlias
+      case FromClause.Values(_, alias, _)       => alias
 
   /** Convert SqlStatement to Expr for runtime use. */
   private def sqlStmtToExpr(stmt: SqlStatement)(using Quotes): Expr[SqlStatement] =
@@ -199,7 +199,8 @@ object SqlMacro:
         val specExpr = lateralViewSpecToExpr(spec)
         '{ FromClause.LateralView($sourceExpr, $specExpr) }
       case FromClause.Values(rows, alias, columnAliases) =>
-        val rowsExpr = Expr.ofSeq(rows.map(row => Expr.ofSeq(row.map(sqlExprToExpr)).asExprOf[Seq[SqlExpr]]))
+        val rowsExpr =
+          Expr.ofSeq(rows.map(row => Expr.ofSeq(row.map(sqlExprToExpr)).asExprOf[Seq[SqlExpr]]))
         val aliasExpr = Expr(alias)
         val columnAliasesExpr = columnAliases match
           case Some(cols) => '{ Some(${ Expr.ofSeq(cols.map(Expr(_))) }.toVector) }
@@ -209,7 +210,14 @@ object SqlMacro:
   private def lateralViewSpecToExpr(spec: LateralViewSpec)(using Quotes): Expr[LateralViewSpec] =
     val generatorExpr = sqlExprToExpr(spec.generator)
     val columnAliasesExpr = Expr.ofSeq(spec.columnAliases.map(Expr(_)))
-    '{ LateralViewSpec(${ Expr(spec.outer) }, $generatorExpr, ${ Expr(spec.tableAlias) }, $columnAliasesExpr.toVector) }
+    '{
+      LateralViewSpec(
+        ${ Expr(spec.outer) },
+        $generatorExpr,
+        ${ Expr(spec.tableAlias) },
+        $columnAliasesExpr.toVector
+      )
+    }
 
   private def pivotSpecToExpr(spec: PivotSpec)(using Quotes): Expr[PivotSpec] =
     val aggregatesExpr = Expr.ofSeq(spec.aggregates.map(pivotAggregateToExpr))
@@ -403,7 +411,7 @@ object SqlMacro:
 
   private def sqlTypeToExpr(sqlType: SqlType)(using Quotes): Expr[SqlType] =
     sqlType match
-      case SqlType.IntegerType       => '{ SqlType.IntegerType }
+      case SqlType.IntegerType   => '{ SqlType.IntegerType }
       case SqlType.LongType      => '{ SqlType.LongType }
       case SqlType.DoubleType    => '{ SqlType.DoubleType }
       case SqlType.StringType    => '{ SqlType.StringType }
@@ -468,10 +476,12 @@ object SqlMacro:
       case SqlExpr.NotExists(stmt)            => validateSubquery(stmt)
       case SqlExpr.InSubquery(value, stmt)    => validateExpr(value) ++ validateSubquery(stmt)
       case SqlExpr.NotInSubquery(value, stmt) => validateExpr(value) ++ validateSubquery(stmt)
-      case SqlExpr.WindowFunction(f, spec) =>
-        validateExpr(f) ++ spec.partitionBy.flatMap(validateExpr) ++ spec.orderBy.flatMap(o => validateExpr(o.expr))
-      case SqlExpr.Grouping(columns)          => columns.flatMap(validateExpr)
-      case _                                  => Vector.empty
+      case SqlExpr.WindowFunction(f, spec)    =>
+        validateExpr(f) ++ spec.partitionBy.flatMap(validateExpr) ++ spec.orderBy.flatMap(o =>
+          validateExpr(o.expr)
+        )
+      case SqlExpr.Grouping(columns) => columns.flatMap(validateExpr)
+      case _                         => Vector.empty
 
     def validateSubquery(stmt: SqlStatement.SelectStatement): Vector[String] =
       // Subqueries can reference outer scope columns, so we skip validation for now
@@ -484,8 +494,8 @@ object SqlMacro:
         case FromClause.Join(left, right, _, condition) =>
           validateFromClause(left) ++ validateFromClause(right) ++
             condition.map(validateExpr).getOrElse(Vector.empty)
-        case FromClause.Subquery(stmt, _) => validateSubquery(stmt)
-        case FromClause.Lateral(stmt, _) => validateSubquery(stmt)
+        case FromClause.Subquery(stmt, _)      => validateSubquery(stmt)
+        case FromClause.Lateral(stmt, _)       => validateSubquery(stmt)
         case FromClause.Pivot(source, spec, _) =>
           validateFromClause(source) ++
             spec.aggregates.flatMap(a => validateExpr(a.aggregate)) ++
@@ -502,10 +512,10 @@ object SqlMacro:
 
     def validateGroupByClause(gb: GroupByClause): Vector[String] =
       gb match
-        case GroupByClause.Simple(exprs)       => exprs.flatMap(validateExpr)
-        case GroupByClause.GroupingSets(sets)  => sets.flatten.flatMap(validateExpr)
-        case GroupByClause.Cube(exprs)         => exprs.flatMap(validateExpr)
-        case GroupByClause.Rollup(exprs)       => exprs.flatMap(validateExpr)
+        case GroupByClause.Simple(exprs)      => exprs.flatMap(validateExpr)
+        case GroupByClause.GroupingSets(sets) => sets.flatten.flatMap(validateExpr)
+        case GroupByClause.Cube(exprs)        => exprs.flatMap(validateExpr)
+        case GroupByClause.Rollup(exprs)      => exprs.flatMap(validateExpr)
 
     val projErrors = stmt.projections.flatMap(p => validateExpr(p.expr))
     val whereErrors = stmt.where.map(validateExpr).getOrElse(Vector.empty)

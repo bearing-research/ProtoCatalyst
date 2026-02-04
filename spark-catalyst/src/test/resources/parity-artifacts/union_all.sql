@@ -1,0 +1,1 @@
+SELECT name FROM users UNION ALL SELECT name FROM users

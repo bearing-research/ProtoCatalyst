@@ -1,0 +1,1 @@
+SELECT name, SUM(salary) FROM users GROUP BY name

@@ -16,8 +16,10 @@ object ArtifactParser {
 
   /** Parse a CompiledArtifact from bytes and extract the LogicalPlan.
     *
-    * @param bytes The serialized artifact bytes (with PCAT header)
-    * @return Either an error message or the parsed Spark LogicalPlan
+    * @param bytes
+    *   The serialized artifact bytes (with PCAT header)
+    * @return
+    *   Either an error message or the parsed Spark LogicalPlan
     */
   def parsePlan(bytes: Array[Byte]): Either[String, LogicalPlan] = {
     for {
@@ -71,7 +73,9 @@ object ArtifactParser {
   }
 
   /** Parse an expression from JSON. */
-  def parseExpression(exprJson: Json): Either[String, org.apache.spark.sql.catalyst.expressions.Expression] = {
+  def parseExpression(
+      exprJson: Json
+  ): Either[String, org.apache.spark.sql.catalyst.expressions.Expression] = {
     ExpressionDecoder.decode(exprJson).left.map(e => s"Expression decode error: ${e.getMessage}")
   }
 

@@ -108,7 +108,9 @@ object PlanConverter:
 
       case With(cteRelations, recursive, child) =>
         if recursive then
-          throw UnsupportedOperationException("Recursive CTEs are not yet supported in mock runtime")
+          throw UnsupportedOperationException(
+            "Recursive CTEs are not yet supported in mock runtime"
+          )
         MLP.WithCTE(
           cteRelations.map((name, plan) => (name, toMock(plan))),
           toMock(child)
@@ -124,7 +126,9 @@ object PlanConverter:
         throw UnsupportedOperationException("LATERAL JOIN is not yet supported in mock runtime")
 
       case Generate(_, _, _, _) =>
-        throw UnsupportedOperationException("LATERAL VIEW / Generate is not yet supported in mock runtime")
+        throw UnsupportedOperationException(
+          "LATERAL VIEW / Generate is not yet supported in mock runtime"
+        )
 
       case ResolvedHint(_, child) =>
         // Hints are optimizer directives; mock runtime ignores them and just executes the child

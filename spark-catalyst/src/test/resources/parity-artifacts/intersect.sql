@@ -1,0 +1,1 @@
+SELECT name FROM users INTERSECT SELECT name FROM users

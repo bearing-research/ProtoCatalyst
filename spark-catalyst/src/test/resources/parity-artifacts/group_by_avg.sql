@@ -1,0 +1,1 @@
+SELECT name, AVG(age) FROM users GROUP BY name

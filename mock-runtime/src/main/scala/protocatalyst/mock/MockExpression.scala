@@ -481,7 +481,8 @@ object MockExpression:
     def nullable: Boolean = true
     def children: Seq[MockExpression] = str +: format.toSeq
 
-  case class ToTimestamp(str: MockExpression, format: Option[MockExpression]) extends MockExpression:
+  case class ToTimestamp(str: MockExpression, format: Option[MockExpression])
+      extends MockExpression:
     def dataType: MockDataType = TimestampType
     def nullable: Boolean = true
     def children: Seq[MockExpression] = str +: format.toSeq

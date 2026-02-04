@@ -381,8 +381,9 @@ object ExpressionEvaluator:
         else
           s match
             case date: java.time.LocalDate => date.plusDays(toInt(d).toLong)
-            case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong).plusDays(toInt(d).toLong)
-            case _                         => throw IllegalArgumentException(s"DATE_ADD requires a date, got $s")
+            case epochDays: Int            =>
+              java.time.LocalDate.ofEpochDay(epochDays.toLong).plusDays(toInt(d).toLong)
+            case _ => throw IllegalArgumentException(s"DATE_ADD requires a date, got $s")
       case DateSub(start, days) =>
         val s = evalInternal(start, row)
         val d = evalInternal(days, row)
@@ -390,8 +391,9 @@ object ExpressionEvaluator:
         else
           s match
             case date: java.time.LocalDate => date.minusDays(toInt(d).toLong)
-            case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong).minusDays(toInt(d).toLong)
-            case _                         => throw IllegalArgumentException(s"DATE_SUB requires a date, got $s")
+            case epochDays: Int            =>
+              java.time.LocalDate.ofEpochDay(epochDays.toLong).minusDays(toInt(d).toLong)
+            case _ => throw IllegalArgumentException(s"DATE_SUB requires a date, got $s")
       case DateDiff(end, start) =>
         val e = evalInternal(end, row)
         val s = evalInternal(start, row)
@@ -400,11 +402,11 @@ object ExpressionEvaluator:
           val endDate = e match
             case date: java.time.LocalDate => date
             case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong)
-            case _                         => throw IllegalArgumentException(s"DATE_DIFF requires dates")
+            case _ => throw IllegalArgumentException(s"DATE_DIFF requires dates")
           val startDate = s match
             case date: java.time.LocalDate => date
             case epochDays: Int            => java.time.LocalDate.ofEpochDay(epochDays.toLong)
-            case _                         => throw IllegalArgumentException(s"DATE_DIFF requires dates")
+            case _ => throw IllegalArgumentException(s"DATE_DIFF requires dates")
           java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate).toInt
       case Extract(field, source) =>
         val v = evalInternal(source, row)
@@ -419,13 +421,18 @@ object ExpressionEvaluator:
         if s == null then null
         else
           val formatStr = format.map(f => evalInternal(f, row).toString).getOrElse("yyyy-MM-dd")
-          java.time.LocalDate.parse(s.toString, java.time.format.DateTimeFormatter.ofPattern(formatStr))
+          java.time.LocalDate
+            .parse(s.toString, java.time.format.DateTimeFormatter.ofPattern(formatStr))
       case ToTimestamp(str, format) =>
         val s = evalInternal(str, row)
         if s == null then null
         else
-          val formatStr = format.map(f => evalInternal(f, row).toString).getOrElse("yyyy-MM-dd HH:mm:ss")
-          java.time.LocalDateTime.parse(s.toString, java.time.format.DateTimeFormatter.ofPattern(formatStr)).atZone(java.time.ZoneId.systemDefault()).toInstant
+          val formatStr =
+            format.map(f => evalInternal(f, row).toString).getOrElse("yyyy-MM-dd HH:mm:ss")
+          java.time.LocalDateTime
+            .parse(s.toString, java.time.format.DateTimeFormatter.ofPattern(formatStr))
+            .atZone(java.time.ZoneId.systemDefault())
+            .toInstant
       case Year(child) =>
         extractField(DateTimeField.Year, evalInternal(child, row))
       case Month(child) =>
@@ -441,11 +448,15 @@ object ExpressionEvaluator:
 
       // Grouping requires aggregate context - cannot be evaluated row-by-row
       case Grouping(_) =>
-        throw IllegalStateException("GROUPING() cannot be evaluated row-by-row, requires aggregate context")
+        throw IllegalStateException(
+          "GROUPING() cannot be evaluated row-by-row, requires aggregate context"
+        )
 
       // Generator functions produce multiple rows and cannot be evaluated row-by-row
       case Explode(_) | PosExplode(_) | Inline(_) | Stack(_, _) =>
-        throw IllegalStateException("Generator functions cannot be evaluated row-by-row, use with LATERAL VIEW")
+        throw IllegalStateException(
+          "Generator functions cannot be evaluated row-by-row, use with LATERAL VIEW"
+        )
 
   private def compareNumeric(
       l: ProtoExpr,
@@ -500,7 +511,7 @@ object ExpressionEvaluator:
   private def castValue(v: Any, targetType: ProtoType): Any =
     targetType match
       case ProtoType.StringType  => v.toString
-      case ProtoType.IntegerType     => toInt(v)
+      case ProtoType.IntegerType => toInt(v)
       case ProtoType.LongType    => v.asInstanceOf[Number].longValue
       case ProtoType.DoubleType  => toDouble(v)
       case ProtoType.FloatType   => toDouble(v).toFloat
@@ -565,7 +576,10 @@ object ExpressionEvaluator:
         case _ =>
           throw IllegalArgumentException(s"Cannot extract $field from $value")
 
-  private def extractFieldFromZonedDateTime(field: DateTimeField, dt: java.time.ZonedDateTime): Int =
+  private def extractFieldFromZonedDateTime(
+      field: DateTimeField,
+      dt: java.time.ZonedDateTime
+  ): Int =
     field match
       case DateTimeField.Year        => dt.getYear
       case DateTimeField.Month       => dt.getMonthValue
@@ -596,7 +610,10 @@ object ExpressionEvaluator:
         case _ =>
           throw IllegalArgumentException(s"Cannot truncate $value to $field")
 
-  private def truncateZonedDateTime(field: DateTimeField, dt: java.time.ZonedDateTime): java.time.ZonedDateTime =
+  private def truncateZonedDateTime(
+      field: DateTimeField,
+      dt: java.time.ZonedDateTime
+  ): java.time.ZonedDateTime =
     field match
       case DateTimeField.Year =>
         dt.withMonth(1).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
@@ -612,8 +629,16 @@ object ExpressionEvaluator:
         dt.withNano(0)
       case DateTimeField.Quarter =>
         val quarterMonth = ((dt.getMonthValue - 1) / 3) * 3 + 1
-        dt.withMonth(quarterMonth).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
+        dt.withMonth(quarterMonth)
+          .withDayOfMonth(1)
+          .withHour(0)
+          .withMinute(0)
+          .withSecond(0)
+          .withNano(0)
       case DateTimeField.Week =>
         dt.`with`(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
-          .withHour(0).withMinute(0).withSecond(0).withNano(0)
+          .withHour(0)
+          .withMinute(0)
+          .withSecond(0)
+          .withNano(0)
       case _ => dt

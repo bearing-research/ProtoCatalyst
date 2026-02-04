@@ -16,11 +16,43 @@ object TypeDecoder {
   private def failure[A](msg: String, history: List[io.circe.CursorOp]): EitherResult[A] =
     scala.Left(DecodingFailure(msg, history))
 
-  def decode(json: Json): EitherResult[DataType] =
-    decode(json.hcursor)
+  def decode(json: Json): EitherResult[DataType] = {
+    // Handle both simple string types ("IntegerType") and object types ({"$type": "..."})
+    json.asString match {
+      case Some(simpleType) => decodeSimpleType(simpleType)
+      case None             => decode(json.hcursor)
+    }
+  }
+
+  /** Decode simple type strings like "IntegerType", "StringType" */
+  private def decodeSimpleType(typeName: String): EitherResult[DataType] = {
+    typeName match {
+      case "BooleanType"      => success(BooleanType)
+      case "ByteType"         => success(ByteType)
+      case "ShortType"        => success(ShortType)
+      case "IntegerType"      => success(IntegerType)
+      case "LongType"         => success(LongType)
+      case "FloatType"        => success(FloatType)
+      case "DoubleType"       => success(DoubleType)
+      case "StringType"       => success(StringType)
+      case "BinaryType"       => success(BinaryType)
+      case "DateType"         => success(DateType)
+      case "TimestampType"    => success(TimestampType)
+      case "TimestampNTZType" => success(TimestampNTZType)
+      case "NullType"         => success(NullType)
+      case other              => failure(s"Unknown simple type: $other", Nil)
+    }
+  }
+
+  /** Normalize short type name to full path */
+  private def normalizeTypeName(shortName: String): String = {
+    if (shortName.contains(".")) shortName
+    else s"protocatalyst.types.ProtoType.$shortName"
+  }
 
   def decode(c: HCursor): EitherResult[DataType] = {
-    c.get[String]("$type").flatMap { typeName =>
+    c.get[String]("$type").flatMap { rawTypeName =>
+      val typeName = normalizeTypeName(rawTypeName)
       typeName match {
         // Primitive types
         case "protocatalyst.types.ProtoType.BooleanType" =>
@@ -128,12 +160,12 @@ object TypeDecoder {
     while (iter.hasNext && error.isEmpty) {
       decodeStructField(iter.next().hcursor) match {
         case scala.Right(field) => result = result :+ field
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)    => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 

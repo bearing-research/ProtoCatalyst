@@ -131,10 +131,11 @@ object AstToProtoTransform:
         case None    => sorted
 
       // Apply hints
-      hinted = if stmt.hints.nonEmpty then
-        val planHints = stmt.hints.map(transformHint)
-        ProtoLogicalPlan.ResolvedHint(planHints, limited)
-      else limited
+      hinted =
+        if stmt.hints.nonEmpty then
+          val planHints = stmt.hints.map(transformHint)
+          ProtoLogicalPlan.ResolvedHint(planHints, limited)
+        else limited
     yield hinted
 
   /** Collect all table schemas from the FROM clause. */
@@ -206,7 +207,13 @@ object AstToProtoTransform:
           // For grouping expressions, we'd need to derive them from the source schema minus pivot and aggregate columns
           // For now, use empty grouping (the pivot will be applied to all non-aggregated columns)
           groupingExprs = Vector.empty[ProtoExpr]
-          pivotPlan = ProtoLogicalPlan.Pivot(groupingExprs, pivotCol, pivotVals, aggregates, sourcePlan)
+          pivotPlan = ProtoLogicalPlan.Pivot(
+            groupingExprs,
+            pivotCol,
+            pivotVals,
+            aggregates,
+            sourcePlan
+          )
         yield alias.map(a => ProtoLogicalPlan.SubqueryAlias(a, pivotPlan)).getOrElse(pivotPlan)
       case FromClause.Unpivot(source, spec, alias) =>
         for
@@ -278,13 +285,17 @@ object AstToProtoTransform:
       // OpaqueCall to known generator functions
       case OpaqueCall(name, args, _, _) =>
         name.toUpperCase match
-          case "EXPLODE" if args.size == 1 => Right(Explode(args.head))
+          case "EXPLODE" if args.size == 1    => Right(Explode(args.head))
           case "POSEXPLODE" if args.size == 1 => Right(PosExplode(args.head))
-          case "INLINE" if args.size == 1 => Right(Inline(args.head))
-          case "STACK" if args.size >= 2 => Right(Stack(args.head, args.tail))
+          case "INLINE" if args.size == 1     => Right(Inline(args.head))
+          case "STACK" if args.size >= 2      => Right(Stack(args.head, args.tail))
           case _ => Left(TransformError.InvalidExpression(s"Unknown generator function: $name"))
       case other =>
-        Left(TransformError.InvalidExpression(s"Expected generator function in LATERAL VIEW, got: $other"))
+        Left(
+          TransformError.InvalidExpression(
+            s"Expected generator function in LATERAL VIEW, got: $other"
+          )
+        )
 
   /** Convert SQL JoinType to ProtoLogicalPlan JoinType. */
   private def toProtoJoinType(jt: protocatalyst.sql.ast.JoinType): protocatalyst.plan.JoinType =
@@ -501,7 +512,9 @@ object AstToProtoTransform:
   def transformExpr(expr: SqlExpr, ctx: TransformContext): Either[TransformError, ProtoExpr] =
     expr match
       case SqlExpr.IntLit(value) =>
-        Right(ProtoExpr.lit(value))
+        // Use IntValue if the value fits in Int range, otherwise LongValue
+        if value >= Int.MinValue && value <= Int.MaxValue then Right(ProtoExpr.lit(value.toInt))
+        else Right(ProtoExpr.lit(value))
 
       case SqlExpr.DoubleLit(value) =>
         Right(ProtoExpr.lit(value))
@@ -748,14 +761,14 @@ object AstToProtoTransform:
 
   private def extractTableName(from: FromClause): String =
     from match
-      case FromClause.Table(ref)             => ref.alias.getOrElse(ref.name)
-      case FromClause.Join(left, _, _, _)    => extractTableName(left)
-      case FromClause.Subquery(_, alias)     => alias
-      case FromClause.Lateral(_, alias)      => alias
-      case FromClause.Pivot(source, _, alias) => alias.getOrElse(extractTableName(source))
+      case FromClause.Table(ref)                => ref.alias.getOrElse(ref.name)
+      case FromClause.Join(left, _, _, _)       => extractTableName(left)
+      case FromClause.Subquery(_, alias)        => alias
+      case FromClause.Lateral(_, alias)         => alias
+      case FromClause.Pivot(source, _, alias)   => alias.getOrElse(extractTableName(source))
       case FromClause.Unpivot(source, _, alias) => alias.getOrElse(extractTableName(source))
       case FromClause.LateralView(source, spec) => spec.tableAlias
-      case FromClause.Values(_, alias, _)    => alias
+      case FromClause.Values(_, alias, _)       => alias
 
   private def transformCaseWhenBranches(
       branches: Vector[(SqlExpr, SqlExpr)],
@@ -921,7 +934,7 @@ object AstToProtoTransform:
                 case ProtoExpr.Literal(LiteralValue.StringValue(field)) =>
                   parseDateTimeField(field) match
                     case Some(dtf) => Right(ProtoExpr.DateTrunc(dtf, transformedArgs(1)))
-                    case None =>
+                    case None      =>
                       Left(
                         TransformError.InvalidExpression(s"Unknown date/time field: $field")
                       )
@@ -953,7 +966,7 @@ object AstToProtoTransform:
                 case ProtoExpr.Literal(LiteralValue.StringValue(field)) =>
                   parseDateTimeField(field) match
                     case Some(dtf) => Right(ProtoExpr.Extract(dtf, transformedArgs(1)))
-                    case None =>
+                    case None      =>
                       Left(
                         TransformError.InvalidExpression(s"Unknown EXTRACT field: $field")
                       )
@@ -1012,29 +1025,29 @@ object AstToProtoTransform:
   /** Parse a date/time field name to DateTimeField. */
   private def parseDateTimeField(field: String): Option[DateTimeField] =
     field.toUpperCase match
-      case "YEAR"        => Some(DateTimeField.Year)
-      case "MONTH"       => Some(DateTimeField.Month)
-      case "DAY"         => Some(DateTimeField.Day)
-      case "HOUR"        => Some(DateTimeField.Hour)
-      case "MINUTE"      => Some(DateTimeField.Minute)
-      case "SECOND"      => Some(DateTimeField.Second)
-      case "QUARTER"     => Some(DateTimeField.Quarter)
-      case "WEEK"        => Some(DateTimeField.Week)
+      case "YEAR"              => Some(DateTimeField.Year)
+      case "MONTH"             => Some(DateTimeField.Month)
+      case "DAY"               => Some(DateTimeField.Day)
+      case "HOUR"              => Some(DateTimeField.Hour)
+      case "MINUTE"            => Some(DateTimeField.Minute)
+      case "SECOND"            => Some(DateTimeField.Second)
+      case "QUARTER"           => Some(DateTimeField.Quarter)
+      case "WEEK"              => Some(DateTimeField.Week)
       case "DAYOFWEEK" | "DOW" => Some(DateTimeField.DayOfWeek)
       case "DAYOFYEAR" | "DOY" => Some(DateTimeField.DayOfYear)
-      case "MICROSECOND" => Some(DateTimeField.Microsecond)
-      case "MILLISECOND" => Some(DateTimeField.Millisecond)
-      case _             => None
+      case "MICROSECOND"       => Some(DateTimeField.Microsecond)
+      case "MILLISECOND"       => Some(DateTimeField.Millisecond)
+      case _                   => None
 
   /** Transform a SQL QueryHint to a PlanHint. */
   private def transformHint(hint: QueryHint): PlanHint =
     hint match
-      case QueryHint.Broadcast(tables)                 => PlanHint.Broadcast(tables)
-      case QueryHint.Merge(tables)                     => PlanHint.Merge(tables)
-      case QueryHint.ShuffleHash(tables)               => PlanHint.ShuffleHash(tables)
-      case QueryHint.ShuffleReplicateNL(tables)        => PlanHint.ShuffleReplicateNL(tables)
-      case QueryHint.Coalesce(partitions)              => PlanHint.Coalesce(partitions)
-      case QueryHint.Repartition(partitions, columns)  => PlanHint.Repartition(partitions, columns)
+      case QueryHint.Broadcast(tables)                => PlanHint.Broadcast(tables)
+      case QueryHint.Merge(tables)                    => PlanHint.Merge(tables)
+      case QueryHint.ShuffleHash(tables)              => PlanHint.ShuffleHash(tables)
+      case QueryHint.ShuffleReplicateNL(tables)       => PlanHint.ShuffleReplicateNL(tables)
+      case QueryHint.Coalesce(partitions)             => PlanHint.Coalesce(partitions)
+      case QueryHint.Repartition(partitions, columns) => PlanHint.Repartition(partitions, columns)
       case QueryHint.RepartitionByRange(partitions, columns) =>
         PlanHint.RepartitionByRange(partitions, columns)
 

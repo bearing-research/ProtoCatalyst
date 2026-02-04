@@ -1,0 +1,1 @@
+SELECT name FROM users EXCEPT SELECT name FROM users

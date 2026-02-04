@@ -32,7 +32,9 @@ class MockSchemaConverterSuite extends munit.FunSuite:
 
   test("converts array type"):
     assertEquals(
-      MockSchemaConverter.toMockType(ProtoType.ArrayType(ProtoType.IntegerType, containsNull = true)),
+      MockSchemaConverter.toMockType(
+        ProtoType.ArrayType(ProtoType.IntegerType, containsNull = true)
+      ),
       MockDataType.ArrayType(MockDataType.IntegerType, containsNull = true)
     )
 

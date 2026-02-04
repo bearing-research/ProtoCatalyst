@@ -292,8 +292,7 @@ class SqlParser(tokens: Vector[Token]):
   /** Parse a single FROM item: table, subquery, lateral, values, or pivot/unpivot. */
   private def parseFromItem(): Either[ParseError, FromClause] =
     val baseItem =
-      if check(Token.LATERAL) then
-        parseLateralSubquery()
+      if check(Token.LATERAL) then parseLateralSubquery()
       else if check(Token.LParen) then
         advance()
         if check(Token.SELECT) then
@@ -331,7 +330,9 @@ class SqlParser(tokens: Vector[Token]):
       parseRestOfValuesRows(Vector(first))
     }
 
-  private def parseRestOfValuesRows(acc: Vector[Vector[SqlExpr]]): Either[ParseError, Vector[Vector[SqlExpr]]] =
+  private def parseRestOfValuesRows(
+      acc: Vector[Vector[SqlExpr]]
+  ): Either[ParseError, Vector[Vector[SqlExpr]]] =
     if check(Token.Comma) then
       advance()
       parseValuesRow().flatMap { row =>
@@ -367,14 +368,11 @@ class SqlParser(tokens: Vector[Token]):
 
   /** Parse table modifiers: PIVOT, UNPIVOT, LATERAL VIEW (can stack) */
   private def parseTableModifiers(source: FromClause): Either[ParseError, FromClause] =
-    if check(Token.PIVOT) then
-      parsePivot(source).flatMap(parseTableModifiers)
-    else if check(Token.UNPIVOT) then
-      parseUnpivot(source).flatMap(parseTableModifiers)
+    if check(Token.PIVOT) then parsePivot(source).flatMap(parseTableModifiers)
+    else if check(Token.UNPIVOT) then parseUnpivot(source).flatMap(parseTableModifiers)
     else if check(Token.LATERAL) && peekIsView() then
       parseLateralView(source).flatMap(parseTableModifiers)
-    else
-      Right(source)
+    else Right(source)
 
   /** Check if the next token after LATERAL is VIEW. */
   private def peekIsView(): Boolean =
@@ -395,7 +393,10 @@ class SqlParser(tokens: Vector[Token]):
       tableAlias <- parseIdentifier("table alias")
       _ <- expect(Token.AS, "AS")
       columnAliases <- parseColumnAliases()
-    yield FromClause.LateralView(source, LateralViewSpec(outer, generator, tableAlias, columnAliases))
+    yield FromClause.LateralView(
+      source,
+      LateralViewSpec(outer, generator, tableAlias, columnAliases)
+    )
 
   /** Parse comma-separated column aliases for LATERAL VIEW. */
   private def parseColumnAliases(): Either[ParseError, Vector[String]] =
@@ -413,7 +414,8 @@ class SqlParser(tokens: Vector[Token]):
       // Peek to see if next is a valid column alias (not a keyword or join keyword)
       if pos + 1 < tokens.length then
         tokens(pos + 1) match
-          case Token.Identifier(name) if !isKeyword(name) && !isJoinKeyword(name) && !isClauseKeyword(name) =>
+          case Token.Identifier(name)
+              if !isKeyword(name) && !isJoinKeyword(name) && !isClauseKeyword(name) =>
             advance() // consume comma
             advance() // consume identifier
             parseRestOfColumnAliases(acc :+ name)
@@ -543,15 +545,16 @@ class SqlParser(tokens: Vector[Token]):
       parseRestOfPivotAggregates(Vector(first))
     }
 
-  private def parseRestOfPivotAggregates(acc: Vector[PivotAggregate]): Either[ParseError, Vector[PivotAggregate]] =
+  private def parseRestOfPivotAggregates(
+      acc: Vector[PivotAggregate]
+  ): Either[ParseError, Vector[PivotAggregate]] =
     // Check if next token is comma and NOT FOR (which would indicate we're done with aggregates)
     if check(Token.Comma) && !lookAheadIsFor() then
       advance()
       parsePivotAggregate().flatMap { agg =>
         parseRestOfPivotAggregates(acc :+ agg)
       }
-    else
-      Right(acc)
+    else Right(acc)
 
   private def lookAheadIsFor(): Boolean =
     // Peek ahead past comma to see if FOR is coming
@@ -576,14 +579,15 @@ class SqlParser(tokens: Vector[Token]):
       parseRestOfPivotValues(Vector(first))
     }
 
-  private def parseRestOfPivotValues(acc: Vector[PivotValue]): Either[ParseError, Vector[PivotValue]] =
+  private def parseRestOfPivotValues(
+      acc: Vector[PivotValue]
+  ): Either[ParseError, Vector[PivotValue]] =
     if check(Token.Comma) then
       advance()
       parsePivotValue().flatMap { v =>
         parseRestOfPivotValues(acc :+ v)
       }
-    else
-      Right(acc)
+    else Right(acc)
 
   private def parsePivotValue(): Either[ParseError, PivotValue] =
     parsePrimary().flatMap { expr =>
@@ -606,7 +610,9 @@ class SqlParser(tokens: Vector[Token]):
         Some(name)
       case _ => None
 
-  /** Parse UNPIVOT clause: UNPIVOT [INCLUDE/EXCLUDE NULLS] (value_col FOR name_col IN (cols)) [alias] */
+  /** Parse UNPIVOT clause: UNPIVOT [INCLUDE/EXCLUDE NULLS] (value_col FOR name_col IN (cols))
+    * [alias]
+    */
   private def parseUnpivot(source: FromClause): Either[ParseError, FromClause] =
     advance() // consume UNPIVOT
     // Check for optional INCLUDE NULLS or EXCLUDE NULLS
@@ -622,7 +628,11 @@ class SqlParser(tokens: Vector[Token]):
       _ <- expect(Token.RParen, ")")
       _ <- expect(Token.RParen, ")")
       alias = parseOptionalPivotAlias()
-    yield FromClause.Unpivot(source, UnpivotSpec(valueColumn, nameColumn, columns, includeNulls), alias)
+    yield FromClause.Unpivot(
+      source,
+      UnpivotSpec(valueColumn, nameColumn, columns, includeNulls),
+      alias
+    )
 
   private def parseUnpivotNullsOption(): Boolean =
     // Default is EXCLUDE NULLS (false), INCLUDE NULLS returns true
@@ -662,14 +672,15 @@ class SqlParser(tokens: Vector[Token]):
       parseRestOfUnpivotColumns(Vector(first))
     }
 
-  private def parseRestOfUnpivotColumns(acc: Vector[UnpivotColumn]): Either[ParseError, Vector[UnpivotColumn]] =
+  private def parseRestOfUnpivotColumns(
+      acc: Vector[UnpivotColumn]
+  ): Either[ParseError, Vector[UnpivotColumn]] =
     if check(Token.Comma) then
       advance()
       parseUnpivotColumn().flatMap { col =>
         parseRestOfUnpivotColumns(acc :+ col)
       }
-    else
-      Right(acc)
+    else Right(acc)
 
   private def parseUnpivotColumn(): Either[ParseError, UnpivotColumn] =
     parsePrimary().flatMap { expr =>
@@ -704,8 +715,7 @@ class SqlParser(tokens: Vector[Token]):
         if check(Token.SETS) then
           advance()
           parseGroupingSets()
-        else
-          Left(ParseError.UnexpectedToken(current, "SETS after GROUPING", currentPosition))
+        else Left(ParseError.UnexpectedToken(current, "SETS after GROUPING", currentPosition))
       case Token.CUBE =>
         advance()
         parseCubeOrRollupArgs().map(GroupByClause.Cube(_))
@@ -726,8 +736,7 @@ class SqlParser(tokens: Vector[Token]):
                 Right(GroupByClause.Rollup(exprs))
               case t =>
                 Left(ParseError.UnexpectedToken(t, "CUBE or ROLLUP after WITH", currentPosition))
-          else
-            Right(GroupByClause.Simple(exprs))
+          else Right(GroupByClause.Simple(exprs))
         }
 
   private def parseGroupingSets(): Either[ParseError, GroupByClause.GroupingSets] =
@@ -737,14 +746,15 @@ class SqlParser(tokens: Vector[Token]):
       }
     }
 
-  private def parseRestOfGroupingSets(acc: Vector[Vector[SqlExpr]]): Either[ParseError, GroupByClause.GroupingSets] =
+  private def parseRestOfGroupingSets(
+      acc: Vector[Vector[SqlExpr]]
+  ): Either[ParseError, GroupByClause.GroupingSets] =
     if check(Token.Comma) then
       advance()
       parseGroupingSet().flatMap { set =>
         parseRestOfGroupingSets(acc :+ set)
       }
-    else
-      expect(Token.RParen, ")").map(_ => GroupByClause.GroupingSets(acc))
+    else expect(Token.RParen, ")").map(_ => GroupByClause.GroupingSets(acc))
 
   private def parseGroupingSet(): Either[ParseError, Vector[SqlExpr]] =
     if check(Token.LParen) then
@@ -768,8 +778,7 @@ class SqlParser(tokens: Vector[Token]):
       parsePrimary().flatMap { e =>
         parseRestOfGroupingSet(acc :+ e)
       }
-    else
-      expect(Token.RParen, ")").map(_ => acc)
+    else expect(Token.RParen, ")").map(_ => acc)
 
   private def parseCubeOrRollupArgs(): Either[ParseError, Vector[SqlExpr]] =
     expect(Token.LParen, "(").flatMap { _ =>
@@ -778,14 +787,15 @@ class SqlParser(tokens: Vector[Token]):
       }
     }
 
-  private def parseRestOfCubeOrRollupArgs(acc: Vector[SqlExpr]): Either[ParseError, Vector[SqlExpr]] =
+  private def parseRestOfCubeOrRollupArgs(
+      acc: Vector[SqlExpr]
+  ): Either[ParseError, Vector[SqlExpr]] =
     if check(Token.Comma) then
       advance()
       parsePrimary().flatMap { e =>
         parseRestOfCubeOrRollupArgs(acc :+ e)
       }
-    else
-      expect(Token.RParen, ")").map(_ => acc)
+    else expect(Token.RParen, ")").map(_ => acc)
 
   private def parseGroupByExprs(): Either[ParseError, Vector[SqlExpr]] =
     parsePrimary().flatMap { first =>
@@ -798,8 +808,7 @@ class SqlParser(tokens: Vector[Token]):
       parsePrimary().flatMap { e =>
         parseRestOfGroupByExprs(acc :+ e)
       }
-    else
-      Right(acc)
+    else Right(acc)
 
   private def parseOptionalHaving(): Either[ParseError, Option[SqlExpr]] =
     if check(Token.HAVING) then
@@ -1172,17 +1181,18 @@ class SqlParser(tokens: Vector[Token]):
         if isValidExtractField(upper) then
           advance()
           Right(upper)
-        else
-          Left(ParseError.SyntaxError(s"Invalid EXTRACT field: $name", currentPosition))
+        else Left(ParseError.SyntaxError(s"Invalid EXTRACT field: $name", currentPosition))
       case t =>
-        Left(ParseError.UnexpectedToken(t, "date/time field (YEAR, MONTH, DAY, etc.)", currentPosition))
+        Left(
+          ParseError.UnexpectedToken(t, "date/time field (YEAR, MONTH, DAY, etc.)", currentPosition)
+        )
 
   private def isValidExtractField(field: String): Boolean =
     field match
-      case "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND" => true
+      case "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND"        => true
       case "QUARTER" | "WEEK" | "DAYOFWEEK" | "DOW" | "DAYOFYEAR" | "DOY" => true
-      case "MICROSECOND" | "MILLISECOND" => true
-      case _ => false
+      case "MICROSECOND" | "MILLISECOND"                                  => true
+      case _                                                              => false
 
   /** Parse CASE WHEN expr THEN result [WHEN ...] [ELSE result] END */
   private def parseCaseWhen(): Either[ParseError, SqlExpr] =

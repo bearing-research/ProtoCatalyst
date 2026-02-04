@@ -1,7 +1,7 @@
 package protocatalyst.catalyst.json
 
 import io.circe.{DecodingFailure, HCursor, Json}
-import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedFunction, UnresolvedInlineTable, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.{UnresolvedInlineTable, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -21,8 +21,15 @@ object PlanDecoder {
   def decode(json: Json): EitherResult[LogicalPlan] =
     decode(json.hcursor)
 
+  /** Normalize short type name to full path or return as-is if already full path */
+  private def normalizePlanType(shortName: String): String = {
+    if (shortName.contains(".")) shortName
+    else s"protocatalyst.plan.ProtoLogicalPlan.$shortName"
+  }
+
   def decode(c: HCursor): EitherResult[LogicalPlan] = {
-    c.get[String]("$type").flatMap { planType =>
+    c.get[String]("$type").flatMap { rawPlanType =>
+      val planType = normalizePlanType(rawPlanType)
       planType match {
         // === Leaf nodes ===
         case "protocatalyst.plan.ProtoLogicalPlan.RelationRef" =>
@@ -225,18 +232,18 @@ object PlanDecoder {
 
   private def asNamedExpression(expr: Expression): NamedExpression = expr match {
     case ne: NamedExpression => ne
-    case other => Alias(other, other.sql)()
+    case other               => Alias(other, other.sql)()
   }
 
   private def decodeJoinType(str: String): JoinType = str match {
-    case "Inner" => Inner
-    case "LeftOuter" => LeftOuter
+    case "Inner"      => Inner
+    case "LeftOuter"  => LeftOuter
     case "RightOuter" => RightOuter
-    case "FullOuter" => FullOuter
-    case "LeftSemi" => LeftSemi
-    case "LeftAnti" => LeftAnti
-    case "Cross" => Cross
-    case _ => Inner // Default
+    case "FullOuter"  => FullOuter
+    case "LeftSemi"   => LeftSemi
+    case "LeftAnti"   => LeftAnti
+    case "Cross"      => Cross
+    case _            => Inner // Default
   }
 
   private def decodeSortOrders(jsons: Vector[Json]): EitherResult[Seq[SortOrder]] = {
@@ -246,12 +253,12 @@ object PlanDecoder {
     while (iter.hasNext && error.isEmpty) {
       decodeSortOrder(iter.next().hcursor) match {
         case scala.Right(order) => result = result :+ order
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)    => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -263,14 +270,14 @@ object PlanDecoder {
       nullOrderingStr <- c.get[String]("nullOrdering")
     } yield {
       val direction = directionStr match {
-        case "Ascending" => Ascending
+        case "Ascending"  => Ascending
         case "Descending" => Descending
-        case _ => Ascending
+        case _            => Ascending
       }
       val nullOrdering = nullOrderingStr match {
         case "NullsFirst" => NullsFirst
-        case "NullsLast" => NullsLast
-        case _ => if (direction == Ascending) NullsFirst else NullsLast
+        case "NullsLast"  => NullsLast
+        case _            => if (direction == Ascending) NullsFirst else NullsLast
       }
       SortOrder(child, direction, nullOrdering, Seq.empty)
     }
@@ -283,12 +290,12 @@ object PlanDecoder {
     while (iter.hasNext && error.isEmpty) {
       decode(iter.next()) match {
         case scala.Right(plan) => result = result :+ plan
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)   => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -299,12 +306,12 @@ object PlanDecoder {
     while (iter.hasNext && error.isEmpty) {
       decodeRow(iter.next()) match {
         case scala.Right(row) => result = result :+ row
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)  => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -317,26 +324,30 @@ object PlanDecoder {
     }
   }
 
-  private def decodeSchema(c: HCursor): EitherResult[Seq[org.apache.spark.sql.types.StructField]] = {
+  private def decodeSchema(
+      c: HCursor
+  ): EitherResult[Seq[org.apache.spark.sql.types.StructField]] = {
     for {
       fieldsJson <- c.get[Vector[Json]]("fields")
       fields <- decodeStructFields(fieldsJson)
     } yield fields
   }
 
-  private def decodeStructFields(jsons: Vector[Json]): EitherResult[Seq[org.apache.spark.sql.types.StructField]] = {
+  private def decodeStructFields(
+      jsons: Vector[Json]
+  ): EitherResult[Seq[org.apache.spark.sql.types.StructField]] = {
     var result: Vector[org.apache.spark.sql.types.StructField] = Vector.empty
     var error: Option[DecodingFailure] = None
     val iter = jsons.iterator
     while (iter.hasNext && error.isEmpty) {
       TypeDecoder.decodeStructField(iter.next().hcursor) match {
         case scala.Right(field) => result = result :+ field
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)    => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -347,12 +358,12 @@ object PlanDecoder {
     while (iter.hasNext && error.isEmpty) {
       decodeCTERelation(iter.next()) match {
         case scala.Right(rel) => result = result :+ rel
-        case scala.Left(err) => error = Some(err)
+        case scala.Left(err)  => error = Some(err)
       }
     }
     error match {
       case Some(err) => scala.Left(err)
-      case None => scala.Right(result)
+      case None      => scala.Right(result)
     }
   }
 
@@ -369,9 +380,8 @@ object PlanDecoder {
     }
   }
 
-
   private def optionSequence[A](opt: Option[EitherResult[A]]): EitherResult[Option[A]] = opt match {
-    case None => scala.Right(None)
+    case None         => scala.Right(None)
     case Some(either) => either.map(Some(_))
   }
 }

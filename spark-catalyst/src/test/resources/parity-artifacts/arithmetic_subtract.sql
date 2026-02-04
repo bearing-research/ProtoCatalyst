@@ -1,0 +1,1 @@
+SELECT salary - 1000 FROM users
