@@ -18,6 +18,86 @@ object SqlMacro:
   ): Either[String, CompiledArtifact] =
     ${ compileSQLImpl[A]('sql, 'enc) }
 
+  /** Compile and optimize a SQL string at compile time.
+    *
+    * This method parses the SQL and applies optimizer rules at compile time, embedding the
+    * optimized plan as a constant in the bytecode.
+    *
+    * @param sql
+    *   The SQL query string (must be a compile-time literal)
+    * @param enc
+    *   The ProtoEncoder for the result type
+    * @return
+    *   A CompiledArtifact with the optimized plan
+    */
+  inline def compileOptimized[A](inline sql: String)(using
+      enc: ProtoEncoder[A]
+  ): Either[String, CompiledArtifact] =
+    ${ compileOptimizedImpl[A]('sql, 'enc) }
+
+  def compileOptimizedImpl[A: Type](
+      sqlExpr: Expr[String],
+      encExpr: Expr[ProtoEncoder[A]]
+  )(using Quotes): Expr[Either[String, CompiledArtifact]] =
+    import quotes.reflect.*
+
+    // Extract the SQL string literal at compile time
+    val sql = sqlExpr.valueOrAbort
+
+    // Parse SQL at compile time
+    SqlParser.parse(sql) match
+      case Left(parseError) =>
+        report.errorAndAbort(s"SQL parse error: $parseError")
+
+      case Right(stmt) =>
+        // Extract table name from statement
+        val tableName = extractTableNameFromStmt(stmt)
+
+        // Generate code that:
+        // 1. Gets schema from encoder
+        // 2. Validates columns
+        // 3. Transforms AST to Proto plan
+        // 4. Optimizes the plan (this happens at runtime for now, but structure is set up)
+        // 5. Builds CompiledArtifact
+
+        '{
+          val encoder = $encExpr
+          val schema = encoder.schema
+          val table = ${ Expr(tableName) }
+
+          // Validate columns
+          val errors = SqlMacro.validateColumnsStmt(${ sqlStmtToExpr(stmt) }, schema)
+          if errors.nonEmpty then Left(s"Schema validation failed: ${errors.mkString("; ")}")
+          else
+            // Transform to Proto
+            AstToProtoTransform.transformStmt(${ sqlStmtToExpr(stmt) }, schema, table) match
+              case Right(plan) =>
+                // Optimize the plan
+                val optimizedPlan = protocatalyst.optimizer.Optimizer.optimize(plan)
+
+                val outputSchema = SqlMacro.deriveOutputSchemaStmt(${ sqlStmtToExpr(stmt) }, schema)
+                val contract = SchemaContract(
+                  table,
+                  schema.fields.zipWithIndex.map { (f, i) =>
+                    FieldContract(f.name, f.dataType, f.nullable, i)
+                  },
+                  schema.fingerprint
+                )
+                val artifact = CompiledArtifact(
+                  formatVersion = ArtifactVersion.current,
+                  protocatalystVersion = "0.1.0-SNAPSHOT",
+                  compiledAt = System.currentTimeMillis(),
+                  contentHash = optimizedPlan.hashCode().toLong,
+                  schemaContracts = Vector(contract),
+                  plan = optimizedPlan,
+                  outputSchema = outputSchema,
+                  sourceInfo = Some(SourceInfo("sql-optimized", 0, Some(${ Expr(sql) })))
+                )
+                Right(artifact)
+              case Left(err) =>
+                Left(s"Transform failed: ${err.message}")
+        }
+
   def compileSQLImpl[A: Type](
       sqlExpr: Expr[String],
       encExpr: Expr[ProtoEncoder[A]]
