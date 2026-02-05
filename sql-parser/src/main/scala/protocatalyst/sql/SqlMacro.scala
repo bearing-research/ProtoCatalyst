@@ -4,6 +4,9 @@ import scala.quoted._
 
 import protocatalyst.artifact._
 import protocatalyst.encoder._
+import protocatalyst.macros.ProtoLiftables.given
+import protocatalyst.optimizer.Optimizer
+import protocatalyst.plan.ProtoLogicalPlan
 import protocatalyst.schema._
 import protocatalyst.sql.ast._
 import protocatalyst.sql.parser.SqlParser
@@ -20,15 +23,15 @@ object SqlMacro:
 
   /** Compile and optimize a SQL string at compile time.
     *
-    * This method parses the SQL and applies optimizer rules at compile time, embedding the
-    * optimized plan as a constant in the bytecode.
+    * This method parses the SQL, transforms to Proto plan, and applies optimizer rules all at Scala
+    * compile time. The optimized plan is embedded as a constant in the bytecode.
     *
     * @param sql
     *   The SQL query string (must be a compile-time literal)
     * @param enc
-    *   The ProtoEncoder for the result type
+    *   The ProtoEncoder for the result type (used only for type checking at compile time)
     * @return
-    *   A CompiledArtifact with the optimized plan
+    *   A CompiledArtifact with the optimized plan (embedded as compile-time constant)
     */
   inline def compileOptimized[A](inline sql: String)(using
       enc: ProtoEncoder[A]
@@ -53,50 +56,55 @@ object SqlMacro:
         // Extract table name from statement
         val tableName = extractTableNameFromStmt(stmt)
 
-        // Generate code that:
-        // 1. Gets schema from encoder
-        // 2. Validates columns
-        // 3. Transforms AST to Proto plan
-        // 4. Optimizes the plan (this happens at runtime for now, but structure is set up)
-        // 5. Builds CompiledArtifact
+        // Step 1: Derive schema at compile time from Type[A]
+        CompileTimeSchemaDerivation.deriveSchema[A] match
+          case Left(schemaErr) =>
+            report.errorAndAbort(s"Schema derivation failed for type ${Type.show[A]}: $schemaErr")
 
-        '{
-          val encoder = $encExpr
-          val schema = encoder.schema
-          val table = ${ Expr(tableName) }
+          case Right(schema) =>
+            // Step 2: Validate columns at compile time
+            val validationErrors = validateColumnsStmt(stmt, schema)
+            if validationErrors.nonEmpty then
+              report.errorAndAbort(
+                s"Column validation failed: ${validationErrors.mkString("; ")}"
+              )
 
-          // Validate columns
-          val errors = SqlMacro.validateColumnsStmt(${ sqlStmtToExpr(stmt) }, schema)
-          if errors.nonEmpty then Left(s"Schema validation failed: ${errors.mkString("; ")}")
-          else
-            // Transform to Proto
-            AstToProtoTransform.transformStmt(${ sqlStmtToExpr(stmt) }, schema, table) match
+            // Step 3: Transform AST to Proto plan at compile time
+            AstToProtoTransform.transformStmt(stmt, schema, tableName) match
+              case Left(transformErr) =>
+                report.errorAndAbort(s"Transform failed: ${transformErr.message}")
+
               case Right(plan) =>
-                // Optimize the plan
-                val optimizedPlan = protocatalyst.optimizer.Optimizer.optimize(plan)
+                // Step 4: Optimize the plan at compile time
+                val optimizedPlan: ProtoLogicalPlan = Optimizer.optimize(plan)
 
-                val outputSchema = SqlMacro.deriveOutputSchemaStmt(${ sqlStmtToExpr(stmt) }, schema)
+                // Step 5: Derive output schema at compile time
+                val outputSchema = deriveOutputSchemaStmt(stmt, schema)
+
+                // Step 6: Build schema contract at compile time
                 val contract = SchemaContract(
-                  table,
-                  schema.fields.zipWithIndex.map { (f, i) =>
+                  tableName,
+                  schema.fields.zipWithIndex.map { case (f, i) =>
                     FieldContract(f.name, f.dataType, f.nullable, i)
                   },
                   schema.fingerprint
                 )
-                val artifact = CompiledArtifact(
-                  formatVersion = ArtifactVersion.current,
-                  protocatalystVersion = "0.1.0-SNAPSHOT",
-                  compiledAt = System.currentTimeMillis(),
-                  contentHash = optimizedPlan.hashCode().toLong,
-                  schemaContracts = Vector(contract),
-                  plan = optimizedPlan,
-                  outputSchema = outputSchema,
-                  sourceInfo = Some(SourceInfo("sql-optimized", 0, Some(${ Expr(sql) })))
-                )
-                Right(artifact)
-              case Left(err) =>
-                Left(s"Transform failed: ${err.message}")
-        }
+
+                // Step 7: Lift the optimized plan to an Expr (embeds as constant in bytecode)
+                // Only runtime operations: System.currentTimeMillis() and building final artifact
+                '{
+                  val artifact = CompiledArtifact(
+                    formatVersion = ArtifactVersion.current,
+                    protocatalystVersion = "0.1.0-SNAPSHOT",
+                    compiledAt = System.currentTimeMillis(),
+                    contentHash = ${ Expr(optimizedPlan.hashCode().toLong) },
+                    schemaContracts = ${ Expr(Vector(contract)) },
+                    plan = ${ Expr(optimizedPlan) }, // Lifted: embedded as bytecode constant
+                    outputSchema = ${ Expr(outputSchema) }, // Lifted: embedded as bytecode constant
+                    sourceInfo = Some(SourceInfo("sql-optimized-compile-time", 0, Some(${ Expr(sql) })))
+                  )
+                  Right(artifact)
+                }
 
   def compileSQLImpl[A: Type](
       sqlExpr: Expr[String],

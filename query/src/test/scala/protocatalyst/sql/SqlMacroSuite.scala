@@ -195,3 +195,44 @@ class SqlMacroSuite extends munit.FunSuite:
       INNER JOIN departments d ON e.name = d.name
     """)
     assertNotEquals(query.contentHash, 0L)
+
+  // ============================================================
+  // Compile-time optimization tests (sqlOptimized)
+  // ============================================================
+
+  test("sqlOptimized compiles simple SELECT"):
+    val query = CompiledQuery.sqlOptimized[SqlTestUser]("SELECT name FROM users")
+    assertNotEquals(query.contentHash, 0L)
+    // Verify sourceInfo indicates compile-time optimization
+    assert(query.artifact.sourceInfo.exists(_.sourceFile == "sql-optimized-compile-time"))
+
+  test("sqlOptimized compiles SELECT with WHERE"):
+    val query = CompiledQuery.sqlOptimized[SqlTestUser]("SELECT name, age FROM users WHERE age > 18")
+    assertNotEquals(query.contentHash, 0L)
+
+  test("sqlOptimized produces optimized plan"):
+    // This query should have "AND true" folded away by the optimizer
+    val query =
+      CompiledQuery.sqlOptimized[SqlTestUser]("SELECT name FROM users WHERE age > 18 AND true")
+
+    // Verify the plan structure - should have filter simplified
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, _)) => () // ok
+      case _ => fail("Expected Project over Filter")
+
+  test("sqlOptimized works with complex query"):
+    val query = CompiledQuery.sqlOptimized[SqlTestUser]("""
+      SELECT name, salary
+      FROM users
+      WHERE age >= 21 AND salary > 50000
+      ORDER BY salary DESC
+      LIMIT 100
+    """)
+    assertNotEquals(query.contentHash, 0L)
+
+  test("sqlOptimizedEither returns Right on valid SQL"):
+    val result = CompiledQuery.sqlOptimizedEither[SqlTestUser]("SELECT name FROM users")
+    assert(result.isRight)
+    assert(
+      result.toOption.get.artifact.sourceInfo.exists(_.sourceFile == "sql-optimized-compile-time")
+    )

@@ -40,6 +40,30 @@ object CompiledQuery:
   ): Either[String, CompiledQuery[A]] =
     SqlMacro.compileSQL[A](query).map(artifact => fromArtifact(artifact, enc))
 
+  /** Compile and optimize SQL at compile time.
+    *
+    * Unlike `sql`, this method performs schema derivation, plan transformation, and optimization all
+    * at Scala compile time. The optimized plan is embedded as a constant in the bytecode.
+    *
+    * Example:
+    * {{{
+    * case class User(name: String, age: Int, salary: Double) derives ProtoEncoder
+    * val query = CompiledQuery.sqlOptimized[User](
+    *   "SELECT name FROM users WHERE age > 18 AND true"  // AND true folded away at compile time
+    * )
+    * }}}
+    */
+  inline def sqlOptimized[A](inline query: String)(using enc: ProtoEncoder[A]): CompiledQuery[A] =
+    SqlMacro.compileOptimized[A](query) match
+      case Right(artifact) => fromArtifact(artifact, enc)
+      case Left(err)       => throw new IllegalArgumentException(err)
+
+  /** Compile and optimize SQL at compile time, returning Either for error handling. */
+  inline def sqlOptimizedEither[A](inline query: String)(using
+      enc: ProtoEncoder[A]
+  ): Either[String, CompiledQuery[A]] =
+    SqlMacro.compileOptimized[A](query).map(artifact => fromArtifact(artifact, enc))
+
   /** Load a pre-compiled artifact. */
   def fromBytes[A](bytes: Array[Byte])(using
       enc: ProtoEncoder[A]
