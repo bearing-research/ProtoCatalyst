@@ -135,6 +135,18 @@ final class Table[A] private (
   /** Union with another query */
   def union(other: Query[A]): Query[A] = baseQuery.union(other)
 
+  /** Intersect with another query */
+  def intersect(other: Query[A]): Query[A] = baseQuery.intersect(other)
+
+  /** Intersect all with another query */
+  def intersectAll(other: Query[A]): Query[A] = baseQuery.intersectAll(other)
+
+  /** Except (set difference) with another query */
+  def except(other: Query[A]): Query[A] = baseQuery.except(other)
+
+  /** Except all with another query */
+  def exceptAll(other: Query[A]): Query[A] = baseQuery.exceptAll(other)
+
   /** Compile this query to an artifact */
   def compile: protocatalyst.query.CompiledQuery[A] = baseQuery.compile
 

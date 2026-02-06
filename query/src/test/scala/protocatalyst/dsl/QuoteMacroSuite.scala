@@ -313,3 +313,63 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Union([Filter(active_users), Filter(archived_users)]), got: $other")
+
+  test("quote with intersect"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users1").intersect(Table[QuoteUser]("users2").toQuery)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Intersect(
+            ProtoLogicalPlan.RelationRef("users1", _, _),
+            ProtoLogicalPlan.RelationRef("users2", _, _),
+            false
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Intersect(users1, users2, isAll=false), got: $other")
+
+  test("quote with intersectAll"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users1").intersectAll(Table[QuoteUser]("users2").toQuery)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Intersect(
+            ProtoLogicalPlan.RelationRef("users1", _, _),
+            ProtoLogicalPlan.RelationRef("users2", _, _),
+            true
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Intersect(users1, users2, isAll=true), got: $other")
+
+  test("quote with except"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users1").except(Table[QuoteUser]("users2").toQuery)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Except(
+            ProtoLogicalPlan.RelationRef("users1", _, _),
+            ProtoLogicalPlan.RelationRef("users2", _, _),
+            false
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Except(users1, users2, isAll=false), got: $other")
+
+  test("quote with exceptAll"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users1").exceptAll(Table[QuoteUser]("users2").toQuery)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Except(
+            ProtoLogicalPlan.RelationRef("users1", _, _),
+            ProtoLogicalPlan.RelationRef("users2", _, _),
+            true
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Except(users1, users2, isAll=true), got: $other")

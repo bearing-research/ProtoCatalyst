@@ -171,6 +171,38 @@ class Query[A] private[dsl] (
       schemaContracts ++ other.schemaContracts
     )
 
+  /** Intersect with another query (must have same schema) */
+  def intersect(other: Query[A]): Query[A] =
+    new Query(
+      ProtoLogicalPlan.Intersect(plan, other.plan, isAll = false),
+      outputEncoder,
+      schemaContracts ++ other.schemaContracts
+    )
+
+  /** Intersect all with another query (keeps duplicates) */
+  def intersectAll(other: Query[A]): Query[A] =
+    new Query(
+      ProtoLogicalPlan.Intersect(plan, other.plan, isAll = true),
+      outputEncoder,
+      schemaContracts ++ other.schemaContracts
+    )
+
+  /** Except (set difference) with another query */
+  def except(other: Query[A]): Query[A] =
+    new Query(
+      ProtoLogicalPlan.Except(plan, other.plan, isAll = false),
+      outputEncoder,
+      schemaContracts ++ other.schemaContracts
+    )
+
+  /** Except all with another query (keeps duplicates) */
+  def exceptAll(other: Query[A]): Query[A] =
+    new Query(
+      ProtoLogicalPlan.Except(plan, other.plan, isAll = true),
+      outputEncoder,
+      schemaContracts ++ other.schemaContracts
+    )
+
   /** Compile this query to an artifact */
   def compile: CompiledQuery[A] =
     val canonicalPlan = Canonicalizer.canonicalize(plan)

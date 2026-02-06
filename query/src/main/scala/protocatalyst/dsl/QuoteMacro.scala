@@ -249,6 +249,34 @@ object QuoteMacro:
           tableName
         )
 
+      // query.intersect(otherQuery)
+      case Apply(Select(child, "intersect"), List(otherExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = false), tableName)
+
+      // query.intersectAll(otherQuery)
+      case Apply(Select(child, "intersectAll"), List(otherExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = true), tableName)
+
+      // query.except(otherQuery)
+      case Apply(Select(child, "except"), List(otherExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = false), tableName)
+
+      // query.exceptAll(otherQuery)
+      case Apply(Select(child, "exceptAll"), List(otherExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = true), tableName)
+
       // Table.apply[A]("tableName") - direct table creation
       case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
         extractStringLiteral(tableNameExpr).map { tableName =>
