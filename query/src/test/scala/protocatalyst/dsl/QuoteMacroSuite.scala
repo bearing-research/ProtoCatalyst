@@ -740,3 +740,42 @@ class QuoteMacroSuite extends munit.FunSuite:
           case other => fail(s"Expected Max(salary), got: $other")
       case other =>
         fail(s"Expected Aggregate plan, got: $other")
+
+  // ============================================================================
+  // Select / Projection Tests
+  // ============================================================================
+
+  test("quote with single column select using explicit Column"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").select(Column[QuoteUser, String]("name"))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(projExprs, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(projExprs.size, 1)
+        projExprs.head match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+      case other =>
+        fail(s"Expected Project plan, got: $other")
+
+  // Note: The optimizer pushes Project above Limit, so we expect Project(Limit(...))
+  test("quote with select and limit"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .select(Column[QuoteUser, String]("name"))
+        .limit(10)
+    }
+
+    query.artifact.plan match
+      // Optimizer reorders: Project is pushed above Limit
+      case ProtoLogicalPlan.Project(
+            projExprs,
+            ProtoLogicalPlan.Limit(10, ProtoLogicalPlan.RelationRef("users", _, _))
+          ) =>
+        assertEquals(projExprs.size, 1)
+        projExprs.head match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+      case other =>
+        fail(s"Expected Project(Limit(...)), got: $other")

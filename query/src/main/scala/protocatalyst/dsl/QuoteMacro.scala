@@ -136,169 +136,195 @@ object QuoteMacro:
   // AST Extraction Helpers
   // ============================================================================
 
+  // Result type: (plan, tableName, inputSchema)
+  // The inputSchema is derived from the Table and propagated up
+  private type PlanResult = (ProtoLogicalPlan, String, ProtoSchema)
+
   private def extractQueryPlan(using
       q: Quotes
-  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, (ProtoLogicalPlan, String)] =
-    extractQueryPlanRec(term, schema)
+  )(term: q.reflect.Term, fallbackSchema: ProtoSchema): Either[String, (ProtoLogicalPlan, String)] =
+    extractQueryPlanRec(term, fallbackSchema).map { case (plan, name, _) => (plan, name) }
 
   private def extractQueryPlanRec(using
       Quotes
   )(
       term: quotes.reflect.Term,
-      schema: ProtoSchema
-  ): Either[String, (ProtoLogicalPlan, String)] =
-    matchPlan(term, schema)
+      fallbackSchema: ProtoSchema
+  ): Either[String, PlanResult] =
+    matchPlan(term, fallbackSchema)
 
   private def matchPlan(using
       Quotes
   )(
       term: quotes.reflect.Term,
-      schema: ProtoSchema
-  ): Either[String, (ProtoLogicalPlan, String)] =
+      fallbackSchema: ProtoSchema
+  ): Either[String, PlanResult] =
     import quotes.reflect.*
 
     term match
 
       // Handle Inlined wrapper
       case Inlined(_, _, inner) =>
-        extractQueryPlanRec(inner, schema)
+        extractQueryPlanRec(inner, fallbackSchema)
 
       // Handle Block wrapper
       case Block(_, expr) =>
-        extractQueryPlanRec(expr, schema)
+        extractQueryPlanRec(expr, fallbackSchema)
 
       // Handle Typed wrapper
       case Typed(expr, _) =>
-        extractQueryPlanRec(expr, schema)
+        extractQueryPlanRec(expr, fallbackSchema)
 
       // Table[A]("tableName").toQuery
       case Apply(Select(tableExpr, "toQuery"), Nil) =>
-        extractTablePlan(tableExpr, schema)
+        extractTablePlan(tableExpr, fallbackSchema)
 
       // query.filter(predicate) - TypeApply version
       case Apply(Apply(TypeApply(Select(child, "filter"), _), List(predicate)), _) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          filterExpr <- extractPredicateExpr(predicate, schema)
-        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          filterExpr <- extractPredicateExpr(predicate, childSchema)
+        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       // query.filter(predicate) - non-TypeApply version
       case Apply(Select(child, "filter"), List(predicate)) =>
-        val childResult = extractQueryPlanRec(child, schema)
-        val predResult = extractPredicateExpr(predicate, schema)
         for
-          (childPlan, tableName) <- childResult
-          filterExpr <- predResult
-        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          filterExpr <- extractPredicateExpr(predicate, childSchema)
+        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       // query.where(predicate) - alias for filter
       case Apply(Apply(TypeApply(Select(child, "where"), _), List(predicate)), _) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          filterExpr <- extractPredicateExpr(predicate, schema)
-        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          filterExpr <- extractPredicateExpr(predicate, childSchema)
+        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       case Apply(Select(child, "where"), List(predicate)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          filterExpr <- extractPredicateExpr(predicate, schema)
-        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          filterExpr <- extractPredicateExpr(predicate, childSchema)
+        yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
-      // query.select(_.field) - TypeApply version with implicits
-      case Apply(Apply(TypeApply(Select(child, "select"), _), List(selector)), _) =>
+      // query.select(exprs*) - TypeApply version with implicits (single or multiple)
+      case Apply(Apply(TypeApply(Select(child, "select"), _), selectors), _) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          projExpr <- extractProjectionExpr(selector, schema)
-        yield (ProtoLogicalPlan.Project(Vector(projExpr), childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          projExprs <- extractProjectExprs(selectors, childSchema)
+        yield (ProtoLogicalPlan.Project(projExprs, childPlan), tableName, childSchema)
 
-      // query.select(_.field) - non-TypeApply version
-      case Apply(Select(child, "select"), List(selector)) =>
+      // query.select(exprs*) - non-TypeApply version (single or multiple)
+      case Apply(Select(child, "select"), selectors) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          projExpr <- extractProjectionExpr(selector, schema)
-        yield (ProtoLogicalPlan.Project(Vector(projExpr), childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          projExprs <- extractProjectExprs(selectors, childSchema)
+        yield (ProtoLogicalPlan.Project(projExprs, childPlan), tableName, childSchema)
+
+      // query.select[B1, B2](e1, e2)(enc1, enc2) - tuple overload with 2 implicits blocks
+      case Apply(Apply(Apply(Select(child, "select"), selectors), _), _) =>
+        for
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          projExprs <- extractProjectExprs(selectors, childSchema)
+        yield (ProtoLogicalPlan.Project(projExprs, childPlan), tableName, childSchema)
 
       // query.limit(n)
       case Apply(Select(child, "limit"), List(limitExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
           n <- extractIntLiteral(limitExpr)
-        yield (ProtoLogicalPlan.Limit(n, childPlan), tableName)
+        yield (ProtoLogicalPlan.Limit(n, childPlan), tableName, childSchema)
 
       // query.distinct
       case Select(child, "distinct") =>
-        for (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-        yield (ProtoLogicalPlan.Distinct(childPlan), tableName)
+        for (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+        yield (ProtoLogicalPlan.Distinct(childPlan), tableName, childSchema)
 
       // query.orderBy(_.field.asc, _.field2.desc)
       case Apply(Select(child, "orderBy"), sortExprs) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          sortOrders <- extractSortOrders(sortExprs, schema)
-        yield (ProtoLogicalPlan.Sort(sortOrders, global = true, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          sortOrders <- extractSortOrders(sortExprs, childSchema)
+        yield (ProtoLogicalPlan.Sort(sortOrders, global = true, childPlan), tableName, childSchema)
 
       // query.as("alias")
       case Apply(Select(child, "as"), List(aliasExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
           alias <- extractStringLiteral(aliasExpr)
-        yield (ProtoLogicalPlan.SubqueryAlias(alias, childPlan), tableName)
+        yield (ProtoLogicalPlan.SubqueryAlias(alias, childPlan), tableName, childSchema)
 
       // query.union(otherQuery)
       case Apply(Select(child, "union"), List(otherExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
         yield (
           ProtoLogicalPlan.Union(
             Vector(childPlan, otherPlan),
             byName = false,
             allowMissingColumns = false
           ),
-          tableName
+          tableName,
+          childSchema
         )
 
       // query.intersect(otherQuery)
       case Apply(Select(child, "intersect"), List(otherExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-        yield (ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = false), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+        yield (
+          ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = false),
+          tableName,
+          childSchema
+        )
 
       // query.intersectAll(otherQuery)
       case Apply(Select(child, "intersectAll"), List(otherExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-        yield (ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = true), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+        yield (
+          ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = true),
+          tableName,
+          childSchema
+        )
 
       // query.except(otherQuery)
       case Apply(Select(child, "except"), List(otherExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-        yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = false), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+        yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = false), tableName, childSchema)
 
       // query.exceptAll(otherQuery)
       case Apply(Select(child, "exceptAll"), List(otherExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-        yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = true), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+        yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = true), tableName, childSchema)
 
       // query.crossJoin(otherQuery)(using encoder)
       case Apply(Apply(TypeApply(Select(child, "crossJoin"), _), List(otherExpr)), _) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+        yield (
+          ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None),
+          tableName,
+          childSchema
+        )
 
       // query.crossJoin(otherQuery) - without explicit TypeApply
       case Apply(Select(child, "crossJoin"), List(otherExpr)) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+        yield (
+          ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None),
+          tableName,
+          childSchema
+        )
 
       // query.join[B](otherQuery).on(condition)(implicits) - inner join with condition
       // Pattern: Apply(Apply(Select(Apply(TypeApply(Select(child, "join"), _), List(other)), "on"), List(cond)), List(implicits))
@@ -310,14 +336,15 @@ object QuoteMacro:
             _
           ) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
         yield (
           ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Inner, Some(condition)),
-          tableName
+          tableName,
+          childSchema
         )
 
       // query.leftJoin[B](otherQuery).on(condition)(implicits)
@@ -329,14 +356,15 @@ object QuoteMacro:
             _
           ) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
         yield (
           ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.LeftOuter, Some(condition)),
-          tableName
+          tableName,
+          childSchema
         )
 
       // query.rightJoin[B](otherQuery).on(condition)(implicits)
@@ -348,81 +376,102 @@ object QuoteMacro:
             _
           ) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
-          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
         yield (
           ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.RightOuter, Some(condition)),
-          tableName
+          tableName,
+          childSchema
         )
 
       // groupedQuery.agg[B](aggExprs*)(enc) - aggregate with implicits
       // Pattern: Apply(Apply(TypeApply(Select(groupedQuery, "agg"), _), List(aggExprs...)), List(enc))
       case Apply(Apply(TypeApply(Select(groupedQueryExpr, "agg"), _), aggExprs), _) =>
-        extractGroupedQueryPlan(groupedQueryExpr, schema, aggExprs)
+        extractGroupedQueryPlan(groupedQueryExpr, fallbackSchema, aggExprs)
 
       // groupedQuery.agg(aggExprs*)(enc) - aggregate without TypeApply
       case Apply(Apply(Select(groupedQueryExpr, "agg"), aggExprs), _) =>
-        extractGroupedQueryPlan(groupedQueryExpr, schema, aggExprs)
+        extractGroupedQueryPlan(groupedQueryExpr, fallbackSchema, aggExprs)
 
       // Table.apply[A]("tableName") - direct table creation
-      case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
-        extractStringLiteral(tableNameExpr).map { tableName =>
-          val contract = buildSchemaContract(tableName, schema)
-          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName)
-        }
+      case Apply(Apply(TypeApply(Select(_, "apply"), typeArgs), List(tableNameExpr)), _) =>
+        for
+          tableName <- extractStringLiteral(tableNameExpr)
+          tableSchema <- deriveSchemaFromTypeTree(typeArgs.headOption, fallbackSchema)
+        yield
+          val contract = buildSchemaContract(tableName, tableSchema)
+          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName, tableSchema)
 
       // Table[A]("tableName") - alternative pattern
-      case Apply(TypeApply(Apply(_, List(tableNameExpr)), _), _) =>
-        extractStringLiteral(tableNameExpr).flatMap { tableName =>
-          val contract = buildSchemaContract(tableName, schema)
-          Right((ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName))
-        }
+      case Apply(TypeApply(Apply(_, List(tableNameExpr)), typeArgs), _) =>
+        for
+          tableName <- extractStringLiteral(tableNameExpr)
+          tableSchema <- deriveSchemaFromTypeTree(typeArgs.headOption, fallbackSchema)
+        yield
+          val contract = buildSchemaContract(tableName, tableSchema)
+          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName, tableSchema)
 
       // table.toQuery
       case Select(tableExpr, "toQuery") =>
-        extractTablePlan(tableExpr, schema)
+        extractTablePlan(tableExpr, fallbackSchema)
 
       // Direct Table expression
       case _ if isTableExpression(term) =>
-        extractTablePlan(term, schema)
+        extractTablePlan(term, fallbackSchema)
 
       case other =>
         Left(s"Unsupported query expression: ${other.show}")
 
   private def extractTablePlan(using
       q: Quotes
-  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, (ProtoLogicalPlan, String)] =
+  )(term: q.reflect.Term, fallbackSchema: ProtoSchema): Either[String, PlanResult] =
     import q.reflect.*
 
     term match
       case Inlined(_, _, inner) =>
-        extractTablePlan(inner, schema)
+        extractTablePlan(inner, fallbackSchema)
 
       case Block(_, expr) =>
-        extractTablePlan(expr, schema)
+        extractTablePlan(expr, fallbackSchema)
 
       case Typed(expr, _) =>
-        extractTablePlan(expr, schema)
+        extractTablePlan(expr, fallbackSchema)
 
       // Table.apply[A]("tableName")(using enc)
-      case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
-        extractStringLiteral(tableNameExpr).map { tableName =>
-          val contract = buildSchemaContract(tableName, schema)
-          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName)
-        }
+      case Apply(Apply(TypeApply(Select(_, "apply"), typeArgs), List(tableNameExpr)), _) =>
+        for
+          tableName <- extractStringLiteral(tableNameExpr)
+          tableSchema <- deriveSchemaFromTypeTree(typeArgs.headOption, fallbackSchema)
+        yield
+          val contract = buildSchemaContract(tableName, tableSchema)
+          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName, tableSchema)
 
       // Table[A]("tableName")
-      case Apply(TypeApply(Apply(Ident("Table"), List(tableNameExpr)), _), _) =>
-        extractStringLiteral(tableNameExpr).map { tableName =>
-          val contract = buildSchemaContract(tableName, schema)
-          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName)
-        }
+      case Apply(TypeApply(Apply(Ident("Table"), List(tableNameExpr)), typeArgs), _) =>
+        for
+          tableName <- extractStringLiteral(tableNameExpr)
+          tableSchema <- deriveSchemaFromTypeTree(typeArgs.headOption, fallbackSchema)
+        yield
+          val contract = buildSchemaContract(tableName, tableSchema)
+          (ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName, tableSchema)
 
       case other =>
         Left(s"Cannot extract table from: ${other.show}")
+
+  /** Derive schema from a type tree if available, otherwise use fallback */
+  private def deriveSchemaFromTypeTree(using
+      q: Quotes
+  )(typeTreeOpt: Option[q.reflect.Tree], fallback: ProtoSchema): Either[String, ProtoSchema] =
+    import q.reflect.*
+
+    typeTreeOpt match
+      case Some(typeTree: TypeTree) =>
+        deriveSchemaFromTypeRepr(typeTree.tpe)
+      case _ =>
+        Right(fallback)
 
   private def isTableExpression(using q: Quotes)(term: q.reflect.Term): Boolean =
     term.tpe.typeSymbol.name == "Table"
@@ -518,6 +567,34 @@ object QuoteMacro:
       case other =>
         // Try as a value expression directly
         extractValueExpr(other, schema)
+
+  /** Extract multiple projection expressions from select arguments */
+  private def extractProjectExprs(using
+      q: Quotes
+  )(
+      terms: List[q.reflect.Term],
+      schema: ProtoSchema
+  ): Either[String, Vector[ProtoExpr]] =
+    import q.reflect.*
+
+    // Handle varargs wrappers - extract elements from Repeated/SeqLiteral
+    val unwrappedTerms = terms.flatMap { term =>
+      term match
+        case Typed(Repeated(elems, _), _)                  => elems
+        case Repeated(elems, _)                            => elems
+        case t if t.getClass.getSimpleName == "SeqLiteral" =>
+          // SeqLiteral isn't directly matchable, use reflection
+          try
+            val elemsField = t.getClass.getMethod("elems")
+            elemsField.invoke(t).asInstanceOf[List[Term]]
+          catch case _: Exception => List(t)
+        case other => List(other)
+    }
+
+    val results = unwrappedTerms.map(extractProjectionExpr(_, schema))
+    val errors = results.collect { case Left(err) => err }
+    if errors.nonEmpty then Left(errors.mkString("; "))
+    else Right(results.collect { case Right(expr) => expr }.toVector)
 
   // ============================================================================
   // Predicate/Expression Extraction
@@ -870,7 +947,7 @@ object QuoteMacro:
       groupedQueryExpr: q.reflect.Term,
       schema: ProtoSchema,
       aggExprs: List[q.reflect.Term]
-  ): Either[String, (ProtoLogicalPlan, String)] =
+  ): Either[String, PlanResult] =
     import q.reflect.*
 
     groupedQueryExpr match
@@ -886,18 +963,26 @@ object QuoteMacro:
       // query.groupBy[K](keys*) with TypeApply
       case Apply(TypeApply(Select(childQuery, "groupBy"), _), groupingExprs) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(childQuery, schema)
-          groupingProtoExprs <- extractGroupingExprs(groupingExprs, schema)
-          aggProtoExprs <- extractAggregateExprs(aggExprs, schema)
-        yield (ProtoLogicalPlan.Aggregate(groupingProtoExprs, aggProtoExprs, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(childQuery, schema)
+          groupingProtoExprs <- extractGroupingExprs(groupingExprs, childSchema)
+          aggProtoExprs <- extractAggregateExprs(aggExprs, childSchema)
+        yield (
+          ProtoLogicalPlan.Aggregate(groupingProtoExprs, aggProtoExprs, childPlan),
+          tableName,
+          childSchema
+        )
 
       // query.groupBy(keys*) without TypeApply
       case Apply(Select(childQuery, "groupBy"), groupingExprs) =>
         for
-          (childPlan, tableName) <- extractQueryPlanRec(childQuery, schema)
-          groupingProtoExprs <- extractGroupingExprs(groupingExprs, schema)
-          aggProtoExprs <- extractAggregateExprs(aggExprs, schema)
-        yield (ProtoLogicalPlan.Aggregate(groupingProtoExprs, aggProtoExprs, childPlan), tableName)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(childQuery, schema)
+          groupingProtoExprs <- extractGroupingExprs(groupingExprs, childSchema)
+          aggProtoExprs <- extractAggregateExprs(aggExprs, childSchema)
+        yield (
+          ProtoLogicalPlan.Aggregate(groupingProtoExprs, aggProtoExprs, childPlan),
+          tableName,
+          childSchema
+        )
 
       case other =>
         Left(s"Unsupported grouped query expression: ${other.show}")

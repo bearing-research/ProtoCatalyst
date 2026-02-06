@@ -184,6 +184,7 @@ ProtoLogicalPlan.Limit(
 | `.leftJoin(...).on(...)` | `.leftJoin(other).on((a, b) => ...)` | ✅ |
 | `.rightJoin(...).on(...)` | `.rightJoin(other).on((a, b) => ...)` | ✅ |
 | `.groupBy(...).agg(...)` | `.groupBy(col).agg(count, sum(col))` | ✅ |
+| `.select` | `.select(Column[T, U]("field"))` | ✅ |
 
 ### Aggregate Functions
 
@@ -216,7 +217,7 @@ ProtoLogicalPlan.Limit(
 
 | Operation | Notes |
 |-----------|-------|
-| `.select` via macro | Type inference issues with Dynamic |
+| Lambda-style `.select(_.field)` | Type inference issues with Dynamic; use explicit `Column[T, U]("field")` |
 | Subqueries | Nested query support |
 
 ## File Organization
