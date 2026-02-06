@@ -199,6 +199,20 @@ object QuoteMacro:
           filterExpr <- extractPredicateExpr(predicate, schema)
         yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName)
 
+      // query.select(_.field) - TypeApply version with implicits
+      case Apply(Apply(TypeApply(Select(child, "select"), _), List(selector)), _) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          projExpr <- extractProjectionExpr(selector, schema)
+        yield (ProtoLogicalPlan.Project(Vector(projExpr), childPlan), tableName)
+
+      // query.select(_.field) - non-TypeApply version
+      case Apply(Select(child, "select"), List(selector)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          projExpr <- extractProjectionExpr(selector, schema)
+        yield (ProtoLogicalPlan.Project(Vector(projExpr), childPlan), tableName)
+
       // query.limit(n)
       case Apply(Select(child, "limit"), List(limitExpr)) =>
         for
@@ -287,6 +301,33 @@ object QuoteMacro:
         Left(s"Cannot extract table name from: ${other.show}")
 
   // ============================================================================
+  // Projection Extraction
+  // ============================================================================
+
+  private def extractProjectionExpr(using
+      q: Quotes
+  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractProjectionExpr(inner, schema)
+
+      case Block(List(DefDef(_, _, _, Some(body))), _) =>
+        // Lambda expression: f => body
+        extractValueExpr(body, schema)
+
+      case Block(_, expr) =>
+        extractProjectionExpr(expr, schema)
+
+      case Typed(expr, _) =>
+        extractProjectionExpr(expr, schema)
+
+      case other =>
+        // Try as a value expression directly
+        extractValueExpr(other, schema)
+
+  // ============================================================================
   // Predicate/Expression Extraction
   // ============================================================================
 
@@ -372,8 +413,18 @@ object QuoteMacro:
               left <- extractValueExpr(leftExpr, schema)
               right <- extractValueExpr(rightExpr, schema)
             yield makeComparison(op, left, right)
+          case Some("&&") =>
+            for
+              left <- extractPredicateExpr(leftExpr, schema)
+              right <- extractPredicateExpr(rightExpr, schema)
+            yield ProtoExpr.And(Vector(left, right))
+          case Some("||") =>
+            for
+              left <- extractPredicateExpr(leftExpr, schema)
+              right <- extractPredicateExpr(rightExpr, schema)
+            yield ProtoExpr.Or(Vector(left, right))
           case Some(op) =>
-            Left(s"Unsupported comparison operator '$op' in: ${term.show}")
+            Left(s"Unsupported operator '$op' in: ${term.show}")
           case None =>
             Left(s"Could not extract method name from fun[${fun.getClass.getSimpleName}]=${fun.show} in: ${term.show}")
 

@@ -188,3 +188,58 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Filter(GtEq(salary, 50000.0)), got: $other")
+
+  test("quote with boolean AND"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(u => (u.age > 18) && (u.salary > 50000.0))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.And(
+              Vector(
+                ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _),
+                ProtoExpr.Gt(ProtoExpr.ColumnRef("salary", _, _, _), _)
+              )
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(And(Gt, Gt)), got: $other")
+
+  test("quote with boolean OR"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(u => (u.age < 18) || (u.age > 65))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Or(
+              Vector(
+                ProtoExpr.Lt(ProtoExpr.ColumnRef("age", _, _, _), _),
+                ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _)
+              )
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Or(Lt, Gt)), got: $other")
+
+  test("quote with not equal"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.name =!= "Admin")
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.NotEq(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              ProtoExpr.Literal(LiteralValue.StringValue("Admin"))
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(NotEq(name, 'Admin')), got: $other")
