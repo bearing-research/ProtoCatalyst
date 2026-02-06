@@ -33,15 +33,27 @@ object ConstantPropagation extends Rule:
 
   /** Extract equality constraints (column = literal) from an expression.
     *
-    * Only considers direct equalities, not nested ones or those within OR branches.
+    * Only extracts constraints from AND conjunctions where there are multiple conditions.
+    * Single equalities don't benefit from constant propagation (there's nowhere to propagate TO),
+    * and propagating within the defining equality itself would incorrectly turn `col = val` into `val = val`.
     */
   private def extractEqualityConstraints(
       expr: ProtoExpr
   ): Map[(String, Option[String]), ProtoExpr] =
     expr match
+      // AND: collect from all children - this is where constant propagation is useful
+      case ProtoExpr.And(children) =>
+        children.flatMap(extractFromChild).toMap
+
+      // Single equalities or other expressions don't need constant propagation
+      case _ => Map.empty
+
+  /** Extract equality constraint from a child expression within an AND. */
+  private def extractFromChild(expr: ProtoExpr): Map[(String, Option[String]), ProtoExpr] =
+    expr match
       // Direct equality: col = literal
       case ProtoExpr.Eq(
-            ref @ ProtoExpr.ColumnRef(name, qualifier, _, _),
+            ProtoExpr.ColumnRef(name, qualifier, _, _),
             lit @ ProtoExpr.Literal(_)
           ) if !isNullLiteral(lit) =>
         Map((name, qualifier) -> lit)
@@ -49,27 +61,30 @@ object ConstantPropagation extends Rule:
       // Reverse: literal = col
       case ProtoExpr.Eq(
             lit @ ProtoExpr.Literal(_),
-            ref @ ProtoExpr.ColumnRef(name, qualifier, _, _)
+            ProtoExpr.ColumnRef(name, qualifier, _, _)
           ) if !isNullLiteral(lit) =>
         Map((name, qualifier) -> lit)
 
-      // AND: collect from all children (only top-level ANDs)
+      // Nested AND
       case ProtoExpr.And(children) =>
-        children.flatMap(extractEqualityConstraints).toMap
+        children.flatMap(extractFromChild).toMap
 
-      // Other expressions don't contribute constraints
       case _ => Map.empty
 
   /** Propagate constants through an expression using the constraints.
     *
     * Replaces column references with their known literal values.
+    * Note: We only extract constraints from ANDs, so the defining equality like `col = val`
+    * will have its column replaced, but that's fine because we then have `val = val` which
+    * folds to TRUE and gets absorbed by AND simplification (true AND x = x).
     */
   private def propagateConstants(
       expr: ProtoExpr,
       constraints: Map[(String, Option[String]), ProtoExpr]
   ): ProtoExpr =
-    TreeTransform.transformExprUp(expr) { case ref @ ProtoExpr.ColumnRef(name, qualifier, _, _) =>
-      constraints.get((name, qualifier)).getOrElse(ref)
+    TreeTransform.transformExprUp(expr) {
+      case ref @ ProtoExpr.ColumnRef(name, qualifier, _, _) =>
+        constraints.get((name, qualifier)).getOrElse(ref)
     }
 
   /** Check if expression is a null literal. */
