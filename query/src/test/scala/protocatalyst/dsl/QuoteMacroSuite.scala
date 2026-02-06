@@ -810,6 +810,83 @@ class QuoteMacroSuite extends munit.FunSuite:
       case other =>
         fail(s"Expected Project(Filter(...)), got: $other")
 
+  test("quote with tuple lambda select 2 columns"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").select(u => (u.name, u.age))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(projExprs, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(projExprs.size, 2)
+        projExprs(0) match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+        projExprs(1) match
+          case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+          case other                               => fail(s"Expected ColumnRef(age), got: $other")
+      case other =>
+        fail(s"Expected Project plan, got: $other")
+
+  test("quote with tuple lambda select 3 columns"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").select(u => (u.name, u.age, u.salary))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(projExprs, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(projExprs.size, 3)
+        projExprs(0) match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+        projExprs(1) match
+          case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+          case other                               => fail(s"Expected ColumnRef(age), got: $other")
+        projExprs(2) match
+          case ProtoExpr.ColumnRef("salary", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(salary), got: $other")
+      case other =>
+        fail(s"Expected Project plan, got: $other")
+
+  test("quote with filter then tuple lambda select"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .filter(_.age > 18)
+        .select(u => (u.name, u.salary))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            projExprs,
+            ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("users", _, _))
+          ) =>
+        assertEquals(projExprs.size, 2)
+        projExprs(0) match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+        projExprs(1) match
+          case ProtoExpr.ColumnRef("salary", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(salary), got: $other")
+      case other =>
+        fail(s"Expected Project(Filter(...)), got: $other")
+
+  test("quote with tuple select containing expressions"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").select(u => (u.name, u.age + 1))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(projExprs, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(projExprs.size, 2)
+        projExprs(0) match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+        projExprs(1) match
+          case ProtoExpr.Add(ProtoExpr.ColumnRef("age", _, _, _), ProtoExpr.Literal(_)) =>
+            () // ok
+          case other => fail(s"Expected Add(ColumnRef(age), Literal), got: $other")
+      case other =>
+        fail(s"Expected Project plan, got: $other")
+
   test("quote with lambda-style groupBy"):
     import protocatalyst.dsl.functions.*
 

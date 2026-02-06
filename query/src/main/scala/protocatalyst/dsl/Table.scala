@@ -74,6 +74,29 @@ final class Table[A] private (
   /** Project to selected expressions */
   def select[B](exprs: Expr[B]*)(using enc: ProtoEncoder[B]): Query[B] = baseQuery.select(exprs*)
 
+  /** Select with lambda-style tuple output - 2 columns: table.select(u => (u.name, u.age)) */
+  def select[B1, B2](f: FieldSelector[A] => (Expr[B1], Expr[B2]))(using
+      enc1: ProtoEncoder[B1],
+      enc2: ProtoEncoder[B2]
+  ): Query[(B1, B2)] = baseQuery.select(f)
+
+  /** Select with lambda-style tuple output - 3 columns */
+  def select[B1, B2, B3](f: FieldSelector[A] => (Expr[B1], Expr[B2], Expr[B3]))(using
+      enc1: ProtoEncoder[B1],
+      enc2: ProtoEncoder[B2],
+      enc3: ProtoEncoder[B3]
+  ): Query[(B1, B2, B3)] = baseQuery.select(f)
+
+  /** Select with lambda-style tuple output - 4 columns */
+  def select[B1, B2, B3, B4](
+      f: FieldSelector[A] => (Expr[B1], Expr[B2], Expr[B3], Expr[B4])
+  )(using
+      enc1: ProtoEncoder[B1],
+      enc2: ProtoEncoder[B2],
+      enc3: ProtoEncoder[B3],
+      enc4: ProtoEncoder[B4]
+  ): Query[(B1, B2, B3, B4)] = baseQuery.select(f)
+
   /** Select with tuple output - 2 columns */
   def select[B1, B2](e1: Expr[B1], e2: Expr[B2])(using
       enc1: ProtoEncoder[B1],

@@ -52,6 +52,51 @@ class Query[A] private[dsl] (
       schemaContracts
     )
 
+  /** Select with lambda-style tuple output - 2 columns: query.select(u => (u.name, u.age)) */
+  def select[B1, B2](f: FieldSelector[A] => (Expr[B1], Expr[B2]))(using
+      enc1: ProtoEncoder[B1],
+      enc2: ProtoEncoder[B2]
+  ): Query[(B1, B2)] =
+    given ProtoEncoder[(B1, B2)] = ProtoEncoder.tuple2Encoder[B1, B2]
+    val (e1, e2) = f(FieldSelector[A](using outputEncoder))
+    new Query(
+      ProtoLogicalPlan.Project(Vector(e1.toProtoExpr, e2.toProtoExpr), plan),
+      summon[ProtoEncoder[(B1, B2)]],
+      schemaContracts
+    )
+
+  /** Select with lambda-style tuple output - 3 columns */
+  def select[B1, B2, B3](f: FieldSelector[A] => (Expr[B1], Expr[B2], Expr[B3]))(using
+      enc1: ProtoEncoder[B1],
+      enc2: ProtoEncoder[B2],
+      enc3: ProtoEncoder[B3]
+  ): Query[(B1, B2, B3)] =
+    given ProtoEncoder[(B1, B2, B3)] = ProtoEncoder.tuple3Encoder[B1, B2, B3]
+    val (e1, e2, e3) = f(FieldSelector[A](using outputEncoder))
+    new Query(
+      ProtoLogicalPlan.Project(Vector(e1.toProtoExpr, e2.toProtoExpr, e3.toProtoExpr), plan),
+      summon[ProtoEncoder[(B1, B2, B3)]],
+      schemaContracts
+    )
+
+  /** Select with lambda-style tuple output - 4 columns */
+  def select[B1, B2, B3, B4](f: FieldSelector[A] => (Expr[B1], Expr[B2], Expr[B3], Expr[B4]))(using
+      enc1: ProtoEncoder[B1],
+      enc2: ProtoEncoder[B2],
+      enc3: ProtoEncoder[B3],
+      enc4: ProtoEncoder[B4]
+  ): Query[(B1, B2, B3, B4)] =
+    given ProtoEncoder[(B1, B2, B3, B4)] = ProtoEncoder.tuple4Encoder[B1, B2, B3, B4]
+    val (e1, e2, e3, e4) = f(FieldSelector[A](using outputEncoder))
+    new Query(
+      ProtoLogicalPlan.Project(
+        Vector(e1.toProtoExpr, e2.toProtoExpr, e3.toProtoExpr, e4.toProtoExpr),
+        plan
+      ),
+      summon[ProtoEncoder[(B1, B2, B3, B4)]],
+      schemaContracts
+    )
+
   /** Select with tuple output - 2 columns */
   def select[B1, B2](
       e1: Expr[B1],

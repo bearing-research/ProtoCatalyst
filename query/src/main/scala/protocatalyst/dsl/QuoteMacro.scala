@@ -545,28 +545,71 @@ object QuoteMacro:
   // Projection Extraction
   // ============================================================================
 
-  private def extractProjectionExpr(using
+  /** Extract one or more projection expressions from a single select argument. Returns multiple
+    * expressions when the argument is a lambda returning a tuple.
+    */
+  private def extractProjectionExprs(using
       q: Quotes
-  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, ProtoExpr] =
+  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, Vector[ProtoExpr]] =
     import q.reflect.*
 
     term match
       case Inlined(_, _, inner) =>
-        extractProjectionExpr(inner, schema)
+        extractProjectionExprs(inner, schema)
 
       case Block(List(DefDef(_, _, _, Some(body))), _) =>
         // Lambda expression: f => body
-        extractValueExpr(body, schema)
+        // Check if the body is a tuple construction
+        extractTupleOrSingle(body, schema)
 
       case Block(_, expr) =>
-        extractProjectionExpr(expr, schema)
+        extractProjectionExprs(expr, schema)
 
       case Typed(expr, _) =>
-        extractProjectionExpr(expr, schema)
+        extractProjectionExprs(expr, schema)
 
       case other =>
         // Try as a value expression directly
-        extractValueExpr(other, schema)
+        extractValueExpr(other, schema).map(Vector(_))
+
+  /** Check if a type is a Scala TupleN type */
+  private def isTupleType(using q: Quotes)(tpe: q.reflect.TypeRepr): Boolean =
+    val name = tpe.widen.typeSymbol.fullName
+    name.startsWith("scala.Tuple") && name.length > "scala.Tuple".length &&
+    name.drop("scala.Tuple".length).forall(_.isDigit)
+
+  /** Extract tuple elements or fall back to single expression */
+  private def extractTupleOrSingle(using
+      q: Quotes
+  )(body: q.reflect.Term, schema: ProtoSchema): Either[String, Vector[ProtoExpr]] =
+    import q.reflect.*
+
+    body match
+      case Inlined(_, _, inner) =>
+        extractTupleOrSingle(inner, schema)
+
+      case Block(_, expr) =>
+        extractTupleOrSingle(expr, schema)
+
+      case Typed(expr, _) =>
+        extractTupleOrSingle(expr, schema)
+
+      // Tuple construction: Tuple2.apply[A, B](e1, e2) or new Tuple2(e1, e2)
+      case Apply(TypeApply(_, _), elements) if isTupleType(body.tpe) =>
+        val results = elements.map(extractValueExpr(_, schema))
+        val errors = results.collect { case Left(err) => err }
+        if errors.nonEmpty then Left(errors.mkString("; "))
+        else Right(results.collect { case Right(expr) => expr }.toVector)
+
+      case Apply(_, elements) if isTupleType(body.tpe) =>
+        val results = elements.map(extractValueExpr(_, schema))
+        val errors = results.collect { case Left(err) => err }
+        if errors.nonEmpty then Left(errors.mkString("; "))
+        else Right(results.collect { case Right(expr) => expr }.toVector)
+
+      case _ =>
+        // Not a tuple - single expression
+        extractValueExpr(body, schema).map(Vector(_))
 
   /** Extract multiple projection expressions from select arguments */
   private def extractProjectExprs(using
@@ -591,10 +634,10 @@ object QuoteMacro:
         case other => List(other)
     }
 
-    val results = unwrappedTerms.map(extractProjectionExpr(_, schema))
+    val results = unwrappedTerms.map(extractProjectionExprs(_, schema))
     val errors = results.collect { case Left(err) => err }
     if errors.nonEmpty then Left(errors.mkString("; "))
-    else Right(results.collect { case Right(expr) => expr }.toVector)
+    else Right(results.collect { case Right(exprs) => exprs }.toVector.flatten)
 
   // ============================================================================
   // Predicate/Expression Extraction
