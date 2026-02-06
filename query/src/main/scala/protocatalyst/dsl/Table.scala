@@ -67,6 +67,10 @@ final class Table[A] private (
   def where(f: FieldSelector[A] => Expr[Boolean]): Query[A] =
     baseQuery.filter(f(FieldSelector[A](using encoder)))
 
+  /** Select with lambda-style field access: table.select(_.name) */
+  def select[B](f: FieldSelector[A] => Expr[B])(using enc: ProtoEncoder[B]): Query[B] =
+    baseQuery.select(f)
+
   /** Project to selected expressions */
   def select[B](exprs: Expr[B]*)(using enc: ProtoEncoder[B]): Query[B] = baseQuery.select(exprs*)
 
@@ -102,6 +106,9 @@ final class Table[A] private (
 
   /** Alias this table */
   def as(alias: String): Query[A] = baseQuery.as(alias)
+
+  /** Group by with lambda-style field access: table.groupBy(_.age) */
+  def groupBy[K](f: FieldSelector[A] => Expr[K]): GroupedQuery[A, K] = baseQuery.groupBy(f)
 
   /** Group by expressions for aggregation */
   def groupBy[K](keys: Expr[K]*): GroupedQuery[A, K] = baseQuery.groupBy(keys*)

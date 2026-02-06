@@ -44,27 +44,59 @@ object Expr:
   def lit(value: String): Expr[String] =
     LiteralExpr(ProtoExpr.lit(value), ProtoEncoder.given_ProtoEncoder_String)
 
-/** Numeric expression operations */
-extension [A](expr: Expr[A])(using num: Numeric[A], enc: ProtoEncoder[A])
-  def +(other: Expr[A]): Expr[A] =
-    BinaryExpr(ProtoExpr.Add(expr.toProtoExpr, other.toProtoExpr), enc)
+/** Convert a Scala literal value to a ProtoExpr literal. */
+private[dsl] def toProtoLiteral(value: Any): ProtoExpr = value match
+  case v: Int     => ProtoExpr.lit(v)
+  case v: Long    => ProtoExpr.lit(v)
+  case v: Double  => ProtoExpr.lit(v)
+  case v: Float   => ProtoExpr.lit(v.toDouble)
+  case v: String  => ProtoExpr.lit(v)
+  case v: Boolean => ProtoExpr.lit(v)
+  case _ => throw new IllegalArgumentException(s"Unsupported literal type: ${value.getClass}")
 
-  def -(other: Expr[A]): Expr[A] =
-    BinaryExpr(ProtoExpr.Subtract(expr.toProtoExpr, other.toProtoExpr), enc)
+// ============================================================================
+// Typed comparison, equality, and arithmetic for comparable/numeric types
+// No context bounds - keeps the macro AST simple (no extra Apply layers)
+// ============================================================================
 
-  def *(other: Expr[A]): Expr[A] =
-    BinaryExpr(ProtoExpr.Multiply(expr.toProtoExpr, other.toProtoExpr), enc)
+/** Comparison operations for ordered types (Expr vs Expr and Expr vs literal) */
+extension [A <: Int | Long | Double | Float | String](expr: Expr[A])
+  def >(other: Expr[A]): Expr[Boolean] =
+    BinaryExpr(
+      ProtoExpr.Gt(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
-  def /(other: Expr[A]): Expr[A] =
-    BinaryExpr(ProtoExpr.Divide(expr.toProtoExpr, other.toProtoExpr), enc)
+  @targetName("gtLiteral")
+  def >(value: A): Expr[Boolean] =
+    BinaryExpr(
+      ProtoExpr.Gt(expr.toProtoExpr, toProtoLiteral(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
 
-/** Ordered expression operations (comparisons) for typed expressions. These work with typed columns
-  * like users.col[Int]("age").
-  */
-extension [A <: Int | Long | Double | Float | String](expr: Expr[A])(using ord: Ordering[A])
+  def >=(other: Expr[A]): Expr[Boolean] =
+    BinaryExpr(
+      ProtoExpr.GtEq(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
+  @targetName("gtEqLiteral")
+  def >=(value: A): Expr[Boolean] =
+    BinaryExpr(
+      ProtoExpr.GtEq(expr.toProtoExpr, toProtoLiteral(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
   def <(other: Expr[A]): Expr[Boolean] =
     BinaryExpr(
       ProtoExpr.Lt(expr.toProtoExpr, other.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
+  @targetName("ltLiteral")
+  def <(value: A): Expr[Boolean] =
+    BinaryExpr(
+      ProtoExpr.Lt(expr.toProtoExpr, toProtoLiteral(value)),
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
 
@@ -74,17 +106,62 @@ extension [A <: Int | Long | Double | Float | String](expr: Expr[A])(using ord: 
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
 
-  def >(other: Expr[A]): Expr[Boolean] =
+  @targetName("ltEqLiteral")
+  def <=(value: A): Expr[Boolean] =
     BinaryExpr(
-      ProtoExpr.Gt(expr.toProtoExpr, other.toProtoExpr),
+      ProtoExpr.LtEq(expr.toProtoExpr, toProtoLiteral(value)),
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
 
-  def >=(other: Expr[A]): Expr[Boolean] =
+  @targetName("eqLiteral")
+  def ===(value: A): Expr[Boolean] =
     BinaryExpr(
-      ProtoExpr.GtEq(expr.toProtoExpr, other.toProtoExpr),
+      ProtoExpr.Eq(expr.toProtoExpr, toProtoLiteral(value)),
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
+
+  @targetName("notEqLiteral")
+  def =!=(value: A): Expr[Boolean] =
+    BinaryExpr(
+      ProtoExpr.NotEq(expr.toProtoExpr, toProtoLiteral(value)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
+/** Arithmetic operations for numeric types (Expr vs Expr and Expr vs literal). Uses expr.encoder
+  * instead of context bounds to avoid extra AST layers.
+  */
+extension [A <: Int | Long | Double | Float](expr: Expr[A])
+  def +(other: Expr[A]): Expr[A] =
+    BinaryExpr(ProtoExpr.Add(expr.toProtoExpr, other.toProtoExpr), expr.encoder)
+
+  @targetName("addLiteral")
+  def +(value: A): Expr[A] =
+    BinaryExpr(ProtoExpr.Add(expr.toProtoExpr, toProtoLiteral(value)), expr.encoder)
+
+  def -(other: Expr[A]): Expr[A] =
+    BinaryExpr(ProtoExpr.Subtract(expr.toProtoExpr, other.toProtoExpr), expr.encoder)
+
+  @targetName("subtractLiteral")
+  def -(value: A): Expr[A] =
+    BinaryExpr(ProtoExpr.Subtract(expr.toProtoExpr, toProtoLiteral(value)), expr.encoder)
+
+  def *(other: Expr[A]): Expr[A] =
+    BinaryExpr(ProtoExpr.Multiply(expr.toProtoExpr, other.toProtoExpr), expr.encoder)
+
+  @targetName("multiplyLiteral")
+  def *(value: A): Expr[A] =
+    BinaryExpr(ProtoExpr.Multiply(expr.toProtoExpr, toProtoLiteral(value)), expr.encoder)
+
+  def /(other: Expr[A]): Expr[A] =
+    BinaryExpr(ProtoExpr.Divide(expr.toProtoExpr, other.toProtoExpr), expr.encoder)
+
+  @targetName("divideLiteral")
+  def /(value: A): Expr[A] =
+    BinaryExpr(ProtoExpr.Divide(expr.toProtoExpr, toProtoLiteral(value)), expr.encoder)
+
+// ============================================================================
+// Boolean, String, Null operations
+// ============================================================================
 
 /** Boolean expression operations */
 extension (expr: Expr[Boolean])
@@ -125,12 +202,14 @@ extension [A](expr: Expr[A])
   def isNotNull: Expr[Boolean] =
     UnaryExpr(ProtoExpr.IsNotNull(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
 
-/** Unchecked comparison operators for dynamic field access. When using lambda-style field selectors
-  * (_.fieldName), the type is erased to Any. These operators enable comparisons without
-  * compile-time type checking - runtime Spark/Catalyst will validate types instead.
+// ============================================================================
+// Expr[Any] fallback extensions (for backward compatibility with untyped access)
+// ============================================================================
+
+/** Unchecked operators for Expr[Any]. Only match when expression is literally typed as Expr[Any]
+  * (Expr is invariant, so Expr[Int] does NOT match Expr[Any]).
   */
 extension (expr: Expr[Any])
-  // Direct comparisons with primitives (Spark-compatible syntax)
   def >(value: Int): Expr[Boolean] =
     BinaryExpr(
       ProtoExpr.Gt(expr.toProtoExpr, ProtoExpr.lit(value)),
@@ -251,7 +330,6 @@ extension (expr: Expr[Any])
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
 
-  // Arithmetic operations for dynamic field access (returns Expr[Any] since type is erased)
   def +(value: Int): Expr[Any] =
     BinaryExpr(
       ProtoExpr.Add(expr.toProtoExpr, ProtoExpr.lit(value)),
@@ -324,7 +402,6 @@ extension (expr: Expr[Any])
       ProtoEncoder.given_ProtoEncoder_Double.asInstanceOf[ProtoEncoder[Any]]
     )
 
-  // String operations for dynamic field access
   @targetName("upperAny")
   def upper: Expr[Any] =
     UnaryExpr(

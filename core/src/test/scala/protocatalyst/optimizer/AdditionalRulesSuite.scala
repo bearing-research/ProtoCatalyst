@@ -2,9 +2,9 @@ package protocatalyst.optimizer
 
 import protocatalyst.expr._
 import protocatalyst.optimizer.rules._
-import protocatalyst.plan._
-import protocatalyst.plan.SortDirection.{Ascending, Descending}
 import protocatalyst.plan.NullOrdering.{NullsFirst, NullsLast}
+import protocatalyst.plan.SortDirection.{Ascending, Descending}
+import protocatalyst.plan._
 import protocatalyst.schema._
 import protocatalyst.types._
 

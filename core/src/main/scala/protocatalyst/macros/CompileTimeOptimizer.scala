@@ -1,6 +1,6 @@
 package protocatalyst.macros
 
-import scala.quoted.*
+import scala.quoted._
 
 import protocatalyst.optimizer.Optimizer
 import protocatalyst.plan.ProtoLogicalPlan

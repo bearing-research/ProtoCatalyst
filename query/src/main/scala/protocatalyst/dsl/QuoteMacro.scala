@@ -769,25 +769,40 @@ object QuoteMacro:
       case Apply(Select(_, "lit"), List(valueExpr)) =>
         extractValueExpr(valueExpr, schema)
 
+      // FieldSelector.typedColumn[A, T](fs, "fieldName")(using enc) - from transparent inline macro
+      case Apply(Apply(TypeApply(Select(_, "typedColumn"), _), List(_, fieldNameExpr)), _) =>
+        extractStringLiteral(fieldNameExpr).flatMap { fieldName =>
+          schema.fields.find(_.name == fieldName) match
+            case Some(field) =>
+              Right(ProtoExpr.ColumnRef(fieldName, None, field.dataType, field.nullable))
+            case None =>
+              Left(s"Field '$fieldName' not found in schema")
+        }
+
+      // Arithmetic via extension method with TypeApply: Expr$package.op[T](left)(right)
+      case Apply(Apply(TypeApply(Select(_, op), _), List(leftExpr)), List(rightExpr))
+          if Set("+", "-", "*", "/").contains(op) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield op match
+          case "+" => ProtoExpr.Add(left, right)
+          case "-" => ProtoExpr.Subtract(left, right)
+          case "*" => ProtoExpr.Multiply(left, right)
+          case "/" => ProtoExpr.Divide(left, right)
+          case _   => ProtoExpr.Add(left, right) // unreachable
+
       // Column.apply[A, T]("name")(using enc) - explicit column reference
-      // Match any Apply(Apply(TypeApply(...), List(stringLiteral)), _) and try to extract column name
-      case app @ Apply(Apply(TypeApply(_, _), args), _) =>
-        args match
-          case List(nameExpr) =>
-            extractStringLiteral(nameExpr) match
-              case Right(colName) =>
-                schema.fields.find(_.name == colName) match
-                  case Some(field) =>
-                    Right(ProtoExpr.ColumnRef(colName, None, field.dataType, field.nullable))
-                  case None =>
-                    Right(
-                      ProtoExpr.ColumnRef(colName, None, ProtoType.StringType, nullable = false)
-                    )
-              case Left(_) =>
-                // Not a string literal, fall through to other patterns
-                Left(s"Unsupported value expression: ${term.show}")
-          case _ =>
-            Left(s"Unsupported value expression: ${term.show}")
+      case Apply(Apply(TypeApply(Select(_, "apply"), _), List(nameExpr)), _) =>
+        extractStringLiteral(nameExpr).flatMap { colName =>
+          schema.fields.find(_.name == colName) match
+            case Some(field) =>
+              Right(ProtoExpr.ColumnRef(colName, None, field.dataType, field.nullable))
+            case None =>
+              Right(
+                ProtoExpr.ColumnRef(colName, None, ProtoType.StringType, nullable = false)
+              )
+        }
 
       // Arithmetic: left + right
       case Apply(Select(leftExpr, "+"), List(rightExpr)) =>
@@ -1448,7 +1463,22 @@ object QuoteMacro:
       case Typed(expr, _) =>
         extractJoinValueExpr(expr, leftSchema, rightSchema, leftParam, rightParam)
 
-      // leftParam.fieldName via selectDynamic
+      // FieldSelector.typedColumn[A, T](fs, "fieldName")(using enc) - from transparent inline macro
+      // The fs arg may be a synthetic binding (FieldSelector_this) due to inline expansion,
+      // so we resolve the join side using the type parameter A and field name.
+      // Note: args may be Inlined-wrapped, so we use extractStringLiteral to unwrap.
+      case Apply(Apply(TypeApply(Select(_, "typedColumn"), typeArgs), List(_, fieldNameExpr)), _) =>
+        extractStringLiteral(fieldNameExpr).flatMap { fieldName =>
+          lookupFieldInJoinSchemaByType(fieldName, typeArgs, leftSchema, rightSchema)
+        }
+
+      // Column.apply[A, T]("fieldName")(using enc) - explicit column reference
+      case Apply(Apply(TypeApply(Select(_, "apply"), _), List(fieldNameExpr)), _) =>
+        extractStringLiteral(fieldNameExpr).flatMap { fieldName =>
+          lookupFieldInJoinSchemaByName(fieldName, leftSchema, rightSchema)
+        }
+
+      // leftParam.fieldName via selectDynamic (legacy fallback)
       case Apply(
             Select(Ident(paramName), "selectDynamic"),
             List(Literal(StringConstant(fieldName)))
@@ -1506,3 +1536,60 @@ object QuoteMacro:
         Left(s"Field '$fieldName' not found in ${
             if paramName == leftParam then "left" else "right"
           } schema")
+
+  /** Look up a field using the type parameter A from typedColumn[A, T] to determine left/right.
+    * Falls back to field name uniqueness if type matching fails.
+    */
+  private def lookupFieldInJoinSchemaByType(using
+      q: Quotes
+  )(
+      fieldName: String,
+      typeArgs: List[q.reflect.Tree],
+      leftSchema: ProtoSchema,
+      rightSchema: ProtoSchema
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    // Try type parameter A to determine left/right
+    typeArgs match
+      case (typeTreeA: TypeTree) :: _ =>
+        deriveSchemaFromTypeRepr(typeTreeA.tpe) match
+          case Right(schema) =>
+            val matchesLeft = schema.fields.map(_.name).toSet == leftSchema.fields.map(_.name).toSet
+            val matchesRight =
+              schema.fields.map(_.name).toSet == rightSchema.fields.map(_.name).toSet
+            if matchesLeft then
+              leftSchema.fields.find(_.name == fieldName) match
+                case Some(f) =>
+                  Right(ProtoExpr.ColumnRef(fieldName, Some("_1"), f.dataType, f.nullable))
+                case None => Left(s"Field '$fieldName' not found in left schema")
+            else if matchesRight then
+              rightSchema.fields.find(_.name == fieldName) match
+                case Some(f) =>
+                  Right(ProtoExpr.ColumnRef(fieldName, Some("_2"), f.dataType, f.nullable))
+                case None => Left(s"Field '$fieldName' not found in right schema")
+            else
+              // Type didn't match either schema, fall back to name uniqueness
+              lookupFieldInJoinSchemaByName(fieldName, leftSchema, rightSchema)
+          case Left(_) =>
+            lookupFieldInJoinSchemaByName(fieldName, leftSchema, rightSchema)
+      case _ =>
+        lookupFieldInJoinSchemaByName(fieldName, leftSchema, rightSchema)
+
+  /** Look up a field by name uniqueness across both join schemas */
+  private def lookupFieldInJoinSchemaByName(
+      fieldName: String,
+      leftSchema: ProtoSchema,
+      rightSchema: ProtoSchema
+  ): Either[String, ProtoExpr] =
+    val leftField = leftSchema.fields.find(_.name == fieldName)
+    val rightField = rightSchema.fields.find(_.name == fieldName)
+    (leftField, rightField) match
+      case (Some(f), None) =>
+        Right(ProtoExpr.ColumnRef(fieldName, Some("_1"), f.dataType, f.nullable))
+      case (None, Some(f)) =>
+        Right(ProtoExpr.ColumnRef(fieldName, Some("_2"), f.dataType, f.nullable))
+      case (Some(_), Some(_)) =>
+        Left(s"Ambiguous field '$fieldName' found in both join schemas")
+      case (None, None) =>
+        Left(s"Field '$fieldName' not found in either join schema")

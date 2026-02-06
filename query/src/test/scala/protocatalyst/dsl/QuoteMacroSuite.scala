@@ -759,6 +759,80 @@ class QuoteMacroSuite extends munit.FunSuite:
       case other =>
         fail(s"Expected Project plan, got: $other")
 
+  test("quote with lambda-style select"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").select(_.name)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(projExprs, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(projExprs.size, 1)
+        projExprs.head match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+      case other =>
+        fail(s"Expected Project plan, got: $other")
+
+  test("quote with lambda-style select multiple columns"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .select(Column[QuoteUser, String]("name"), Column[QuoteUser, Int]("age"))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(projExprs, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(projExprs.size, 2)
+        projExprs(0) match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+        projExprs(1) match
+          case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+          case other                               => fail(s"Expected ColumnRef(age), got: $other")
+      case other =>
+        fail(s"Expected Project plan, got: $other")
+
+  test("quote with filter then lambda select"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .filter(_.age > 18)
+        .select(_.name)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            projExprs,
+            ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("users", _, _))
+          ) =>
+        assertEquals(projExprs.size, 1)
+        projExprs.head match
+          case ProtoExpr.ColumnRef("name", _, _, _) => () // ok
+          case other => fail(s"Expected ColumnRef(name), got: $other")
+      case other =>
+        fail(s"Expected Project(Filter(...)), got: $other")
+
+  test("quote with lambda-style groupBy"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .groupBy(_.age)
+        .agg(count)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Aggregate(
+            groupingExprs,
+            aggregateExprs,
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        assertEquals(groupingExprs.size, 1)
+        assertEquals(aggregateExprs.size, 1)
+        groupingExprs.head match
+          case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+          case other                               => fail(s"Expected ColumnRef(age), got: $other")
+      case other =>
+        fail(s"Expected Aggregate plan, got: $other")
+
   // Note: The optimizer pushes Project above Limit, so we expect Project(Limit(...))
   test("quote with select and limit"):
     val query = QuoteMacro.quote {

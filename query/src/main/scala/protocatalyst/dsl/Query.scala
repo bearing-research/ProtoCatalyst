@@ -40,6 +40,10 @@ class Query[A] private[dsl] (
   def where(f: FieldSelector[A] => Expr[Boolean]): Query[A] =
     filter(f(FieldSelector[A](using outputEncoder)))
 
+  /** Select with lambda-style field access: query.select(_.name) */
+  def select[B](f: FieldSelector[A] => Expr[B])(using enc: ProtoEncoder[B]): Query[B] =
+    select(f(FieldSelector[A](using outputEncoder)))
+
   /** Project to selected expressions */
   def select[B](exprs: Expr[B]*)(using enc: ProtoEncoder[B]): Query[B] =
     new Query(
@@ -137,6 +141,10 @@ class Query[A] private[dsl] (
       outputEncoder,
       schemaContracts
     )
+
+  /** Group by with lambda-style field access: query.groupBy(_.age) */
+  def groupBy[K](f: FieldSelector[A] => Expr[K]): GroupedQuery[A, K] =
+    groupBy(f(FieldSelector[A](using outputEncoder)))
 
   /** Group by expressions for aggregation */
   def groupBy[K](keys: Expr[K]*): GroupedQuery[A, K] =

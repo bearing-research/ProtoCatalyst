@@ -1,9 +1,9 @@
 package protocatalyst.sql
 
-import scala.quoted.*
+import scala.quoted._
 
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** Compile-time schema derivation using Quotes reflection API.
   *

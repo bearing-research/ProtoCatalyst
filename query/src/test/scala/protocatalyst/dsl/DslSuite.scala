@@ -367,12 +367,11 @@ class DslSuite extends munit.FunSuite:
     assertEquals(ageCol.name, "age")
     assertEquals(nameCol.name, "name")
 
-  test("FieldSelector throws on invalid field"):
-    val users = Table[User]("users")
-    val selector = users.row
-
-    intercept[IllegalArgumentException]:
-      selector.selectDynamic("nonexistent")
+  test("FieldSelector rejects invalid field at compile time"):
+    // With the transparent inline macro, invalid field names are now caught at compile time
+    // rather than throwing a runtime exception. This is verified by the compile error:
+    // "Field 'nonexistent' not found in User. Available fields: name, age, salary"
+    assert(compileErrors("FieldSelector[protocatalyst.dsl.User].nonexistent").nonEmpty)
 
   test("query row method returns field selector"):
     val users = Table[User]("users")

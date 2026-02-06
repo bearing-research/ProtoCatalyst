@@ -1,11 +1,11 @@
 package protocatalyst.macros
 
-import scala.quoted.*
+import scala.quoted._
 
-import protocatalyst.expr.*
-import protocatalyst.plan.*
-import protocatalyst.schema.*
-import protocatalyst.types.*
+import protocatalyst.expr._
+import protocatalyst.plan._
+import protocatalyst.schema._
+import protocatalyst.types._
 
 /** ToExpr instances for lifting ProtoCatalyst IR types to compile-time expressions.
   *
