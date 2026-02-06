@@ -5,7 +5,8 @@ import protocatalyst.optimizer.rules._
 import protocatalyst.testutil._
 import protocatalyst.types._
 
-/** Tests for conditional expression optimization rules: SimplifyConditionals, OptimizeIn, and LikeSimplification.
+/** Tests for conditional expression optimization rules: SimplifyConditionals, OptimizeIn, and
+  * LikeSimplification.
   *
   * Uses the new test DSL and utilities for improved readability.
   */

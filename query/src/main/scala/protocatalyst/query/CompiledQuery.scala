@@ -42,8 +42,8 @@ object CompiledQuery:
 
   /** Compile and optimize SQL at compile time.
     *
-    * Unlike `sql`, this method performs schema derivation, plan transformation, and optimization all
-    * at Scala compile time. The optimized plan is embedded as a constant in the bytecode.
+    * Unlike `sql`, this method performs schema derivation, plan transformation, and optimization
+    * all at Scala compile time. The optimized plan is embedded as a constant in the bytecode.
     *
     * Example:
     * {{{

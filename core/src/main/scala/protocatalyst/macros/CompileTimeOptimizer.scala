@@ -9,8 +9,8 @@ import protocatalyst.plan.ProtoLogicalPlan
   *
   * This enables optimization at Scala compile time rather than query execution time.
   *
-  * The main entry point is `optimizeAndLift`, which takes a plan value (already available at compile
-  * time in a macro context) and returns an Expr containing the optimized plan.
+  * The main entry point is `optimizeAndLift`, which takes a plan value (already available at
+  * compile time in a macro context) and returns an Expr containing the optimized plan.
   */
 object CompileTimeOptimizer:
   import ProtoLiftables.given

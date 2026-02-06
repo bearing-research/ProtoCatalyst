@@ -146,19 +146,19 @@ class QuoteMacroSuite extends munit.FunSuite:
     // Verify each produces the correct comparison
     queryGt.artifact.plan match
       case ProtoLogicalPlan.Filter(ProtoExpr.Gt(_, _), _) => ()
-      case _ => fail("Expected Gt")
+      case _                                              => fail("Expected Gt")
 
     queryGtEq.artifact.plan match
       case ProtoLogicalPlan.Filter(ProtoExpr.GtEq(_, _), _) => ()
-      case _ => fail("Expected GtEq")
+      case _                                                => fail("Expected GtEq")
 
     queryLt.artifact.plan match
       case ProtoLogicalPlan.Filter(ProtoExpr.Lt(_, _), _) => ()
-      case _ => fail("Expected Lt")
+      case _                                              => fail("Expected Lt")
 
     queryLtEq.artifact.plan match
       case ProtoLogicalPlan.Filter(ProtoExpr.LtEq(_, _), _) => ()
-      case _ => fail("Expected LtEq")
+      case _                                                => fail("Expected LtEq")
 
   test("quote with string equality"):
     val query = QuoteMacro.quote {
@@ -596,10 +596,12 @@ class QuoteMacroSuite extends munit.FunSuite:
             ProtoLogicalPlan.RelationRef("employees", _, _),
             ProtoLogicalPlan.RelationRef("departments", _, _),
             JoinType.Inner,
-            Some(ProtoExpr.Eq(
-              ProtoExpr.ColumnRef("deptId", Some("_1"), _, _),
-              ProtoExpr.ColumnRef("id", Some("_2"), _, _)
-            ))
+            Some(
+              ProtoExpr.Eq(
+                ProtoExpr.ColumnRef("deptId", Some("_1"), _, _),
+                ProtoExpr.ColumnRef("id", Some("_2"), _, _)
+              )
+            )
           ) =>
         () // ok
       case other =>
@@ -622,3 +624,119 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected LeftOuter Join, got: $other")
+
+  // ============================================================================
+  // GroupBy / Aggregate Tests
+  // ============================================================================
+
+  test("quote with groupBy and count"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .groupBy(Column[QuoteUser, Int]("age"))
+        .agg(count)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Aggregate(
+            groupingExprs,
+            aggregateExprs,
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        assertEquals(groupingExprs.size, 1)
+        assertEquals(aggregateExprs.size, 1)
+        groupingExprs.head match
+          case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+          case other                               => fail(s"Expected ColumnRef(age), got: $other")
+        aggregateExprs.head match
+          case ProtoExpr.Count(_, false) => () // ok
+          case other                     => fail(s"Expected Count, got: $other")
+      case other =>
+        fail(s"Expected Aggregate plan, got: $other")
+
+  test("quote with groupBy and sum"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .groupBy(Column[QuoteUser, Int]("age"))
+        .agg(sum(Column[QuoteUser, Double]("salary")))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Aggregate(
+            groupingExprs,
+            aggregateExprs,
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        assertEquals(groupingExprs.size, 1)
+        assertEquals(aggregateExprs.size, 1)
+        aggregateExprs.head match
+          case ProtoExpr.Sum(ProtoExpr.ColumnRef("salary", _, _, _)) => () // ok
+          case other => fail(s"Expected Sum(salary), got: $other")
+      case other =>
+        fail(s"Expected Aggregate plan, got: $other")
+
+  test("quote with groupBy and avg"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .groupBy(Column[QuoteUser, Int]("age"))
+        .agg(avg(Column[QuoteUser, Double]("salary")))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Aggregate(
+            _,
+            aggregateExprs,
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        aggregateExprs.head match
+          case ProtoExpr.Avg(ProtoExpr.ColumnRef("salary", _, _, _)) => () // ok
+          case other => fail(s"Expected Avg(salary), got: $other")
+      case other =>
+        fail(s"Expected Aggregate plan, got: $other")
+
+  test("quote with groupBy and min"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .groupBy(Column[QuoteUser, Int]("age"))
+        .agg(min(Column[QuoteUser, Double]("salary")))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Aggregate(
+            _,
+            aggregateExprs,
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        aggregateExprs.head match
+          case ProtoExpr.Min(ProtoExpr.ColumnRef("salary", _, _, _)) => () // ok
+          case other => fail(s"Expected Min(salary), got: $other")
+      case other =>
+        fail(s"Expected Aggregate plan, got: $other")
+
+  test("quote with groupBy and max"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .groupBy(Column[QuoteUser, Int]("age"))
+        .agg(max(Column[QuoteUser, Double]("salary")))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Aggregate(
+            _,
+            aggregateExprs,
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        aggregateExprs.head match
+          case ProtoExpr.Max(ProtoExpr.ColumnRef("salary", _, _, _)) => () // ok
+          case other => fail(s"Expected Max(salary), got: $other")
+      case other =>
+        fail(s"Expected Aggregate plan, got: $other")

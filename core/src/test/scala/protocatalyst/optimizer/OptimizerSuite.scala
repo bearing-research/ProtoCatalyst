@@ -30,7 +30,7 @@ class OptimizerSuite extends munit.FunSuite with RuleTestBase:
     // Should simplify TRUE AND TRUE → TRUE, then RemoveNoopOperators removes the filter
     optimized match
       case ProtoLogicalPlan.RelationRef(_, _, _) => () // Filter with TRUE removed
-      case ProtoLogicalPlan.Filter(cond, _) =>
+      case ProtoLogicalPlan.Filter(cond, _)      =>
         // In case RemoveNoopOperators doesn't run, check condition
         cond match
           case ProtoExpr.Literal(LiteralValue.BooleanValue(true)) => ()

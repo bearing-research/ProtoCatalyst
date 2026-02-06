@@ -23,7 +23,10 @@ class FilterOptimizationSuite extends munit.FunSuite with RuleTestBase:
 
     val combined = CombineFilters(input)
     combined match
-      case ProtoLogicalPlan.Filter(ProtoExpr.And(conditions), ProtoLogicalPlan.RelationRef(_, _, _)) =>
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.And(conditions),
+            ProtoLogicalPlan.RelationRef(_, _, _)
+          ) =>
         assertEquals(conditions.size, 2)
       case _ => fail(s"Expected combined filter, got $combined")
 
@@ -35,7 +38,10 @@ class FilterOptimizationSuite extends munit.FunSuite with RuleTestBase:
 
     val combined = CombineFilters(CombineFilters(input))
     combined match
-      case ProtoLogicalPlan.Filter(ProtoExpr.And(conditions), ProtoLogicalPlan.RelationRef(_, _, _)) =>
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.And(conditions),
+            ProtoLogicalPlan.RelationRef(_, _, _)
+          ) =>
         assertEquals(conditions.size, 3)
       case _ => fail(s"Expected combined filter with 3 conditions, got $combined")
 

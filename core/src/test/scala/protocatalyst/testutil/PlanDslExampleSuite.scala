@@ -7,8 +7,7 @@ import protocatalyst.types._
 
 /** Example test suite demonstrating the new DSL and test utilities.
   *
-  * This shows how the improved testing infrastructure makes tests more readable
-  * and maintainable.
+  * This shows how the improved testing infrastructure makes tests more readable and maintainable.
   */
 class PlanDslExampleSuite extends munit.FunSuite with PlanTestBase:
   import PlanDsl._
@@ -56,7 +55,11 @@ class PlanDslExampleSuite extends munit.FunSuite with PlanTestBase:
       case ProtoLogicalPlan.Sort(
             _,
             _,
-            ProtoLogicalPlan.Aggregate(_, _, ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef(_, _, _)))
+            ProtoLogicalPlan.Aggregate(
+              _,
+              _,
+              ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef(_, _, _))
+            )
           ) =>
         () // Structure is correct
       case _ => fail(s"Unexpected plan structure: $query")

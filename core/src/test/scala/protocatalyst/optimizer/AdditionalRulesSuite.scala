@@ -113,7 +113,12 @@ class AdditionalRulesSuite extends munit.FunSuite:
     )
     val result = ReplaceNullWithFalseInPredicate(input)
     result match
-      case ProtoLogicalPlan.Join(_, _, _, Some(ProtoExpr.Literal(LiteralValue.BooleanValue(false)))) =>
+      case ProtoLogicalPlan.Join(
+            _,
+            _,
+            _,
+            Some(ProtoExpr.Literal(LiteralValue.BooleanValue(false)))
+          ) =>
         ()
       case _ => fail(s"Expected Join with false condition, got $result")
 
@@ -176,7 +181,10 @@ class AdditionalRulesSuite extends munit.FunSuite:
     val result = FoldablePropagation(outerProj)
     // The result should have the constant 5 substituted for y
     result match
-      case ProtoLogicalPlan.Project(Vector(_, ProtoExpr.Add(ProtoExpr.Literal(LiteralValue.IntValue(5)), _)), _) =>
+      case ProtoLogicalPlan.Project(
+            Vector(_, ProtoExpr.Add(ProtoExpr.Literal(LiteralValue.IntValue(5)), _)),
+            _
+          ) =>
         ()
       case _ => fail(s"Expected propagated constant, got $result")
 
@@ -193,7 +201,7 @@ class AdditionalRulesSuite extends munit.FunSuite:
     val result = PushFoldableIntoBranches.pushFoldableIntoBranches(input)
     result match
       case ProtoExpr.If(_, ProtoExpr.Add(_, _), ProtoExpr.Add(_, _)) => ()
-      case _                                                          => fail(s"Expected IF with Add in branches, got $result")
+      case _ => fail(s"Expected IF with Add in branches, got $result")
 
   test("PushFoldableIntoBranches: push multiplication into CaseWhen branches"):
     // CaseWhen((cond1, 2), (cond2, 3), else 4) * 5 -> CaseWhen((cond1, 2*5), (cond2, 3*5), else 4*5)
@@ -229,7 +237,10 @@ class AdditionalRulesSuite extends munit.FunSuite:
     )
     val result = UnwrapCastInBinaryComparison(input)
     result match
-      case ProtoLogicalPlan.Filter(ProtoExpr.Eq(col, ProtoExpr.Literal(LiteralValue.IntValue(5))), _) =>
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Eq(col, ProtoExpr.Literal(LiteralValue.IntValue(5))),
+            _
+          ) =>
         assertEquals(col, intCol)
       case _ => fail(s"Expected unwrapped comparison, got $result")
 
@@ -254,7 +265,10 @@ class AdditionalRulesSuite extends munit.FunSuite:
     )
     val result = UnwrapCastInBinaryComparison(input)
     result match
-      case ProtoLogicalPlan.Filter(ProtoExpr.Gt(col, ProtoExpr.Literal(LiteralValue.ShortValue(100))), _) =>
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(col, ProtoExpr.Literal(LiteralValue.ShortValue(100))),
+            _
+          ) =>
         assertEquals(col, shortCol)
       case _ => fail(s"Expected unwrapped comparison, got $result")
 
@@ -300,7 +314,8 @@ class AdditionalRulesSuite extends munit.FunSuite:
 
   test("RemoveRedundantSorts: remove duplicate consecutive sorts"):
     val sortOrder = Vector(SortOrder(col("a"), Ascending, NullsFirst))
-    val input = ProtoLogicalPlan.Sort(sortOrder, false, ProtoLogicalPlan.Sort(sortOrder, false, table("t")))
+    val input =
+      ProtoLogicalPlan.Sort(sortOrder, false, ProtoLogicalPlan.Sort(sortOrder, false, table("t")))
     val result = RemoveRedundantSorts(input)
     result match
       case ProtoLogicalPlan.Sort(_, _, ProtoLogicalPlan.RelationRef(_, _, _)) => ()
@@ -310,7 +325,8 @@ class AdditionalRulesSuite extends munit.FunSuite:
     // When sorts are nested, the outer sort determines final order, making inner sort redundant
     val sortOrder1 = Vector(SortOrder(col("a"), Ascending, NullsFirst))
     val sortOrder2 = Vector(SortOrder(col("b"), Descending, NullsLast))
-    val input = ProtoLogicalPlan.Sort(sortOrder1, false, ProtoLogicalPlan.Sort(sortOrder2, false, table("t")))
+    val input =
+      ProtoLogicalPlan.Sort(sortOrder1, false, ProtoLogicalPlan.Sort(sortOrder2, false, table("t")))
     val result = RemoveRedundantSorts(input)
     // Inner sort should be removed since outer sort dominates
     result match

@@ -183,6 +183,17 @@ ProtoLogicalPlan.Limit(
 | `.join(...).on(...)` | `.join(other).on((a, b) => a.id === b.fk)` | ✅ |
 | `.leftJoin(...).on(...)` | `.leftJoin(other).on((a, b) => ...)` | ✅ |
 | `.rightJoin(...).on(...)` | `.rightJoin(other).on((a, b) => ...)` | ✅ |
+| `.groupBy(...).agg(...)` | `.groupBy(col).agg(count, sum(col))` | ✅ |
+
+### Aggregate Functions
+
+| Function | Example | Status |
+|----------|---------|--------|
+| `count` | `count`, `count(col)` | ✅ |
+| `sum` | `sum(col)` | ✅ |
+| `avg` | `avg(col)` | ✅ |
+| `min` | `min(col)` | ✅ |
+| `max` | `max(col)` | ✅ |
 
 ### Expression Operations
 
@@ -206,7 +217,6 @@ ProtoLogicalPlan.Limit(
 | Operation | Notes |
 |-----------|-------|
 | `.select` via macro | Type inference issues with Dynamic |
-| `.groupBy` / aggregations | Requires aggregate function support |
 | Subqueries | Nested query support |
 
 ## File Organization

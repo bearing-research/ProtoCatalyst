@@ -62,11 +62,12 @@ object ReplaceIntersectWithSemiJoin extends Rule:
 
     if leftCols.exists(_.isEmpty) || rightCols.exists(_.isEmpty) then None
     else
-      val conditions = leftCols.zip(rightCols).collect { case (Some((ln, lt, lq)), Some((rn, rt, rq))) =>
-        val leftCol = ProtoExpr.ColumnRef(ln, lq, lt, nullable = true)
-        val rightCol = ProtoExpr.ColumnRef(rn, rq, rt, nullable = true)
-        ProtoExpr.Eq(leftCol, rightCol)
-      }
+      val conditions =
+        leftCols.zip(rightCols).collect { case (Some((ln, lt, lq)), Some((rn, rt, rq))) =>
+          val leftCol = ProtoExpr.ColumnRef(ln, lq, lt, nullable = true)
+          val rightCol = ProtoExpr.ColumnRef(rn, rq, rt, nullable = true)
+          ProtoExpr.Eq(leftCol, rightCol)
+        }
 
       conditions match
         case Vector(single) => Some(single)
@@ -74,7 +75,7 @@ object ReplaceIntersectWithSemiJoin extends Rule:
 
   private def getColumnInfo(expr: ProtoExpr): Option[(String, ProtoType, Option[String])] =
     expr match
-      case ProtoExpr.ColumnRef(name, qual, dt, _)             => Some((name, dt, qual))
+      case ProtoExpr.ColumnRef(name, qual, dt, _)                  => Some((name, dt, qual))
       case ProtoExpr.Alias(ProtoExpr.ColumnRef(_, _, dt, _), name) => Some((name, dt, None))
-      case ProtoExpr.Alias(_, name)                           => Some((name, ProtoType.StringType, None))
-      case _                                                  => None
+      case ProtoExpr.Alias(_, name) => Some((name, ProtoType.StringType, None))
+      case _                        => None

@@ -105,7 +105,10 @@ object UnwrapCastInBinaryComparison extends Rule:
       case _ =>
         None
 
-  private def castFloatingTypes(literal: LiteralValue, targetType: ProtoType): Option[LiteralValue] =
+  private def castFloatingTypes(
+      literal: LiteralValue,
+      targetType: ProtoType
+  ): Option[LiteralValue] =
     (literal, targetType) match
       case (LiteralValue.DoubleValue(v), ProtoType.FloatType)
           if v >= Float.MinValue && v <= Float.MaxValue =>

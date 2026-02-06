@@ -33,8 +33,9 @@ object QuoteMacro:
 
   /** Quote a DSL query expression and compile it at compile time.
     *
-    * The query expression is analyzed at compile time, transformed to a ProtoLogicalPlan, optimized,
-    * and embedded as a bytecode constant. No runtime query building or optimization occurs.
+    * The query expression is analyzed at compile time, transformed to a ProtoLogicalPlan,
+    * optimized, and embedded as a bytecode constant. No runtime query building or optimization
+    * occurs.
     */
   inline def quote[A](inline q: Query[A])(using enc: ProtoEncoder[A]): CompiledQuery[A] =
     ${ quoteImpl[A]('q, 'enc) }
@@ -140,13 +141,17 @@ object QuoteMacro:
   )(term: q.reflect.Term, schema: ProtoSchema): Either[String, (ProtoLogicalPlan, String)] =
     extractQueryPlanRec(term, schema)
 
-  private def extractQueryPlanRec(using Quotes)(
+  private def extractQueryPlanRec(using
+      Quotes
+  )(
       term: quotes.reflect.Term,
       schema: ProtoSchema
   ): Either[String, (ProtoLogicalPlan, String)] =
     matchPlan(term, schema)
 
-  private def matchPlan(using Quotes)(
+  private def matchPlan(using
+      Quotes
+  )(
       term: quotes.reflect.Term,
       schema: ProtoSchema
   ): Either[String, (ProtoLogicalPlan, String)] =
@@ -245,7 +250,11 @@ object QuoteMacro:
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
         yield (
-          ProtoLogicalPlan.Union(Vector(childPlan, otherPlan), byName = false, allowMissingColumns = false),
+          ProtoLogicalPlan.Union(
+            Vector(childPlan, otherPlan),
+            byName = false,
+            allowMissingColumns = false
+          ),
           tableName
         )
 
@@ -293,34 +302,70 @@ object QuoteMacro:
 
       // query.join[B](otherQuery).on(condition)(implicits) - inner join with condition
       // Pattern: Apply(Apply(Select(Apply(TypeApply(Select(child, "join"), _), List(other)), "on"), List(cond)), List(implicits))
-      case Apply(Apply(Select(Apply(TypeApply(Select(child, "join"), _), List(otherExpr)), "on"), List(condExpr)), _) =>
+      case Apply(
+            Apply(
+              Select(Apply(TypeApply(Select(child, "join"), _), List(otherExpr)), "on"),
+              List(condExpr)
+            ),
+            _
+          ) =>
         for
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
-        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Inner, Some(condition)), tableName)
+        yield (
+          ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Inner, Some(condition)),
+          tableName
+        )
 
       // query.leftJoin[B](otherQuery).on(condition)(implicits)
-      case Apply(Apply(Select(Apply(TypeApply(Select(child, "leftJoin"), _), List(otherExpr)), "on"), List(condExpr)), _) =>
+      case Apply(
+            Apply(
+              Select(Apply(TypeApply(Select(child, "leftJoin"), _), List(otherExpr)), "on"),
+              List(condExpr)
+            ),
+            _
+          ) =>
         for
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
-        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.LeftOuter, Some(condition)), tableName)
+        yield (
+          ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.LeftOuter, Some(condition)),
+          tableName
+        )
 
       // query.rightJoin[B](otherQuery).on(condition)(implicits)
-      case Apply(Apply(Select(Apply(TypeApply(Select(child, "rightJoin"), _), List(otherExpr)), "on"), List(condExpr)), _) =>
+      case Apply(
+            Apply(
+              Select(Apply(TypeApply(Select(child, "rightJoin"), _), List(otherExpr)), "on"),
+              List(condExpr)
+            ),
+            _
+          ) =>
         for
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
-        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.RightOuter, Some(condition)), tableName)
+        yield (
+          ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.RightOuter, Some(condition)),
+          tableName
+        )
+
+      // groupedQuery.agg[B](aggExprs*)(enc) - aggregate with implicits
+      // Pattern: Apply(Apply(TypeApply(Select(groupedQuery, "agg"), _), List(aggExprs...)), List(enc))
+      case Apply(Apply(TypeApply(Select(groupedQueryExpr, "agg"), _), aggExprs), _) =>
+        extractGroupedQueryPlan(groupedQueryExpr, schema, aggExprs)
+
+      // groupedQuery.agg(aggExprs*)(enc) - aggregate without TypeApply
+      case Apply(Apply(Select(groupedQueryExpr, "agg"), aggExprs), _) =>
+        extractGroupedQueryPlan(groupedQueryExpr, schema, aggExprs)
 
       // Table.apply[A]("tableName") - direct table creation
       case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
@@ -585,7 +630,9 @@ object QuoteMacro:
           case Some(op) =>
             Left(s"Unsupported operator '$op' in: ${term.show}")
           case None =>
-            Left(s"Could not extract method name from fun[${fun.getClass.getSimpleName}]=${fun.show} in: ${term.show}")
+            Left(
+              s"Could not extract method name from fun[${fun.getClass.getSimpleName}]=${fun.show} in: ${term.show}"
+            )
 
       case other =>
         Left(s"Unsupported predicate expression: ${other.show}")
@@ -614,7 +661,8 @@ object QuoteMacro:
             Left(s"Field '$fieldName' not found in schema")
 
       // Direct field access via Dynamic
-      case Select(_, fieldName) if !fieldName.startsWith("$") && schema.fields.exists(_.name == fieldName) =>
+      case Select(_, fieldName)
+          if !fieldName.startsWith("$") && schema.fields.exists(_.name == fieldName) =>
         schema.fields.find(_.name == fieldName) match
           case Some(field) =>
             Right(ProtoExpr.ColumnRef(fieldName, None, field.dataType, field.nullable))
@@ -643,6 +691,26 @@ object QuoteMacro:
       // Expr.lit(value)
       case Apply(Select(_, "lit"), List(valueExpr)) =>
         extractValueExpr(valueExpr, schema)
+
+      // Column.apply[A, T]("name")(using enc) - explicit column reference
+      // Match any Apply(Apply(TypeApply(...), List(stringLiteral)), _) and try to extract column name
+      case app @ Apply(Apply(TypeApply(_, _), args), _) =>
+        args match
+          case List(nameExpr) =>
+            extractStringLiteral(nameExpr) match
+              case Right(colName) =>
+                schema.fields.find(_.name == colName) match
+                  case Some(field) =>
+                    Right(ProtoExpr.ColumnRef(colName, None, field.dataType, field.nullable))
+                  case None =>
+                    Right(
+                      ProtoExpr.ColumnRef(colName, None, ProtoType.StringType, nullable = false)
+                    )
+              case Left(_) =>
+                // Not a string literal, fall through to other patterns
+                Left(s"Unsupported value expression: ${term.show}")
+          case _ =>
+            Left(s"Unsupported value expression: ${term.show}")
 
       // Arithmetic: left + right
       case Apply(Select(leftExpr, "+"), List(rightExpr)) =>
@@ -700,7 +768,8 @@ object QuoteMacro:
         yield ProtoExpr.Concat(Vector(left, right))
 
       // String concat via extension method: Expr$package.++(leftExpr)(rightExpr)
-      case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) if extractMethodName(fun).contains("++") =>
+      case Apply(Apply(fun, List(leftExpr)), List(rightExpr))
+          if extractMethodName(fun).contains("++") =>
         for
           left <- extractValueExpr(leftExpr, schema)
           right <- extractValueExpr(rightExpr, schema)
@@ -750,12 +819,12 @@ object QuoteMacro:
   private def extractMethodName(using q: Quotes)(term: q.reflect.Term): Option[String] =
     import q.reflect.*
     term match
-      case Select(_, name)        => Some(name)
-      case TypeApply(inner, _)    => extractMethodName(inner)
-      case Inlined(_, _, inner)   => extractMethodName(inner)
-      case Apply(inner, _)        => extractMethodName(inner)
-      case Ident(name)            => Some(name)
-      case _                      => None
+      case Select(_, name)      => Some(name)
+      case TypeApply(inner, _)  => extractMethodName(inner)
+      case Inlined(_, _, inner) => extractMethodName(inner)
+      case Apply(inner, _)      => extractMethodName(inner)
+      case Ident(name)          => Some(name)
+      case _                    => None
 
   // ============================================================================
   // Utility Helpers
@@ -783,6 +852,237 @@ object QuoteMacro:
       },
       schema.fingerprint
     )
+
+  // ============================================================================
+  // GroupBy/Aggregate Extraction
+  // ============================================================================
+
+  /** Extract a GroupedQuery and create an Aggregate plan.
+    *
+    * Handles patterns like:
+    * {{{
+    * Table[User]("users").groupBy(_.deptId).agg(count, sum(_.salary))
+    * }}}
+    */
+  private def extractGroupedQueryPlan(using
+      q: Quotes
+  )(
+      groupedQueryExpr: q.reflect.Term,
+      schema: ProtoSchema,
+      aggExprs: List[q.reflect.Term]
+  ): Either[String, (ProtoLogicalPlan, String)] =
+    import q.reflect.*
+
+    groupedQueryExpr match
+      case Inlined(_, _, inner) =>
+        extractGroupedQueryPlan(inner, schema, aggExprs)
+
+      case Block(_, expr) =>
+        extractGroupedQueryPlan(expr, schema, aggExprs)
+
+      case Typed(expr, _) =>
+        extractGroupedQueryPlan(expr, schema, aggExprs)
+
+      // query.groupBy[K](keys*) with TypeApply
+      case Apply(TypeApply(Select(childQuery, "groupBy"), _), groupingExprs) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(childQuery, schema)
+          groupingProtoExprs <- extractGroupingExprs(groupingExprs, schema)
+          aggProtoExprs <- extractAggregateExprs(aggExprs, schema)
+        yield (ProtoLogicalPlan.Aggregate(groupingProtoExprs, aggProtoExprs, childPlan), tableName)
+
+      // query.groupBy(keys*) without TypeApply
+      case Apply(Select(childQuery, "groupBy"), groupingExprs) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(childQuery, schema)
+          groupingProtoExprs <- extractGroupingExprs(groupingExprs, schema)
+          aggProtoExprs <- extractAggregateExprs(aggExprs, schema)
+        yield (ProtoLogicalPlan.Aggregate(groupingProtoExprs, aggProtoExprs, childPlan), tableName)
+
+      case other =>
+        Left(s"Unsupported grouped query expression: ${other.show}")
+
+  /** Extract grouping expressions from groupBy arguments */
+  private def extractGroupingExprs(using
+      q: Quotes
+  )(
+      terms: List[q.reflect.Term],
+      schema: ProtoSchema
+  ): Either[String, Vector[ProtoExpr]] =
+    import q.reflect.*
+
+    // Handle varargs wrappers - extract elements from Repeated/SeqLiteral
+    val unwrappedTerms = terms.flatMap { term =>
+      term match
+        case Typed(Repeated(elems, _), _)                  => elems
+        case Repeated(elems, _)                            => elems
+        case t if t.getClass.getSimpleName == "SeqLiteral" =>
+          // SeqLiteral isn't directly matchable, use reflection
+          try
+            val elemsField = t.getClass.getMethod("elems")
+            elemsField.invoke(t).asInstanceOf[List[Term]]
+          catch case _: Exception => List(t)
+        case other => List(other)
+    }
+
+    val results = unwrappedTerms.map(extractValueExprFromLambda(_, schema))
+    val errors = results.collect { case Left(err) => err }
+    if errors.nonEmpty then Left(errors.mkString("; "))
+    else Right(results.collect { case Right(expr) => expr }.toVector)
+
+  /** Extract a value expression, unwrapping lambda if present */
+  private def extractValueExprFromLambda(using
+      q: Quotes
+  )(
+      term: q.reflect.Term,
+      schema: ProtoSchema
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractValueExprFromLambda(inner, schema)
+
+      case Block(List(DefDef(_, _, _, Some(body))), _) =>
+        // Lambda: _ => body
+        extractValueExpr(body, schema)
+
+      case Block(_, expr) =>
+        extractValueExprFromLambda(expr, schema)
+
+      case Typed(expr, _) =>
+        extractValueExprFromLambda(expr, schema)
+
+      case other =>
+        extractValueExpr(other, schema)
+
+  /** Extract aggregate expressions from agg arguments */
+  private def extractAggregateExprs(using
+      q: Quotes
+  )(
+      terms: List[q.reflect.Term],
+      schema: ProtoSchema
+  ): Either[String, Vector[ProtoExpr]] =
+    import q.reflect.*
+
+    // Handle varargs wrappers - extract elements from Repeated/SeqLiteral
+    val unwrappedTerms = terms.flatMap { term =>
+      term match
+        case Typed(Repeated(elems, _), _)                  => elems
+        case Repeated(elems, _)                            => elems
+        case t if t.getClass.getSimpleName == "SeqLiteral" =>
+          try
+            val elemsField = t.getClass.getMethod("elems")
+            elemsField.invoke(t).asInstanceOf[List[Term]]
+          catch case _: Exception => List(t)
+        case other => List(other)
+    }
+
+    val results = unwrappedTerms.map(extractAggregateExpr(_, schema))
+    val errors = results.collect { case Left(err) => err }
+    if errors.nonEmpty then Left(errors.mkString("; "))
+    else Right(results.collect { case Right(expr) => expr }.toVector)
+
+  /** Extract a single aggregate expression */
+  private def extractAggregateExpr(using
+      q: Quotes
+  )(
+      term: q.reflect.Term,
+      schema: ProtoSchema
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractAggregateExpr(inner, schema)
+
+      case Block(_, expr) =>
+        extractAggregateExpr(expr, schema)
+
+      case Typed(expr, _) =>
+        extractAggregateExpr(expr, schema)
+
+      // functions.count (parameterless) - count all rows
+      // Match Select(_, "count") or Ident("count")
+      case sel @ Select(_, _) if extractMethodName(sel).contains("count") =>
+        Right(ProtoExpr.Count(ProtoExpr.Literal(LiteralValue.IntValue(1)), distinct = false))
+
+      // count imported directly
+      case Ident("count") =>
+        Right(ProtoExpr.Count(ProtoExpr.Literal(LiteralValue.IntValue(1)), distinct = false))
+
+      // functions.count(expr) - count non-null values with 2 Apply (one for implicits)
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("count") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Count(_, distinct = false))
+
+      // functions.count(expr) with TypeApply and one Apply
+      case Apply(TypeApply(fun, _), List(argExpr)) if extractMethodName(fun).contains("count") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Count(_, distinct = false))
+
+      // functions.count(expr) without TypeApply
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("count") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Count(_, distinct = false))
+
+      // functions.countDistinct(expr)
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("countDistinct") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Count(_, distinct = true))
+
+      case Apply(TypeApply(fun, _), List(argExpr))
+          if extractMethodName(fun).contains("countDistinct") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Count(_, distinct = true))
+
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("countDistinct") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Count(_, distinct = true))
+
+      // functions.sum(expr)(using Numeric, enc) - with implicits
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("sum") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Sum(_))
+
+      // functions.sum(expr) without implicits visible
+      case Apply(TypeApply(fun, _), List(argExpr)) if extractMethodName(fun).contains("sum") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Sum(_))
+
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("sum") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Sum(_))
+
+      // functions.avg(expr)
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("avg") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Avg(_))
+
+      case Apply(TypeApply(fun, _), List(argExpr)) if extractMethodName(fun).contains("avg") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Avg(_))
+
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("avg") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Avg(_))
+
+      // functions.min(expr)(using Ordering, enc)
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("min") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Min(_))
+
+      case Apply(TypeApply(fun, _), List(argExpr)) if extractMethodName(fun).contains("min") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Min(_))
+
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("min") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Min(_))
+
+      // functions.max(expr)(using Ordering, enc)
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("max") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Max(_))
+
+      case Apply(TypeApply(fun, _), List(argExpr)) if extractMethodName(fun).contains("max") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Max(_))
+
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("max") =>
+        extractValueExprFromLambda(argExpr, schema).map(ProtoExpr.Max(_))
+
+      case other =>
+        Left(s"Unsupported aggregate expression: ${other.show}")
 
   // ============================================================================
   // Join Condition Extraction (two-schema support)
@@ -818,7 +1118,9 @@ object QuoteMacro:
             Left(s"Cannot extract schema from type: ${termType.show}")
 
   /** Derive ProtoSchema from a TypeRepr at compile time */
-  private def deriveSchemaFromTypeRepr(using q: Quotes)(tpe: q.reflect.TypeRepr): Either[String, ProtoSchema] =
+  private def deriveSchemaFromTypeRepr(using
+      q: Quotes
+  )(tpe: q.reflect.TypeRepr): Either[String, ProtoSchema] =
     import q.reflect.*
 
     val dealised = tpe.dealias
@@ -826,17 +1128,18 @@ object QuoteMacro:
     dealised.classSymbol match
       case Some(sym) if sym.flags.is(Flags.Case) =>
         val caseFields = sym.caseFields
-        val fieldsResult = caseFields.foldLeft[Either[String, Vector[ProtoStructField]]](Right(Vector.empty)) {
-          (acc, field) =>
-            acc.flatMap { fields =>
-              val fieldName = field.name
-              val fieldType = dealised.memberType(field)
-              deriveProtoTypeFromTypeRepr(fieldType).map { protoType =>
-                val nullable = isTypeNullable(fieldType)
-                fields :+ ProtoStructField(fieldName, protoType, nullable)
+        val fieldsResult =
+          caseFields.foldLeft[Either[String, Vector[ProtoStructField]]](Right(Vector.empty)) {
+            (acc, field) =>
+              acc.flatMap { fields =>
+                val fieldName = field.name
+                val fieldType = dealised.memberType(field)
+                deriveProtoTypeFromTypeRepr(fieldType).map { protoType =>
+                  val nullable = isTypeNullable(fieldType)
+                  fields :+ ProtoStructField(fieldName, protoType, nullable)
+                }
               }
-            }
-        }
+          }
         fieldsResult.map(ProtoSchema(_))
 
       case Some(_) =>
@@ -849,9 +1152,11 @@ object QuoteMacro:
     import q.reflect.*
     tpe.dealias match
       case AppliedType(tycon, _) if tycon.typeSymbol.fullName == "scala.Option" => true
-      case _ => false
+      case _                                                                    => false
 
-  private def deriveProtoTypeFromTypeRepr(using q: Quotes)(tpe: q.reflect.TypeRepr): Either[String, ProtoType] =
+  private def deriveProtoTypeFromTypeRepr(using
+      q: Quotes
+  )(tpe: q.reflect.TypeRepr): Either[String, ProtoType] =
     import q.reflect.*
 
     val dealised = tpe.dealias
@@ -874,10 +1179,12 @@ object QuoteMacro:
 
   /** Extract join condition from a two-parameter lambda.
     *
-    * The lambda has the form: (leftSelector, rightSelector) => condition
-    * where leftSelector accesses the left schema and rightSelector accesses the right schema.
+    * The lambda has the form: (leftSelector, rightSelector) => condition where leftSelector
+    * accesses the left schema and rightSelector accesses the right schema.
     */
-  private def extractJoinCondition(using q: Quotes)(
+  private def extractJoinCondition(using
+      q: Quotes
+  )(
       condExpr: q.reflect.Term,
       leftSchema: ProtoSchema,
       rightSchema: ProtoSchema
@@ -908,7 +1215,9 @@ object QuoteMacro:
         extractPredicateExpr(condExpr, leftSchema)
 
   /** Extract a predicate expression in a join context, with two schemas */
-  private def extractJoinPredicateExpr(using q: Quotes)(
+  private def extractJoinPredicateExpr(using
+      q: Quotes
+  )(
       term: q.reflect.Term,
       leftSchema: ProtoSchema,
       rightSchema: ProtoSchema,
@@ -958,17 +1267,47 @@ object QuoteMacro:
           case Some(op) if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
             for
               left <- extractJoinValueExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
-              right <- extractJoinValueExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+              right <- extractJoinValueExpr(
+                rightExpr,
+                leftSchema,
+                rightSchema,
+                leftParam,
+                rightParam
+              )
             yield makeComparison(op, left, right)
           case Some("&&") =>
             for
-              left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
-              right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+              left <- extractJoinPredicateExpr(
+                leftExpr,
+                leftSchema,
+                rightSchema,
+                leftParam,
+                rightParam
+              )
+              right <- extractJoinPredicateExpr(
+                rightExpr,
+                leftSchema,
+                rightSchema,
+                leftParam,
+                rightParam
+              )
             yield ProtoExpr.And(Vector(left, right))
           case Some("||") =>
             for
-              left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
-              right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+              left <- extractJoinPredicateExpr(
+                leftExpr,
+                leftSchema,
+                rightSchema,
+                leftParam,
+                rightParam
+              )
+              right <- extractJoinPredicateExpr(
+                rightExpr,
+                leftSchema,
+                rightSchema,
+                leftParam,
+                rightParam
+              )
             yield ProtoExpr.Or(Vector(left, right))
           case _ =>
             Left(s"Unsupported join condition expression: ${term.show}")
@@ -977,21 +1316,35 @@ object QuoteMacro:
       case Apply(Select(leftExpr, "&&"), List(rightExpr)) =>
         for
           left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
-          right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinPredicateExpr(
+            rightExpr,
+            leftSchema,
+            rightSchema,
+            leftParam,
+            rightParam
+          )
         yield ProtoExpr.And(Vector(left, right))
 
       // Boolean OR
       case Apply(Select(leftExpr, "||"), List(rightExpr)) =>
         for
           left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
-          right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinPredicateExpr(
+            rightExpr,
+            leftSchema,
+            rightSchema,
+            leftParam,
+            rightParam
+          )
         yield ProtoExpr.Or(Vector(left, right))
 
       case other =>
         Left(s"Unsupported join predicate expression: ${other.show}")
 
   /** Extract a value expression in a join context, mapping to left or right schema */
-  private def extractJoinValueExpr(using q: Quotes)(
+  private def extractJoinValueExpr(using
+      q: Quotes
+  )(
       term: q.reflect.Term,
       leftSchema: ProtoSchema,
       rightSchema: ProtoSchema,
@@ -1011,8 +1364,18 @@ object QuoteMacro:
         extractJoinValueExpr(expr, leftSchema, rightSchema, leftParam, rightParam)
 
       // leftParam.fieldName via selectDynamic
-      case Apply(Select(Ident(paramName), "selectDynamic"), List(Literal(StringConstant(fieldName)))) =>
-        lookupFieldInJoinSchema(paramName, fieldName, leftSchema, rightSchema, leftParam, rightParam)
+      case Apply(
+            Select(Ident(paramName), "selectDynamic"),
+            List(Literal(StringConstant(fieldName)))
+          ) =>
+        lookupFieldInJoinSchema(
+          paramName,
+          fieldName,
+          leftSchema,
+          rightSchema,
+          leftParam,
+          rightParam
+        )
 
       // Literals
       case Literal(IntConstant(v)) =>
@@ -1045,11 +1408,16 @@ object QuoteMacro:
     val (schema, qualifier) =
       if paramName == leftParam then (leftSchema, Some("_1"))
       else if paramName == rightParam then (rightSchema, Some("_2"))
-      else return Left(s"Unknown parameter '$paramName' in join condition (expected '$leftParam' or '$rightParam')")
+      else
+        return Left(
+          s"Unknown parameter '$paramName' in join condition (expected '$leftParam' or '$rightParam')"
+        )
 
     schema.fields.find(_.name == fieldName) match
       case Some(field) =>
         // Use qualified column reference for join conditions
         Right(ProtoExpr.ColumnRef(fieldName, qualifier, field.dataType, field.nullable))
       case None =>
-        Left(s"Field '$fieldName' not found in ${if paramName == leftParam then "left" else "right"} schema")
+        Left(s"Field '$fieldName' not found in ${
+            if paramName == leftParam then "left" else "right"
+          } schema")

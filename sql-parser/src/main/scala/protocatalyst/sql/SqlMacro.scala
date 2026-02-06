@@ -101,7 +101,8 @@ object SqlMacro:
                     schemaContracts = ${ Expr(Vector(contract)) },
                     plan = ${ Expr(optimizedPlan) }, // Lifted: embedded as bytecode constant
                     outputSchema = ${ Expr(outputSchema) }, // Lifted: embedded as bytecode constant
-                    sourceInfo = Some(SourceInfo("sql-optimized-compile-time", 0, Some(${ Expr(sql) })))
+                    sourceInfo =
+                      Some(SourceInfo("sql-optimized-compile-time", 0, Some(${ Expr(sql) })))
                   )
                   Right(artifact)
                 }

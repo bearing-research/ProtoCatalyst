@@ -15,7 +15,7 @@ object CompileTimeSchemaDerivation:
   /** Derive schema from type A at compile time.
     *
     * @tparam A
-    *   The type to derive schema from (must be a case class)
+    *   The type to derive schema from (case class or primitive type)
     * @return
     *   Either an error message or the derived ProtoSchema
     */
@@ -24,16 +24,42 @@ object CompileTimeSchemaDerivation:
 
     val tpe = TypeRepr.of[A]
 
-    // Check if it's a case class (product type)
-    tpe.classSymbol match
-      case Some(sym) if sym.flags.is(Flags.Case) =>
-        val caseFields = sym.caseFields
-        deriveFieldsFromCaseClass(tpe, caseFields)
+    // First check for primitive types - create single-field schema
+    derivePrimitiveSchema(tpe) match
+      case Some(schema) => Right(schema)
+      case None         =>
+        // Check if it's a case class (product type)
+        tpe.classSymbol match
+          case Some(sym) if sym.flags.is(Flags.Case) =>
+            val caseFields = sym.caseFields
+            deriveFieldsFromCaseClass(tpe, caseFields)
 
-      case Some(_) =>
-        Left(s"Type ${tpe.show} is not a case class")
-      case None =>
-        Left(s"Type ${tpe.show} has no class symbol")
+          case Some(_) =>
+            Left(s"Type ${tpe.show} is not a case class")
+          case None =>
+            Left(s"Type ${tpe.show} has no class symbol")
+
+  /** Derive schema for primitive types (Int, Long, Double, etc.) */
+  private def derivePrimitiveSchema(using q: Quotes)(tpe: q.reflect.TypeRepr): Option[ProtoSchema] =
+    import q.reflect.*
+
+    val dealised = tpe.dealias
+
+    val protoTypeOpt: Option[ProtoType] =
+      if dealised =:= TypeRepr.of[Boolean] then Some(ProtoType.BooleanType)
+      else if dealised =:= TypeRepr.of[Byte] then Some(ProtoType.ByteType)
+      else if dealised =:= TypeRepr.of[Short] then Some(ProtoType.ShortType)
+      else if dealised =:= TypeRepr.of[Int] then Some(ProtoType.IntegerType)
+      else if dealised =:= TypeRepr.of[Long] then Some(ProtoType.LongType)
+      else if dealised =:= TypeRepr.of[Float] then Some(ProtoType.FloatType)
+      else if dealised =:= TypeRepr.of[Double] then Some(ProtoType.DoubleType)
+      else if dealised =:= TypeRepr.of[String] then Some(ProtoType.StringType)
+      else None
+
+    protoTypeOpt.map { protoType =>
+      // Create single-field schema with "value" as field name
+      ProtoSchema(Vector(ProtoStructField("value", protoType, nullable = false)))
+    }
 
   private def deriveFieldsFromCaseClass(using
       q: Quotes
@@ -57,7 +83,7 @@ object CompileTimeSchemaDerivation:
 
     tpe.dealias match
       case AppliedType(tycon, _) if tycon.typeSymbol.fullName == "scala.Option" => true
-      case _ if tpe <:< TypeRepr.of[AnyRef] =>
+      case _ if tpe <:< TypeRepr.of[AnyRef]                                     =>
         // Reference types that aren't Option are non-nullable by default
         false
       case _ => false
@@ -80,8 +106,7 @@ object CompileTimeSchemaDerivation:
     else if dealised =:= TypeRepr.of[String] then Right(ProtoType.StringType)
     else if dealised =:= TypeRepr.of[Array[Byte]] then Right(ProtoType.BinaryType)
     else if dealised =:= TypeRepr.of[BigDecimal] then Right(ProtoType.DecimalType(38, 18))
-    else if dealised =:= TypeRepr.of[java.math.BigDecimal] then
-      Right(ProtoType.DecimalType(38, 18))
+    else if dealised =:= TypeRepr.of[java.math.BigDecimal] then Right(ProtoType.DecimalType(38, 18))
     else if dealised =:= TypeRepr.of[BigInt] then Right(ProtoType.DecimalType(38, 0))
     else if dealised =:= TypeRepr.of[java.math.BigInteger] then Right(ProtoType.DecimalType(38, 0))
     // java.time types

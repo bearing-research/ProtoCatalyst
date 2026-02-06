@@ -207,7 +207,8 @@ class SqlMacroSuite extends munit.FunSuite:
     assert(query.artifact.sourceInfo.exists(_.sourceFile == "sql-optimized-compile-time"))
 
   test("sqlOptimized compiles SELECT with WHERE"):
-    val query = CompiledQuery.sqlOptimized[SqlTestUser]("SELECT name, age FROM users WHERE age > 18")
+    val query =
+      CompiledQuery.sqlOptimized[SqlTestUser]("SELECT name, age FROM users WHERE age > 18")
     assertNotEquals(query.contentHash, 0L)
 
   test("sqlOptimized produces optimized plan"):

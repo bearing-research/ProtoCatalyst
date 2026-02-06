@@ -327,11 +327,17 @@ extension (expr: Expr[Any])
   // String operations for dynamic field access
   @targetName("upperAny")
   def upper: Expr[Any] =
-    UnaryExpr(ProtoExpr.Upper(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]])
+    UnaryExpr(
+      ProtoExpr.Upper(expr.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]]
+    )
 
   @targetName("lowerAny")
   def lower: Expr[Any] =
-    UnaryExpr(ProtoExpr.Lower(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]])
+    UnaryExpr(
+      ProtoExpr.Lower(expr.toProtoExpr),
+      ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]]
+    )
 
   @targetName("concatLiteralAny")
   def ++(value: String): Expr[Any] =

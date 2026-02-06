@@ -33,9 +33,10 @@ object ConstantPropagation extends Rule:
 
   /** Extract equality constraints (column = literal) from an expression.
     *
-    * Only extracts constraints from AND conjunctions where there are multiple conditions.
-    * Single equalities don't benefit from constant propagation (there's nowhere to propagate TO),
-    * and propagating within the defining equality itself would incorrectly turn `col = val` into `val = val`.
+    * Only extracts constraints from AND conjunctions where there are multiple conditions. Single
+    * equalities don't benefit from constant propagation (there's nowhere to propagate TO), and
+    * propagating within the defining equality itself would incorrectly turn `col = val` into
+    * `val = val`.
     */
   private def extractEqualityConstraints(
       expr: ProtoExpr
@@ -73,18 +74,17 @@ object ConstantPropagation extends Rule:
 
   /** Propagate constants through an expression using the constraints.
     *
-    * Replaces column references with their known literal values.
-    * Note: We only extract constraints from ANDs, so the defining equality like `col = val`
-    * will have its column replaced, but that's fine because we then have `val = val` which
-    * folds to TRUE and gets absorbed by AND simplification (true AND x = x).
+    * Replaces column references with their known literal values. Note: We only extract constraints
+    * from ANDs, so the defining equality like `col = val` will have its column replaced, but that's
+    * fine because we then have `val = val` which folds to TRUE and gets absorbed by AND
+    * simplification (true AND x = x).
     */
   private def propagateConstants(
       expr: ProtoExpr,
       constraints: Map[(String, Option[String]), ProtoExpr]
   ): ProtoExpr =
-    TreeTransform.transformExprUp(expr) {
-      case ref @ ProtoExpr.ColumnRef(name, qualifier, _, _) =>
-        constraints.get((name, qualifier)).getOrElse(ref)
+    TreeTransform.transformExprUp(expr) { case ref @ ProtoExpr.ColumnRef(name, qualifier, _, _) =>
+      constraints.get((name, qualifier)).getOrElse(ref)
     }
 
   /** Check if expression is a null literal. */

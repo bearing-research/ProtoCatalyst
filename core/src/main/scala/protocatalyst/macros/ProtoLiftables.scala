@@ -36,7 +36,14 @@ object ProtoLiftables:
 
   given ToExpr[ProtoStructField] with
     def apply(f: ProtoStructField)(using Quotes): Expr[ProtoStructField] =
-      '{ ProtoStructField(${ Expr(f.name) }, ${ Expr(f.dataType) }, ${ Expr(f.nullable) }, ${ Expr(f.metadata) }) }
+      '{
+        ProtoStructField(
+          ${ Expr(f.name) },
+          ${ Expr(f.dataType) },
+          ${ Expr(f.nullable) },
+          ${ Expr(f.metadata) }
+        )
+      }
 
   given ToExpr[SumVariant] with
     def apply(v: SumVariant)(using Quotes): Expr[SumVariant] =
@@ -67,7 +74,7 @@ object ProtoLiftables:
       case ProtoType.CalendarIntervalType  => '{ ProtoType.CalendarIntervalType }
       case ProtoType.VariantType           => '{ ProtoType.VariantType }
       case ProtoType.NullType              => '{ ProtoType.NullType }
-      case ProtoType.TimeType(precision) =>
+      case ProtoType.TimeType(precision)   =>
         '{ ProtoType.TimeType(${ Expr(precision) }) }
       case ProtoType.CharType(length) =>
         '{ ProtoType.CharType(${ Expr(length) }) }
@@ -78,7 +85,9 @@ object ProtoLiftables:
       case ProtoType.ArrayType(elementType, containsNull) =>
         '{ ProtoType.ArrayType(${ Expr(elementType) }, ${ Expr(containsNull) }) }
       case ProtoType.MapType(keyType, valueType, valueContainsNull) =>
-        '{ ProtoType.MapType(${ Expr(keyType) }, ${ Expr(valueType) }, ${ Expr(valueContainsNull) }) }
+        '{
+          ProtoType.MapType(${ Expr(keyType) }, ${ Expr(valueType) }, ${ Expr(valueContainsNull) })
+        }
       case ProtoType.StructType(fields) =>
         '{ ProtoType.StructType(${ Expr(fields) }) }
       case ProtoType.UDTType(udtClassName, sqlType) =>
@@ -121,7 +130,13 @@ object ProtoLiftables:
       case LiteralValue.TimeValue(microsSinceMidnight) =>
         '{ LiteralValue.TimeValue(${ Expr(microsSinceMidnight) }) }
       case LiteralValue.CalendarIntervalValue(months, days, microseconds) =>
-        '{ LiteralValue.CalendarIntervalValue(${ Expr(months) }, ${ Expr(days) }, ${ Expr(microseconds) }) }
+        '{
+          LiteralValue.CalendarIntervalValue(
+            ${ Expr(months) },
+            ${ Expr(days) },
+            ${ Expr(microseconds) }
+          )
+        }
       case LiteralValue.NullValue(dataType) =>
         '{ LiteralValue.NullValue(${ Expr(dataType) }) }
 
@@ -177,7 +192,14 @@ object ProtoLiftables:
       case ProtoExpr.Literal(value) =>
         '{ ProtoExpr.Literal(${ Expr(value) }) }
       case ProtoExpr.ColumnRef(name, qualifier, resolvedType, nullable) =>
-        '{ ProtoExpr.ColumnRef(${ Expr(name) }, ${ Expr(qualifier) }, ${ Expr(resolvedType) }, ${ Expr(nullable) }) }
+        '{
+          ProtoExpr.ColumnRef(
+            ${ Expr(name) },
+            ${ Expr(qualifier) },
+            ${ Expr(resolvedType) },
+            ${ Expr(nullable) }
+          )
+        }
       case ProtoExpr.BoundRef(index, dataType, nullable) =>
         '{ ProtoExpr.BoundRef(${ Expr(index) }, ${ Expr(dataType) }, ${ Expr(nullable) }) }
 
@@ -202,33 +224,35 @@ object ProtoLiftables:
 
       // Arithmetic
       case ProtoExpr.Add(left, right)      => '{ ProtoExpr.Add(${ Expr(left) }, ${ Expr(right) }) }
-      case ProtoExpr.Subtract(left, right) => '{ ProtoExpr.Subtract(${ Expr(left) }, ${ Expr(right) }) }
-      case ProtoExpr.Multiply(left, right) => '{ ProtoExpr.Multiply(${ Expr(left) }, ${ Expr(right) }) }
-      case ProtoExpr.Divide(left, right)   => '{ ProtoExpr.Divide(${ Expr(left) }, ${ Expr(right) }) }
+      case ProtoExpr.Subtract(left, right) =>
+        '{ ProtoExpr.Subtract(${ Expr(left) }, ${ Expr(right) }) }
+      case ProtoExpr.Multiply(left, right) =>
+        '{ ProtoExpr.Multiply(${ Expr(left) }, ${ Expr(right) }) }
+      case ProtoExpr.Divide(left, right) => '{ ProtoExpr.Divide(${ Expr(left) }, ${ Expr(right) }) }
 
       // Math functions
-      case ProtoExpr.Abs(child)            => '{ ProtoExpr.Abs(${ Expr(child) }) }
-      case ProtoExpr.Ceil(child)           => '{ ProtoExpr.Ceil(${ Expr(child) }) }
-      case ProtoExpr.Floor(child)          => '{ ProtoExpr.Floor(${ Expr(child) }) }
-      case ProtoExpr.Round(child, scale)   => '{ ProtoExpr.Round(${ Expr(child) }, ${ Expr(scale) }) }
-      case ProtoExpr.Truncate(child, s)    => '{ ProtoExpr.Truncate(${ Expr(child) }, ${ Expr(s) }) }
-      case ProtoExpr.Sqrt(child)           => '{ ProtoExpr.Sqrt(${ Expr(child) }) }
-      case ProtoExpr.Cbrt(child)           => '{ ProtoExpr.Cbrt(${ Expr(child) }) }
-      case ProtoExpr.Pow(left, right)      => '{ ProtoExpr.Pow(${ Expr(left) }, ${ Expr(right) }) }
-      case ProtoExpr.Pmod(left, right)     => '{ ProtoExpr.Pmod(${ Expr(left) }, ${ Expr(right) }) }
-      case ProtoExpr.Sign(child)           => '{ ProtoExpr.Sign(${ Expr(child) }) }
-      case ProtoExpr.Log(child, base)      => '{ ProtoExpr.Log(${ Expr(child) }, ${ Expr(base) }) }
-      case ProtoExpr.Exp(child)            => '{ ProtoExpr.Exp(${ Expr(child) }) }
+      case ProtoExpr.Abs(child)          => '{ ProtoExpr.Abs(${ Expr(child) }) }
+      case ProtoExpr.Ceil(child)         => '{ ProtoExpr.Ceil(${ Expr(child) }) }
+      case ProtoExpr.Floor(child)        => '{ ProtoExpr.Floor(${ Expr(child) }) }
+      case ProtoExpr.Round(child, scale) => '{ ProtoExpr.Round(${ Expr(child) }, ${ Expr(scale) }) }
+      case ProtoExpr.Truncate(child, s)  => '{ ProtoExpr.Truncate(${ Expr(child) }, ${ Expr(s) }) }
+      case ProtoExpr.Sqrt(child)         => '{ ProtoExpr.Sqrt(${ Expr(child) }) }
+      case ProtoExpr.Cbrt(child)         => '{ ProtoExpr.Cbrt(${ Expr(child) }) }
+      case ProtoExpr.Pow(left, right)    => '{ ProtoExpr.Pow(${ Expr(left) }, ${ Expr(right) }) }
+      case ProtoExpr.Pmod(left, right)   => '{ ProtoExpr.Pmod(${ Expr(left) }, ${ Expr(right) }) }
+      case ProtoExpr.Sign(child)         => '{ ProtoExpr.Sign(${ Expr(child) }) }
+      case ProtoExpr.Log(child, base)    => '{ ProtoExpr.Log(${ Expr(child) }, ${ Expr(base) }) }
+      case ProtoExpr.Exp(child)          => '{ ProtoExpr.Exp(${ Expr(child) }) }
 
       // String
-      case ProtoExpr.Concat(children) => '{ ProtoExpr.Concat(${ Expr(children) }) }
+      case ProtoExpr.Concat(children)         => '{ ProtoExpr.Concat(${ Expr(children) }) }
       case ProtoExpr.Substring(str, pos, len) =>
         '{ ProtoExpr.Substring(${ Expr(str) }, ${ Expr(pos) }, ${ Expr(len) }) }
-      case ProtoExpr.Upper(child) => '{ ProtoExpr.Upper(${ Expr(child) }) }
-      case ProtoExpr.Lower(child) => '{ ProtoExpr.Lower(${ Expr(child) }) }
+      case ProtoExpr.Upper(child)                   => '{ ProtoExpr.Upper(${ Expr(child) }) }
+      case ProtoExpr.Lower(child)                   => '{ ProtoExpr.Lower(${ Expr(child) }) }
       case ProtoExpr.Trim(child, trimStr, trimType) =>
         '{ ProtoExpr.Trim(${ Expr(child) }, ${ Expr(trimStr) }, ${ Expr(trimType) }) }
-      case ProtoExpr.Length(child) => '{ ProtoExpr.Length(${ Expr(child) }) }
+      case ProtoExpr.Length(child)                 => '{ ProtoExpr.Length(${ Expr(child) }) }
       case ProtoExpr.Replace(str, search, replace) =>
         '{ ProtoExpr.Replace(${ Expr(str) }, ${ Expr(search) }, ${ Expr(replace) }) }
       case ProtoExpr.StringLocate(substr, str, start) =>
@@ -239,7 +263,7 @@ object ProtoLiftables:
         '{ ProtoExpr.Rpad(${ Expr(str) }, ${ Expr(len) }, ${ Expr(pad) }) }
       case ProtoExpr.StringSplit(str, delimiter, limit) =>
         '{ ProtoExpr.StringSplit(${ Expr(str) }, ${ Expr(delimiter) }, ${ Expr(limit) }) }
-      case ProtoExpr.Reverse(child)          => '{ ProtoExpr.Reverse(${ Expr(child) }) }
+      case ProtoExpr.Reverse(child)           => '{ ProtoExpr.Reverse(${ Expr(child) }) }
       case ProtoExpr.StringRepeat(str, times) =>
         '{ ProtoExpr.StringRepeat(${ Expr(str) }, ${ Expr(times) }) }
 
@@ -278,10 +302,10 @@ object ProtoLiftables:
         '{ ProtoExpr.InSubquery(${ Expr(value) }, ${ Expr(plan) }) }
 
       // Window functions
-      case ProtoExpr.RowNumber()   => '{ ProtoExpr.RowNumber() }
-      case ProtoExpr.Rank()        => '{ ProtoExpr.Rank() }
-      case ProtoExpr.DenseRank()   => '{ ProtoExpr.DenseRank() }
-      case ProtoExpr.Ntile(n)      => '{ ProtoExpr.Ntile(${ Expr(n) }) }
+      case ProtoExpr.RowNumber()                  => '{ ProtoExpr.RowNumber() }
+      case ProtoExpr.Rank()                       => '{ ProtoExpr.Rank() }
+      case ProtoExpr.DenseRank()                  => '{ ProtoExpr.DenseRank() }
+      case ProtoExpr.Ntile(n)                     => '{ ProtoExpr.Ntile(${ Expr(n) }) }
       case ProtoExpr.Lead(input, offset, default) =>
         '{ ProtoExpr.Lead(${ Expr(input) }, ${ Expr(offset) }, ${ Expr(default) }) }
       case ProtoExpr.Lag(input, offset, default) =>
@@ -295,11 +319,18 @@ object ProtoLiftables:
 
       // Window specification wrapper
       case ProtoExpr.WindowExpr(function, partitionSpec, orderSpec, frameSpec) =>
-        '{ ProtoExpr.WindowExpr(${ Expr(function) }, ${ Expr(partitionSpec) }, ${ Expr(orderSpec) }, ${ Expr(frameSpec) }) }
+        '{
+          ProtoExpr.WindowExpr(
+            ${ Expr(function) },
+            ${ Expr(partitionSpec) },
+            ${ Expr(orderSpec) },
+            ${ Expr(frameSpec) }
+          )
+        }
 
       // Date/Time functions
-      case ProtoExpr.CurrentDate()      => '{ ProtoExpr.CurrentDate() }
-      case ProtoExpr.CurrentTimestamp() => '{ ProtoExpr.CurrentTimestamp() }
+      case ProtoExpr.CurrentDate()        => '{ ProtoExpr.CurrentDate() }
+      case ProtoExpr.CurrentTimestamp()   => '{ ProtoExpr.CurrentTimestamp() }
       case ProtoExpr.DateAdd(start, days) =>
         '{ ProtoExpr.DateAdd(${ Expr(start) }, ${ Expr(days) }) }
       case ProtoExpr.DateSub(start, days) =>
@@ -325,15 +356,22 @@ object ProtoLiftables:
       case ProtoExpr.Grouping(columns) => '{ ProtoExpr.Grouping(${ Expr(columns) }) }
 
       // Generator functions
-      case ProtoExpr.Explode(child)    => '{ ProtoExpr.Explode(${ Expr(child) }) }
-      case ProtoExpr.PosExplode(child) => '{ ProtoExpr.PosExplode(${ Expr(child) }) }
-      case ProtoExpr.Inline(child)     => '{ ProtoExpr.Inline(${ Expr(child) }) }
+      case ProtoExpr.Explode(child)           => '{ ProtoExpr.Explode(${ Expr(child) }) }
+      case ProtoExpr.PosExplode(child)        => '{ ProtoExpr.PosExplode(${ Expr(child) }) }
+      case ProtoExpr.Inline(child)            => '{ ProtoExpr.Inline(${ Expr(child) }) }
       case ProtoExpr.Stack(numRows, children) =>
         '{ ProtoExpr.Stack(${ Expr(numRows) }, ${ Expr(children) }) }
 
       // Opaque function call
       case ProtoExpr.OpaqueCall(functionName, arguments, returnType, deterministic) =>
-        '{ ProtoExpr.OpaqueCall(${ Expr(functionName) }, ${ Expr(arguments) }, ${ Expr(returnType) }, ${ Expr(deterministic) }) }
+        '{
+          ProtoExpr.OpaqueCall(
+            ${ Expr(functionName) },
+            ${ Expr(arguments) },
+            ${ Expr(returnType) },
+            ${ Expr(deterministic) }
+          )
+        }
 
   // ============================================================
   // Plan helper types
@@ -390,11 +428,24 @@ object ProtoLiftables:
 
   given ToExpr[FieldContract] with
     def apply(f: FieldContract)(using Quotes): Expr[FieldContract] =
-      '{ FieldContract(${ Expr(f.name) }, ${ Expr(f.expectedType) }, ${ Expr(f.expectedNullable) }, ${ Expr(f.position) }) }
+      '{
+        FieldContract(
+          ${ Expr(f.name) },
+          ${ Expr(f.expectedType) },
+          ${ Expr(f.expectedNullable) },
+          ${ Expr(f.position) }
+        )
+      }
 
   given ToExpr[SchemaContract] with
     def apply(c: SchemaContract)(using Quotes): Expr[SchemaContract] =
-      '{ SchemaContract(${ Expr(c.relationName) }, ${ Expr(c.requiredFields) }, ${ Expr(c.fingerprint) }) }
+      '{
+        SchemaContract(
+          ${ Expr(c.relationName) },
+          ${ Expr(c.requiredFields) },
+          ${ Expr(c.fingerprint) }
+        )
+      }
 
   given ToExpr[ProtoSchema] with
     def apply(s: ProtoSchema)(using Quotes): Expr[ProtoSchema] =
@@ -407,7 +458,9 @@ object ProtoLiftables:
   given ToExpr[ProtoLogicalPlan] with
     def apply(p: ProtoLogicalPlan)(using Quotes): Expr[ProtoLogicalPlan] = p match
       case ProtoLogicalPlan.RelationRef(name, alias, schemaContract) =>
-        '{ ProtoLogicalPlan.RelationRef(${ Expr(name) }, ${ Expr(alias) }, ${ Expr(schemaContract) }) }
+        '{
+          ProtoLogicalPlan.RelationRef(${ Expr(name) }, ${ Expr(alias) }, ${ Expr(schemaContract) })
+        }
 
       case ProtoLogicalPlan.Values(rows, schema) =>
         '{ ProtoLogicalPlan.Values(${ Expr(rows) }, ${ Expr(schema) }) }
@@ -419,7 +472,13 @@ object ProtoLiftables:
         '{ ProtoLogicalPlan.Filter(${ Expr(condition) }, ${ Expr(child) }) }
 
       case ProtoLogicalPlan.Aggregate(groupingExprs, aggregateExprs, child) =>
-        '{ ProtoLogicalPlan.Aggregate(${ Expr(groupingExprs) }, ${ Expr(aggregateExprs) }, ${ Expr(child) }) }
+        '{
+          ProtoLogicalPlan.Aggregate(
+            ${ Expr(groupingExprs) },
+            ${ Expr(aggregateExprs) },
+            ${ Expr(child) }
+          )
+        }
 
       case ProtoLogicalPlan.Sort(order, global, child) =>
         '{ ProtoLogicalPlan.Sort(${ Expr(order) }, ${ Expr(global) }, ${ Expr(child) }) }
@@ -434,10 +493,23 @@ object ProtoLiftables:
         '{ ProtoLogicalPlan.SubqueryAlias(${ Expr(alias) }, ${ Expr(child) }) }
 
       case ProtoLogicalPlan.Join(left, right, joinType, condition) =>
-        '{ ProtoLogicalPlan.Join(${ Expr(left) }, ${ Expr(right) }, ${ Expr(joinType) }, ${ Expr(condition) }) }
+        '{
+          ProtoLogicalPlan.Join(
+            ${ Expr(left) },
+            ${ Expr(right) },
+            ${ Expr(joinType) },
+            ${ Expr(condition) }
+          )
+        }
 
       case ProtoLogicalPlan.Union(children, byName, allowMissingColumns) =>
-        '{ ProtoLogicalPlan.Union(${ Expr(children) }, ${ Expr(byName) }, ${ Expr(allowMissingColumns) }) }
+        '{
+          ProtoLogicalPlan.Union(
+            ${ Expr(children) },
+            ${ Expr(byName) },
+            ${ Expr(allowMissingColumns) }
+          )
+        }
 
       case ProtoLogicalPlan.Intersect(left, right, isAll) =>
         '{ ProtoLogicalPlan.Intersect(${ Expr(left) }, ${ Expr(right) }, ${ Expr(isAll) }) }
@@ -446,22 +518,58 @@ object ProtoLiftables:
         '{ ProtoLogicalPlan.Except(${ Expr(left) }, ${ Expr(right) }, ${ Expr(isAll) }) }
 
       case ProtoLogicalPlan.Window(windowExprs, partitionSpec, orderSpec, child) =>
-        '{ ProtoLogicalPlan.Window(${ Expr(windowExprs) }, ${ Expr(partitionSpec) }, ${ Expr(orderSpec) }, ${ Expr(child) }) }
+        '{
+          ProtoLogicalPlan.Window(
+            ${ Expr(windowExprs) },
+            ${ Expr(partitionSpec) },
+            ${ Expr(orderSpec) },
+            ${ Expr(child) }
+          )
+        }
 
       case ProtoLogicalPlan.With(cteRelations, recursive, child) =>
         '{ ProtoLogicalPlan.With(${ Expr(cteRelations) }, ${ Expr(recursive) }, ${ Expr(child) }) }
 
       case ProtoLogicalPlan.Pivot(groupingExprs, pivotColumn, pivotValues, aggregates, child) =>
-        '{ ProtoLogicalPlan.Pivot(${ Expr(groupingExprs) }, ${ Expr(pivotColumn) }, ${ Expr(pivotValues) }, ${ Expr(aggregates) }, ${ Expr(child) }) }
+        '{
+          ProtoLogicalPlan.Pivot(
+            ${ Expr(groupingExprs) },
+            ${ Expr(pivotColumn) },
+            ${ Expr(pivotValues) },
+            ${ Expr(aggregates) },
+            ${ Expr(child) }
+          )
+        }
 
-      case ProtoLogicalPlan.Unpivot(valueColumnName, variableColumnName, columns, includeNulls, child) =>
-        '{ ProtoLogicalPlan.Unpivot(${ Expr(valueColumnName) }, ${ Expr(variableColumnName) }, ${ Expr(columns) }, ${ Expr(includeNulls) }, ${ Expr(child) }) }
+      case ProtoLogicalPlan.Unpivot(
+            valueColumnName,
+            variableColumnName,
+            columns,
+            includeNulls,
+            child
+          ) =>
+        '{
+          ProtoLogicalPlan.Unpivot(
+            ${ Expr(valueColumnName) },
+            ${ Expr(variableColumnName) },
+            ${ Expr(columns) },
+            ${ Expr(includeNulls) },
+            ${ Expr(child) }
+          )
+        }
 
       case ProtoLogicalPlan.LateralJoin(left, lateral, condition) =>
         '{ ProtoLogicalPlan.LateralJoin(${ Expr(left) }, ${ Expr(lateral) }, ${ Expr(condition) }) }
 
       case ProtoLogicalPlan.Generate(generator, generatorOutput, outer, child) =>
-        '{ ProtoLogicalPlan.Generate(${ Expr(generator) }, ${ Expr(generatorOutput) }, ${ Expr(outer) }, ${ Expr(child) }) }
+        '{
+          ProtoLogicalPlan.Generate(
+            ${ Expr(generator) },
+            ${ Expr(generatorOutput) },
+            ${ Expr(outer) },
+            ${ Expr(child) }
+          )
+        }
 
       case ProtoLogicalPlan.ResolvedHint(hints, child) =>
         '{ ProtoLogicalPlan.ResolvedHint(${ Expr(hints) }, ${ Expr(child) }) }

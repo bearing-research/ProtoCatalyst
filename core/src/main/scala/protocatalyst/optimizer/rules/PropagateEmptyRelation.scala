@@ -76,9 +76,10 @@ object PropagateEmptyRelation extends Rule:
       case ProtoLogicalPlan.Union(children, byName, allowMissing) =>
         val nonEmpty = children.filterNot(isEmpty)
         nonEmpty match
-          case Vector()      => children.headOption.getOrElse(ProtoLogicalPlan.Union(children, byName, allowMissing))
+          case Vector() =>
+            children.headOption.getOrElse(ProtoLogicalPlan.Union(children, byName, allowMissing))
           case Vector(single) => single
-          case _             => ProtoLogicalPlan.Union(nonEmpty, byName, allowMissing)
+          case _              => ProtoLogicalPlan.Union(nonEmpty, byName, allowMissing)
 
       // Except with empty left → empty
       case ProtoLogicalPlan.Except(left, _, _) if isEmpty(left) =>

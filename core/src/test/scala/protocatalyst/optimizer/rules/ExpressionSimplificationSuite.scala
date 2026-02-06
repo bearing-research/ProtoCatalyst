@@ -5,7 +5,8 @@ import protocatalyst.optimizer.rules._
 import protocatalyst.testutil._
 import protocatalyst.types._
 
-/** Tests for expression simplification rules: SimplifyCasts, SimplifyBinaryComparison, and ReorderAssociativeOperator.
+/** Tests for expression simplification rules: SimplifyCasts, SimplifyBinaryComparison, and
+  * ReorderAssociativeOperator.
   *
   * Uses the new test DSL and utilities for improved readability.
   */

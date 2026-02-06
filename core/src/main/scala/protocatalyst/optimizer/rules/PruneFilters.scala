@@ -12,8 +12,8 @@ import protocatalyst.types._
   *   - `Filter(FALSE, child)` → empty (no rows pass)
   *   - `Filter(NULL, child)` → empty (NULL in boolean context is falsy)
   *
-  * Note: We can't fully eliminate to EmptyRelation without schema info, but we convert FALSE filters
-  * to a standard form that other rules can handle.
+  * Note: We can't fully eliminate to EmptyRelation without schema info, but we convert FALSE
+  * filters to a standard form that other rules can handle.
   *
   * Based on Spark Catalyst's PruneFilters rule (Optimizer.scala:2001-2036).
   */
