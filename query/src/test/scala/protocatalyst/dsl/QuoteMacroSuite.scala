@@ -373,3 +373,106 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Except(users1, users2, isAll=true), got: $other")
+
+  test("quote with arithmetic addition in filter"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.age + 10 > 30)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(
+              ProtoExpr.Add(
+                ProtoExpr.ColumnRef("age", _, _, _),
+                ProtoExpr.Literal(LiteralValue.IntValue(10))
+              ),
+              ProtoExpr.Literal(LiteralValue.IntValue(30))
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter with Add expression, got: $other")
+
+  test("quote with arithmetic subtraction in filter"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.age - 5 >= 18)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.GtEq(
+              ProtoExpr.Subtract(
+                ProtoExpr.ColumnRef("age", _, _, _),
+                ProtoExpr.Literal(LiteralValue.IntValue(5))
+              ),
+              ProtoExpr.Literal(LiteralValue.IntValue(18))
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter with Subtract expression, got: $other")
+
+  test("quote with arithmetic multiplication in filter"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.salary * 2.0 > 100000.0)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(
+              ProtoExpr.Multiply(
+                ProtoExpr.ColumnRef("salary", _, _, _),
+                ProtoExpr.Literal(LiteralValue.DoubleValue(2.0))
+              ),
+              ProtoExpr.Literal(LiteralValue.DoubleValue(100000.0))
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter with Multiply expression, got: $other")
+
+  test("quote with arithmetic division in filter"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.salary / 12.0 > 5000.0)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(
+              ProtoExpr.Divide(
+                ProtoExpr.ColumnRef("salary", _, _, _),
+                ProtoExpr.Literal(LiteralValue.DoubleValue(12.0))
+              ),
+              ProtoExpr.Literal(LiteralValue.DoubleValue(5000.0))
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter with Divide expression, got: $other")
+
+  test("quote with complex arithmetic expression"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.age * 2 + 10 > 50)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(
+              ProtoExpr.Add(
+                ProtoExpr.Multiply(
+                  ProtoExpr.ColumnRef("age", _, _, _),
+                  ProtoExpr.Literal(LiteralValue.IntValue(2))
+                ),
+                ProtoExpr.Literal(LiteralValue.IntValue(10))
+              ),
+              ProtoExpr.Literal(LiteralValue.IntValue(50))
+            ),
+            _
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter with nested arithmetic (Add(Multiply(...), ...)), got: $other")

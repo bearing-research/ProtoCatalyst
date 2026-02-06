@@ -188,6 +188,7 @@ ProtoLogicalPlan.Limit(
 | Equality | `===`, `=!=` | ✅ |
 | Boolean AND | `&&` | ✅ |
 | Boolean OR | `\|\|` | ✅ |
+| Arithmetic | `+`, `-`, `*`, `/` | ✅ |
 | Int literals | `18`, `100` | ✅ |
 | String literals | `"Alice"` | ✅ |
 | Double literals | `50000.0` | ✅ |
@@ -200,7 +201,6 @@ ProtoLogicalPlan.Limit(
 | `.join` / `.leftJoin` | Complex - requires handling two schemas |
 | `.select` via macro | Type inference issues with Dynamic |
 | `.groupBy` / aggregations | Requires aggregate function support |
-| Arithmetic (`+`, `-`, `*`, `/`) | In expressions |
 | Subqueries | Nested query support |
 
 ## File Organization

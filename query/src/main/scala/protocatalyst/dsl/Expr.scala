@@ -249,6 +249,79 @@ extension (expr: Expr[Any])
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
 
+  // Arithmetic operations for dynamic field access (returns Expr[Any] since type is erased)
+  def +(value: Int): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Add(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Int.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def +(value: Long): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Add(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Long.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def +(value: Double): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Add(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Double.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def -(value: Int): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Subtract(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Int.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def -(value: Long): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Subtract(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Long.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def -(value: Double): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Subtract(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Double.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def *(value: Int): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Multiply(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Int.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def *(value: Long): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Multiply(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Long.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def *(value: Double): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Multiply(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Double.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def /(value: Int): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Divide(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Int.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def /(value: Long): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Divide(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Long.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  def /(value: Double): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Divide(expr.toProtoExpr, ProtoExpr.lit(value)),
+      ProtoEncoder.given_ProtoEncoder_Double.asInstanceOf[ProtoEncoder[Any]]
+    )
+
 // Internal expression implementations
 
 private[dsl] case class LiteralExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A]) extends Expr[A]:

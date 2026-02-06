@@ -587,6 +587,68 @@ object QuoteMacro:
       case Apply(Select(_, "lit"), List(valueExpr)) =>
         extractValueExpr(valueExpr, schema)
 
+      // Arithmetic: left + right
+      case Apply(Select(leftExpr, "+"), List(rightExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield ProtoExpr.Add(left, right)
+
+      // Arithmetic: left - right
+      case Apply(Select(leftExpr, "-"), List(rightExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield ProtoExpr.Subtract(left, right)
+
+      // Arithmetic: left * right
+      case Apply(Select(leftExpr, "*"), List(rightExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield ProtoExpr.Multiply(left, right)
+
+      // Arithmetic: left / right
+      case Apply(Select(leftExpr, "/"), List(rightExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield ProtoExpr.Divide(left, right)
+
+      // Unary minus: -expr
+      case Select(inner, "unary_-") =>
+        extractValueExpr(inner, schema).map { expr =>
+          ProtoExpr.Multiply(expr, ProtoExpr.Literal(LiteralValue.IntValue(-1)))
+        }
+
+      // Arithmetic via extension method: Expr$package.+(leftExpr)(rightExpr) - curried form
+      case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) =>
+        extractMethodName(fun) match
+          case Some("+") =>
+            for
+              left <- extractValueExpr(leftExpr, schema)
+              right <- extractValueExpr(rightExpr, schema)
+            yield ProtoExpr.Add(left, right)
+          case Some("-") =>
+            for
+              left <- extractValueExpr(leftExpr, schema)
+              right <- extractValueExpr(rightExpr, schema)
+            yield ProtoExpr.Subtract(left, right)
+          case Some("*") =>
+            for
+              left <- extractValueExpr(leftExpr, schema)
+              right <- extractValueExpr(rightExpr, schema)
+            yield ProtoExpr.Multiply(left, right)
+          case Some("/") =>
+            for
+              left <- extractValueExpr(leftExpr, schema)
+              right <- extractValueExpr(rightExpr, schema)
+            yield ProtoExpr.Divide(left, right)
+          case Some(op) =>
+            Left(s"Unsupported arithmetic operator '$op' in: ${term.show}")
+          case None =>
+            Left(s"Could not extract method name in: ${term.show}")
+
       case other =>
         Left(s"Unsupported value expression: ${other.show}")
 
