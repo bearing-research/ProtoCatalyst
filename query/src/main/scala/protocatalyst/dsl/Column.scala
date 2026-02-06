@@ -44,16 +44,3 @@ object Column:
   ): Column[A, T] =
     new Column[A, T](name, protoType, nullable, enc, None)
 
-/** Columns accessor for a record type A. Generated at compile time from ProtoEncoder[A].
-  *
-  * This trait is implemented by the Table macro to provide typed field access.
-  */
-trait Columns[A]:
-  /** Get the schema fields */
-  def allColumns: Vector[Column[A, ?]]
-
-  /** Get a column by name (runtime lookup, prefer typed accessors) */
-  def column[T](name: String)(using enc: ProtoEncoder[T]): Column[A, T] =
-    allColumns.find(_.name == name) match
-      case Some(col) => col.asInstanceOf[Column[A, T]]
-      case None      => throw new IllegalArgumentException(s"Column $name not found")

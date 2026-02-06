@@ -206,18 +206,3 @@ object Table:
   ): Table[A] =
     new Table[A](tableName, enc, contract)
 
-/** Typed column selector for lambda-style access.
-  *
-  * This enables syntax like:
-  * {{{
-  * users.filter(u => u("age") > 18)
-  * }}}
-  */
-final class ColumnSelector[A](table: Table[A]):
-  /** Select column by name with type */
-  def apply[T](name: String)(using enc: ProtoEncoder[T]): Column[A, T] =
-    table.col[T](name)
-
-extension [A](table: Table[A])
-  /** Get a column selector for lambda-style access */
-  def cols: ColumnSelector[A] = new ColumnSelector(table)
