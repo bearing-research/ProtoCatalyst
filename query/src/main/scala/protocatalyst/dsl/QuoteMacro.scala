@@ -728,10 +728,66 @@ object QuoteMacro:
       case Literal(BooleanConstant(v)) =>
         Right(ProtoExpr.Literal(LiteralValue.BooleanValue(v)))
 
+      // --- Subquery predicates ---
+
+      // expr.in(subquery) - direct method call
+      case Apply(Select(leftExpr, "in"), List(subqueryExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          subPlan <- extractSubqueryPlan(subqueryExpr)
+        yield ProtoExpr.InSubquery(left, subPlan)
+
+      // expr.in(subquery) - extension method with TypeApply
+      case Apply(Apply(TypeApply(Select(_, "in"), _), List(leftExpr)), List(subqueryExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          subPlan <- extractSubqueryPlan(subqueryExpr)
+        yield ProtoExpr.InSubquery(left, subPlan)
+
+      // expr.notIn(subquery) - direct method call
+      case Apply(Select(leftExpr, "notIn"), List(subqueryExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          subPlan <- extractSubqueryPlan(subqueryExpr)
+        yield ProtoExpr.Not(ProtoExpr.InSubquery(left, subPlan))
+
+      // expr.notIn(subquery) - extension method with TypeApply
+      case Apply(Apply(TypeApply(Select(_, "notIn"), _), List(leftExpr)), List(subqueryExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          subPlan <- extractSubqueryPlan(subqueryExpr)
+        yield ProtoExpr.Not(ProtoExpr.InSubquery(left, subPlan))
+
+      // exists(subquery) - free function
+      case Apply(TypeApply(fun, _), List(subqueryExpr))
+          if extractMethodName(fun).contains("exists") =>
+        extractSubqueryPlan(subqueryExpr).map(ProtoExpr.Exists(_))
+
+      case Apply(fun, List(subqueryExpr)) if extractMethodName(fun).contains("exists") =>
+        extractSubqueryPlan(subqueryExpr).map(ProtoExpr.Exists(_))
+
+      // notExists(subquery) - free function
+      case Apply(TypeApply(fun, _), List(subqueryExpr))
+          if extractMethodName(fun).contains("notExists") =>
+        extractSubqueryPlan(subqueryExpr).map(plan => ProtoExpr.Not(ProtoExpr.Exists(plan)))
+
+      case Apply(fun, List(subqueryExpr)) if extractMethodName(fun).contains("notExists") =>
+        extractSubqueryPlan(subqueryExpr).map(plan => ProtoExpr.Not(ProtoExpr.Exists(plan)))
+
       // Extension method call: Expr$package.op(leftExpr)(rightExpr) - curried form
       case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) =>
         val methodOpt = extractMethodName(fun)
         methodOpt match
+          case Some("in") =>
+            for
+              left <- extractValueExpr(leftExpr, schema)
+              subPlan <- extractSubqueryPlan(rightExpr)
+            yield ProtoExpr.InSubquery(left, subPlan)
+          case Some("notIn") =>
+            for
+              left <- extractValueExpr(leftExpr, schema)
+              subPlan <- extractSubqueryPlan(rightExpr)
+            yield ProtoExpr.Not(ProtoExpr.InSubquery(left, subPlan))
           case Some(op) if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
             for
               left <- extractValueExpr(leftExpr, schema)
@@ -987,6 +1043,19 @@ object QuoteMacro:
       },
       schema.fingerprint
     )
+
+  /** Extract a ProtoLogicalPlan from a subquery Query expression.
+    *
+    * Derives the inner query's schema from its type argument, then recursively parses the query
+    * chain using extractQueryPlanRec. Same approach as how joins extract the right-side plan.
+    */
+  private def extractSubqueryPlan(using
+      q: Quotes
+  )(subqueryExpr: q.reflect.Term): Either[String, ProtoLogicalPlan] =
+    // Use the subquery's type for schema if available; empty fallback is fine
+    // because the inner Table[B] will derive its own schema from type args.
+    val innerSchema = extractSchemaFromQueryExpr(subqueryExpr).getOrElse(ProtoSchema(Vector.empty))
+    extractQueryPlanRec(subqueryExpr, innerSchema).map(_._1)
 
   // ============================================================================
   // GroupBy/Aggregate Extraction

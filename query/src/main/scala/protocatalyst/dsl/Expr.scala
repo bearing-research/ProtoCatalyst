@@ -202,6 +202,22 @@ extension [A](expr: Expr[A])
   def isNotNull: Expr[Boolean] =
     UnaryExpr(ProtoExpr.IsNotNull(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_Boolean)
 
+/** Subquery predicate operations */
+extension [A](expr: Expr[A])
+  /** IN subquery: expr IN (SELECT ...) */
+  infix def in(subquery: Query[A]): Expr[Boolean] =
+    UnaryExpr(
+      ProtoExpr.InSubquery(expr.toProtoExpr, subquery.plan),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
+  /** NOT IN subquery: expr NOT IN (SELECT ...) */
+  infix def notIn(subquery: Query[A]): Expr[Boolean] =
+    UnaryExpr(
+      ProtoExpr.Not(ProtoExpr.InSubquery(expr.toProtoExpr, subquery.plan)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
 // Internal expression implementations
 
 private[dsl] case class LiteralExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A]) extends Expr[A]:

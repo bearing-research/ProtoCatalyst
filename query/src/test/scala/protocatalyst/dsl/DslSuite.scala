@@ -509,3 +509,70 @@ class DslSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Filter(ProtoExpr.And(conditions), _) =>
         assertEquals(conditions.size, 2)
       case other => fail(s"Expected Filter with And condition, got $other")
+
+  // === Subquery Tests ===
+
+  test("IN subquery expression"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+    val age = employees.col[Int]("age")
+    val deptId = depts.col[Int]("id")
+
+    val subquery = depts.select(deptId)
+    val query = employees.filter(age in subquery)
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.InSubquery(
+              ProtoExpr.ColumnRef("age", _, _, _),
+              ProtoLogicalPlan.Project(_, ProtoLogicalPlan.RelationRef("departments", _, _))
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other => fail(s"Expected Filter with InSubquery, got $other")
+
+  test("NOT IN subquery expression"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+    val age = employees.col[Int]("age")
+    val deptId = depts.col[Int]("id")
+
+    val subquery = depts.select(deptId)
+    val query = employees.filter(age notIn subquery)
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Not(ProtoExpr.InSubquery(ProtoExpr.ColumnRef("age", _, _, _), _)),
+            _
+          ) =>
+        () // ok
+      case other => fail(s"Expected Filter with Not(InSubquery), got $other")
+
+  test("EXISTS subquery"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+
+    val query = employees.filter(functions.exists(depts.toQuery))
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Exists(ProtoLogicalPlan.RelationRef("departments", _, _)),
+            _
+          ) =>
+        () // ok
+      case other => fail(s"Expected Filter with Exists, got $other")
+
+  test("NOT EXISTS subquery"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+
+    val query = employees.filter(functions.notExists(depts.toQuery))
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Not(ProtoExpr.Exists(ProtoLogicalPlan.RelationRef("departments", _, _))),
+            _
+          ) =>
+        () // ok
+      case other => fail(s"Expected Filter with Not(Exists), got $other")

@@ -121,6 +121,19 @@ object functions:
   def cast[T](expr: Expr[?])(using enc: ProtoEncoder[T]): Expr[T] =
     FunctionExpr(ProtoExpr.Cast(expr.toProtoExpr, enc.catalystType), enc)
 
+  // === Subquery Predicate Functions ===
+
+  /** EXISTS subquery predicate */
+  def exists[A](subquery: Query[A]): Expr[Boolean] =
+    FunctionExpr(ProtoExpr.Exists(subquery.plan), ProtoEncoder.given_ProtoEncoder_Boolean)
+
+  /** NOT EXISTS subquery predicate */
+  def notExists[A](subquery: Query[A]): Expr[Boolean] =
+    FunctionExpr(
+      ProtoExpr.Not(ProtoExpr.Exists(subquery.plan)),
+      ProtoEncoder.given_ProtoEncoder_Boolean
+    )
+
   // === Internal expression types ===
 
   private[dsl] case class AggExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A]) extends Expr[A]:

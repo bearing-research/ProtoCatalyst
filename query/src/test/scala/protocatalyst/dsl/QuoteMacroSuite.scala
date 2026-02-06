@@ -930,3 +930,127 @@ class QuoteMacroSuite extends munit.FunSuite:
           case other => fail(s"Expected ColumnRef(name), got: $other")
       case other =>
         fail(s"Expected Project(Limit(...)), got: $other")
+
+  // === Subquery Tests ===
+
+  test("quote with IN subquery"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(_.deptId in Table[QuoteDepartment]("departments").select(_.id))
+    }
+
+    // Optimizer rewrites InSubquery → LeftSemi join
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.Project(
+              Vector(ProtoExpr.ColumnRef("id", _, _, _)),
+              ProtoLogicalPlan.RelationRef("departments", _, _)
+            ),
+            JoinType.LeftSemi,
+            Some(ProtoExpr.Eq(ProtoExpr.ColumnRef("deptId", _, _, _), ProtoExpr.ColumnRef("id", _, _, _)))
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(LeftSemi) from optimized InSubquery, got: $other")
+
+  test("quote with NOT IN subquery"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(_.deptId notIn Table[QuoteDepartment]("departments").select(_.id))
+    }
+
+    // Optimizer rewrites Not(InSubquery) → LeftAnti join
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.Project(_, ProtoLogicalPlan.RelationRef("departments", _, _)),
+            JoinType.LeftAnti,
+            Some(ProtoExpr.Eq(ProtoExpr.ColumnRef("deptId", _, _, _), ProtoExpr.ColumnRef("id", _, _, _)))
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(LeftAnti) from optimized Not(InSubquery), got: $other")
+
+  test("quote with EXISTS subquery"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(_ => exists(Table[QuoteDepartment]("departments").toQuery))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Exists(ProtoLogicalPlan.RelationRef("departments", _, _)),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Exists(departments)), got: $other")
+
+  test("quote with NOT EXISTS subquery"):
+    import protocatalyst.dsl.functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(_ => notExists(
+          Table[QuoteDepartment]("departments").filter(_.id === 0)
+        ))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Not(
+              ProtoExpr.Exists(
+                ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("departments", _, _))
+              )
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Not(Exists(Filter(departments)))), got: $other")
+
+  test("quote with IN subquery containing filter"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(_.deptId in
+          Table[QuoteDepartment]("departments")
+            .filter(_.name === "Engineering")
+            .select(_.id)
+        )
+    }
+
+    // Optimizer rewrites InSubquery → LeftSemi join; inner filter is preserved in the right side
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.Project(
+              _,
+              ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("departments", _, _))
+            ),
+            JoinType.LeftSemi,
+            Some(_)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(LeftSemi) with inner filter, got: $other")
+
+  test("quote with combined subquery and regular predicate"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(e =>
+          (e.deptId in Table[QuoteDepartment]("departments").select(_.id)) && (e.name === "Alice")
+        )
+    }
+
+    // Optimizer splits: InSubquery → LeftSemi join, remaining predicate → Filter on top
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Eq(ProtoExpr.ColumnRef("name", _, _, _), _),
+            ProtoLogicalPlan.Join(_, _, JoinType.LeftSemi, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Eq, Join(LeftSemi)), got: $other")
