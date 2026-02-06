@@ -273,3 +273,43 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected SubqueryAlias(adults, Filter(RelationRef)), got: $other")
+
+  test("quote with union"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users1").union(Table[QuoteUser]("users2").toQuery)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Union(
+            Vector(
+              ProtoLogicalPlan.RelationRef("users1", _, _),
+              ProtoLogicalPlan.RelationRef("users2", _, _)
+            ),
+            false,
+            false
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Union([users1, users2]), got: $other")
+
+  test("quote with filtered union"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("active_users")
+        .filter(_.age > 18)
+        .union(
+          Table[QuoteUser]("archived_users").filter(_.age > 21)
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Union(
+            Vector(
+              ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("active_users", _, _)),
+              ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("archived_users", _, _))
+            ),
+            false,
+            false
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Union([Filter(active_users), Filter(archived_users)]), got: $other")

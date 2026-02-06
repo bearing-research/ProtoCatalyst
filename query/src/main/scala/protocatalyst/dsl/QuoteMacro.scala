@@ -239,6 +239,16 @@ object QuoteMacro:
           alias <- extractStringLiteral(aliasExpr)
         yield (ProtoLogicalPlan.SubqueryAlias(alias, childPlan), tableName)
 
+      // query.union(otherQuery)
+      case Apply(Select(child, "union"), List(otherExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (
+          ProtoLogicalPlan.Union(Vector(childPlan, otherPlan), byName = false, allowMissingColumns = false),
+          tableName
+        )
+
       // Table.apply[A]("tableName") - direct table creation
       case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
         extractStringLiteral(tableNameExpr).map { tableName =>
@@ -252,6 +262,10 @@ object QuoteMacro:
           val contract = buildSchemaContract(tableName, schema)
           Right((ProtoLogicalPlan.RelationRef(tableName, None, contract), tableName))
         }
+
+      // table.toQuery
+      case Select(tableExpr, "toQuery") =>
+        extractTablePlan(tableExpr, schema)
 
       // Direct Table expression
       case _ if isTableExpression(term) =>
