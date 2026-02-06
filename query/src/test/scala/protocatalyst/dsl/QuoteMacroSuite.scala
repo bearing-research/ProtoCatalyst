@@ -7,6 +7,7 @@ import protocatalyst.types.LiteralValue
 
 // Test case classes
 case class QuoteUser(name: String, age: Int, salary: Double) derives ProtoEncoder
+case class QuoteDept(id: Int, deptName: String) derives ProtoEncoder
 
 class QuoteMacroSuite extends munit.FunSuite:
 
@@ -476,3 +477,19 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Filter with nested arithmetic (Add(Multiply(...), ...)), got: $other")
+
+  test("quote with crossJoin"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").crossJoin(Table[QuoteDept]("depts").toQuery)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("users", _, _),
+            ProtoLogicalPlan.RelationRef("depts", _, _),
+            JoinType.Cross,
+            None
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(users, depts, Cross, None), got: $other")

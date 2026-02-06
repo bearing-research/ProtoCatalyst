@@ -277,6 +277,44 @@ object QuoteMacro:
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
         yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = true), tableName)
 
+      // query.crossJoin(otherQuery)(using encoder)
+      case Apply(Apply(TypeApply(Select(child, "crossJoin"), _), List(otherExpr)), _) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None), tableName)
+
+      // query.crossJoin(otherQuery) - without explicit TypeApply
+      case Apply(Select(child, "crossJoin"), List(otherExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None), tableName)
+
+      // query.join(otherQuery).on(condition) - inner join with condition
+      case Apply(Apply(TypeApply(Select(Apply(Select(child, "join"), List(otherExpr)), "on"), _), List(condExpr)), _) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          condition <- extractPredicateExpr(condExpr, schema)
+        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Inner, Some(condition)), tableName)
+
+      // query.leftJoin(otherQuery).on(condition)
+      case Apply(Apply(TypeApply(Select(Apply(Select(child, "leftJoin"), List(otherExpr)), "on"), _), List(condExpr)), _) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          condition <- extractPredicateExpr(condExpr, schema)
+        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.LeftOuter, Some(condition)), tableName)
+
+      // query.rightJoin(otherQuery).on(condition)
+      case Apply(Apply(TypeApply(Select(Apply(Select(child, "rightJoin"), List(otherExpr)), "on"), _), List(condExpr)), _) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
+          condition <- extractPredicateExpr(condExpr, schema)
+        yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.RightOuter, Some(condition)), tableName)
+
       // Table.apply[A]("tableName") - direct table creation
       case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
         extractStringLiteral(tableNameExpr).map { tableName =>

@@ -179,6 +179,7 @@ ProtoLogicalPlan.Limit(
 | `.intersectAll` | `.intersectAll(other)` | ✅ |
 | `.except` | `.except(other)` | ✅ |
 | `.exceptAll` | `.exceptAll(other)` | ✅ |
+| `.crossJoin` | `.crossJoin(other)` | ✅ |
 
 ### Expression Operations
 
@@ -198,7 +199,7 @@ ProtoLogicalPlan.Limit(
 
 | Operation | Notes |
 |-----------|-------|
-| `.join` / `.leftJoin` | Complex - requires handling two schemas |
+| `.join(...).on(...)` | Condition references need qualified column names |
 | `.select` via macro | Type inference issues with Dynamic |
 | `.groupBy` / aggregations | Requires aggregate function support |
 | Subqueries | Nested query support |
