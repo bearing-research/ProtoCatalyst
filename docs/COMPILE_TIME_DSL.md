@@ -180,6 +180,9 @@ ProtoLogicalPlan.Limit(
 | `.except` | `.except(other)` | ✅ |
 | `.exceptAll` | `.exceptAll(other)` | ✅ |
 | `.crossJoin` | `.crossJoin(other)` | ✅ |
+| `.join(...).on(...)` | `.join(other).on((a, b) => a.id === b.fk)` | ✅ |
+| `.leftJoin(...).on(...)` | `.leftJoin(other).on((a, b) => ...)` | ✅ |
+| `.rightJoin(...).on(...)` | `.rightJoin(other).on((a, b) => ...)` | ✅ |
 
 ### Expression Operations
 
@@ -202,7 +205,6 @@ ProtoLogicalPlan.Limit(
 
 | Operation | Notes |
 |-----------|-------|
-| `.join(...).on(...)` | Condition references need qualified column names |
 | `.select` via macro | Type inference issues with Dynamic |
 | `.groupBy` / aggregations | Requires aggregate function support |
 | Subqueries | Nested query support |
@@ -243,7 +245,7 @@ sbt "query/testOnly *QuoteMacroSuite"
 # Run all query tests
 sbt "query/test"
 
-# Currently: 33 QuoteMacroSuite tests, 114 total query tests
+# Currently: 35 QuoteMacroSuite tests, 116 total query tests
 ```
 
 ## Known Limitations

@@ -9,6 +9,9 @@ import protocatalyst.types.LiteralValue
 case class QuoteUser(name: String, age: Int, salary: Double) derives ProtoEncoder
 case class QuoteDept(id: Int, deptName: String) derives ProtoEncoder
 case class QuoteUserNullable(name: String, age: Int, nickname: Option[String]) derives ProtoEncoder
+// For join tests - employee has deptId that matches dept's id
+case class QuoteEmployee(id: Int, name: String, deptId: Int) derives ProtoEncoder
+case class QuoteDepartment(id: Int, name: String) derives ProtoEncoder
 
 class QuoteMacroSuite extends munit.FunSuite:
 
@@ -580,3 +583,42 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Filter(Eq(Lower(name), 'alice')), got: $other")
+
+  test("quote with inner join and condition"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .join(Table[QuoteDepartment]("departments").toQuery)
+        .on((e, d) => e.deptId === d.id)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.RelationRef("departments", _, _),
+            JoinType.Inner,
+            Some(ProtoExpr.Eq(
+              ProtoExpr.ColumnRef("deptId", Some("_1"), _, _),
+              ProtoExpr.ColumnRef("id", Some("_2"), _, _)
+            ))
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join with condition, got: $other")
+
+  test("quote with left join and condition"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .leftJoin(Table[QuoteDepartment]("departments").toQuery)
+        .on((e, d) => e.deptId === d.id)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.RelationRef("departments", _, _),
+            JoinType.LeftOuter,
+            Some(_)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected LeftOuter Join, got: $other")

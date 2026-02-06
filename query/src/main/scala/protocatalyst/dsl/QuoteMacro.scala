@@ -291,28 +291,35 @@ object QuoteMacro:
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
         yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None), tableName)
 
-      // query.join(otherQuery).on(condition) - inner join with condition
-      case Apply(Apply(TypeApply(Select(Apply(Select(child, "join"), List(otherExpr)), "on"), _), List(condExpr)), _) =>
+      // query.join[B](otherQuery).on(condition)(implicits) - inner join with condition
+      // Pattern: Apply(Apply(Select(Apply(TypeApply(Select(child, "join"), _), List(other)), "on"), List(cond)), List(implicits))
+      case Apply(Apply(Select(Apply(TypeApply(Select(child, "join"), _), List(otherExpr)), "on"), List(condExpr)), _) =>
         for
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-          condition <- extractPredicateExpr(condExpr, schema)
+          leftSchema <- extractSchemaFromQueryExpr(child)
+          rightSchema <- extractSchemaFromQueryExpr(otherExpr)
+          condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
         yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Inner, Some(condition)), tableName)
 
-      // query.leftJoin(otherQuery).on(condition)
-      case Apply(Apply(TypeApply(Select(Apply(Select(child, "leftJoin"), List(otherExpr)), "on"), _), List(condExpr)), _) =>
+      // query.leftJoin[B](otherQuery).on(condition)(implicits)
+      case Apply(Apply(Select(Apply(TypeApply(Select(child, "leftJoin"), _), List(otherExpr)), "on"), List(condExpr)), _) =>
         for
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-          condition <- extractPredicateExpr(condExpr, schema)
+          leftSchema <- extractSchemaFromQueryExpr(child)
+          rightSchema <- extractSchemaFromQueryExpr(otherExpr)
+          condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
         yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.LeftOuter, Some(condition)), tableName)
 
-      // query.rightJoin(otherQuery).on(condition)
-      case Apply(Apply(TypeApply(Select(Apply(Select(child, "rightJoin"), List(otherExpr)), "on"), _), List(condExpr)), _) =>
+      // query.rightJoin[B](otherQuery).on(condition)(implicits)
+      case Apply(Apply(Select(Apply(TypeApply(Select(child, "rightJoin"), _), List(otherExpr)), "on"), List(condExpr)), _) =>
         for
           (childPlan, tableName) <- extractQueryPlanRec(child, schema)
           (otherPlan, _) <- extractQueryPlanRec(otherExpr, schema)
-          condition <- extractPredicateExpr(condExpr, schema)
+          leftSchema <- extractSchemaFromQueryExpr(child)
+          rightSchema <- extractSchemaFromQueryExpr(otherExpr)
+          condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
         yield (ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.RightOuter, Some(condition)), tableName)
 
       // Table.apply[A]("tableName") - direct table creation
@@ -776,3 +783,273 @@ object QuoteMacro:
       },
       schema.fingerprint
     )
+
+  // ============================================================================
+  // Join Condition Extraction (two-schema support)
+  // ============================================================================
+
+  /** Extract type from a Query or Table expression and derive its schema */
+  private def extractSchemaFromQueryExpr(using
+      q: Quotes
+  )(term: q.reflect.Term): Either[String, ProtoSchema] =
+    import q.reflect.*
+
+    // First try to get type from the term's type
+    val termType = term.tpe.dealias.simplified.widen
+
+    // Extract the type parameter A from Query[A] or Table[A]
+    termType match
+      case AppliedType(tycon, List(innerType)) =>
+        val tyName = tycon.typeSymbol.name
+        if tyName == "Query" || tyName == "Table" then deriveSchemaFromTypeRepr(innerType)
+        else Left(s"Expected Query or Table, got: $tyName")
+
+      case _ =>
+        // Try to look at the AST structure to find the type
+        term match
+          case Select(inner, "toQuery") =>
+            // table.toQuery - get type from inner Table[A]
+            extractSchemaFromQueryExpr(inner)
+          case Apply(Select(inner, "toQuery"), _) =>
+            extractSchemaFromQueryExpr(inner)
+          case Inlined(_, _, inner) =>
+            extractSchemaFromQueryExpr(inner)
+          case _ =>
+            Left(s"Cannot extract schema from type: ${termType.show}")
+
+  /** Derive ProtoSchema from a TypeRepr at compile time */
+  private def deriveSchemaFromTypeRepr(using q: Quotes)(tpe: q.reflect.TypeRepr): Either[String, ProtoSchema] =
+    import q.reflect.*
+
+    val dealised = tpe.dealias
+
+    dealised.classSymbol match
+      case Some(sym) if sym.flags.is(Flags.Case) =>
+        val caseFields = sym.caseFields
+        val fieldsResult = caseFields.foldLeft[Either[String, Vector[ProtoStructField]]](Right(Vector.empty)) {
+          (acc, field) =>
+            acc.flatMap { fields =>
+              val fieldName = field.name
+              val fieldType = dealised.memberType(field)
+              deriveProtoTypeFromTypeRepr(fieldType).map { protoType =>
+                val nullable = isTypeNullable(fieldType)
+                fields :+ ProtoStructField(fieldName, protoType, nullable)
+              }
+            }
+        }
+        fieldsResult.map(ProtoSchema(_))
+
+      case Some(_) =>
+        Left(s"Type ${tpe.show} is not a case class")
+
+      case None =>
+        Left(s"Type ${tpe.show} has no class symbol")
+
+  private def isTypeNullable(using q: Quotes)(tpe: q.reflect.TypeRepr): Boolean =
+    import q.reflect.*
+    tpe.dealias match
+      case AppliedType(tycon, _) if tycon.typeSymbol.fullName == "scala.Option" => true
+      case _ => false
+
+  private def deriveProtoTypeFromTypeRepr(using q: Quotes)(tpe: q.reflect.TypeRepr): Either[String, ProtoType] =
+    import q.reflect.*
+
+    val dealised = tpe.dealias
+
+    if dealised =:= TypeRepr.of[Boolean] then Right(ProtoType.BooleanType)
+    else if dealised =:= TypeRepr.of[Int] then Right(ProtoType.IntegerType)
+    else if dealised =:= TypeRepr.of[Long] then Right(ProtoType.LongType)
+    else if dealised =:= TypeRepr.of[Double] then Right(ProtoType.DoubleType)
+    else if dealised =:= TypeRepr.of[Float] then Right(ProtoType.FloatType)
+    else if dealised =:= TypeRepr.of[String] then Right(ProtoType.StringType)
+    else if dealised =:= TypeRepr.of[Short] then Right(ProtoType.ShortType)
+    else if dealised =:= TypeRepr.of[Byte] then Right(ProtoType.ByteType)
+    else
+      // Handle Option[T]
+      dealised match
+        case AppliedType(tycon, List(inner)) if tycon.typeSymbol.fullName == "scala.Option" =>
+          deriveProtoTypeFromTypeRepr(inner)
+        case _ =>
+          Left(s"Unsupported type for join schema: ${dealised.show}")
+
+  /** Extract join condition from a two-parameter lambda.
+    *
+    * The lambda has the form: (leftSelector, rightSelector) => condition
+    * where leftSelector accesses the left schema and rightSelector accesses the right schema.
+    */
+  private def extractJoinCondition(using q: Quotes)(
+      condExpr: q.reflect.Term,
+      leftSchema: ProtoSchema,
+      rightSchema: ProtoSchema
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    condExpr match
+      case Inlined(_, _, inner) =>
+        extractJoinCondition(inner, leftSchema, rightSchema)
+
+      case Block(List(DefDef(_, paramss, _, Some(body))), _) =>
+        // Extract parameter names from ParamClauses
+        val params = paramss.flatMap {
+          case TermParamClause(params) => params.map(_.name)
+          case _                       => Nil
+        }
+        params match
+          case List(leftParamName, rightParamName) =>
+            extractJoinPredicateExpr(body, leftSchema, rightSchema, leftParamName, rightParamName)
+          case List(singleParamName) =>
+            // Single-parameter lambda - fall back to single schema
+            extractPredicateExpr(body, leftSchema)
+          case _ =>
+            Left(s"Join condition must have 1 or 2 parameters, got: $params")
+
+      case _ =>
+        // Not a lambda - try as a direct expression
+        extractPredicateExpr(condExpr, leftSchema)
+
+  /** Extract a predicate expression in a join context, with two schemas */
+  private def extractJoinPredicateExpr(using q: Quotes)(
+      term: q.reflect.Term,
+      leftSchema: ProtoSchema,
+      rightSchema: ProtoSchema,
+      leftParam: String,
+      rightParam: String
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractJoinPredicateExpr(inner, leftSchema, rightSchema, leftParam, rightParam)
+
+      case Block(_, expr) =>
+        extractJoinPredicateExpr(expr, leftSchema, rightSchema, leftParam, rightParam)
+
+      case Typed(expr, _) =>
+        extractJoinPredicateExpr(expr, leftSchema, rightSchema, leftParam, rightParam)
+
+      // Comparison: left.field === right.field (direct method call)
+      case Apply(Select(leftExpr, op), List(rightExpr))
+          if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
+        for
+          left <- extractJoinValueExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinValueExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+        yield makeComparison(op, left, right)
+
+      // Comparison with TypeApply: left.===[T](right) - e.g., from === with type param
+      case Apply(TypeApply(Select(leftExpr, op), _), List(rightExpr))
+          if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
+        for
+          left <- extractJoinValueExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinValueExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+        yield makeComparison(op, left, right)
+
+      // Comparison with curried implicit evidence: left.===[T](right)(evidence)
+      // Pattern: Apply(Apply(TypeApply(Select(left, "==="), _), List(right)), List(evidence))
+      case Apply(Apply(TypeApply(Select(leftExpr, op), _), List(rightExpr)), _)
+          if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
+        for
+          left <- extractJoinValueExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinValueExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+        yield makeComparison(op, left, right)
+
+      // Comparison via extension method (curried form)
+      case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) =>
+        extractMethodName(fun) match
+          case Some(op) if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
+            for
+              left <- extractJoinValueExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+              right <- extractJoinValueExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+            yield makeComparison(op, left, right)
+          case Some("&&") =>
+            for
+              left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+              right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+            yield ProtoExpr.And(Vector(left, right))
+          case Some("||") =>
+            for
+              left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+              right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+            yield ProtoExpr.Or(Vector(left, right))
+          case _ =>
+            Left(s"Unsupported join condition expression: ${term.show}")
+
+      // Boolean AND
+      case Apply(Select(leftExpr, "&&"), List(rightExpr)) =>
+        for
+          left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+        yield ProtoExpr.And(Vector(left, right))
+
+      // Boolean OR
+      case Apply(Select(leftExpr, "||"), List(rightExpr)) =>
+        for
+          left <- extractJoinPredicateExpr(leftExpr, leftSchema, rightSchema, leftParam, rightParam)
+          right <- extractJoinPredicateExpr(rightExpr, leftSchema, rightSchema, leftParam, rightParam)
+        yield ProtoExpr.Or(Vector(left, right))
+
+      case other =>
+        Left(s"Unsupported join predicate expression: ${other.show}")
+
+  /** Extract a value expression in a join context, mapping to left or right schema */
+  private def extractJoinValueExpr(using q: Quotes)(
+      term: q.reflect.Term,
+      leftSchema: ProtoSchema,
+      rightSchema: ProtoSchema,
+      leftParam: String,
+      rightParam: String
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractJoinValueExpr(inner, leftSchema, rightSchema, leftParam, rightParam)
+
+      case Block(_, expr) =>
+        extractJoinValueExpr(expr, leftSchema, rightSchema, leftParam, rightParam)
+
+      case Typed(expr, _) =>
+        extractJoinValueExpr(expr, leftSchema, rightSchema, leftParam, rightParam)
+
+      // leftParam.fieldName via selectDynamic
+      case Apply(Select(Ident(paramName), "selectDynamic"), List(Literal(StringConstant(fieldName)))) =>
+        lookupFieldInJoinSchema(paramName, fieldName, leftSchema, rightSchema, leftParam, rightParam)
+
+      // Literals
+      case Literal(IntConstant(v)) =>
+        Right(ProtoExpr.Literal(LiteralValue.IntValue(v)))
+
+      case Literal(LongConstant(v)) =>
+        Right(ProtoExpr.Literal(LiteralValue.LongValue(v)))
+
+      case Literal(DoubleConstant(v)) =>
+        Right(ProtoExpr.Literal(LiteralValue.DoubleValue(v)))
+
+      case Literal(StringConstant(v)) =>
+        Right(ProtoExpr.Literal(LiteralValue.StringValue(v)))
+
+      case Literal(BooleanConstant(v)) =>
+        Right(ProtoExpr.Literal(LiteralValue.BooleanValue(v)))
+
+      case other =>
+        Left(s"Unsupported join value expression: ${other.show}")
+
+  /** Look up a field in either left or right schema based on the parameter name */
+  private def lookupFieldInJoinSchema(
+      paramName: String,
+      fieldName: String,
+      leftSchema: ProtoSchema,
+      rightSchema: ProtoSchema,
+      leftParam: String,
+      rightParam: String
+  ): Either[String, ProtoExpr] =
+    val (schema, qualifier) =
+      if paramName == leftParam then (leftSchema, Some("_1"))
+      else if paramName == rightParam then (rightSchema, Some("_2"))
+      else return Left(s"Unknown parameter '$paramName' in join condition (expected '$leftParam' or '$rightParam')")
+
+    schema.fields.find(_.name == fieldName) match
+      case Some(field) =>
+        // Use qualified column reference for join conditions
+        Right(ProtoExpr.ColumnRef(fieldName, qualifier, field.dataType, field.nullable))
+      case None =>
+        Left(s"Field '$fieldName' not found in ${if paramName == leftParam then "left" else "right"} schema")

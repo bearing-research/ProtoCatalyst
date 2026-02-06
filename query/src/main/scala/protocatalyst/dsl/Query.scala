@@ -250,11 +250,11 @@ final class GroupedQuery[A, K] private[dsl] (
 /** Join builder for specifying join conditions.
   */
 final class JoinBuilder[A, B] private[dsl] (
-    private val left: Query[A],
-    private val right: Query[B],
-    private val joinType: JoinType
+    private[dsl] val left: Query[A],
+    private[dsl] val right: Query[B],
+    private[dsl] val joinType: JoinType
 ):
-  /** Specify join condition */
+  /** Specify join condition with explicit expression */
   def on(
       condition: Expr[Boolean]
   )(using encA: ProtoEncoder[A], encB: ProtoEncoder[B]): Query[(A, B)] =
@@ -264,6 +264,21 @@ final class JoinBuilder[A, B] private[dsl] (
       summon[ProtoEncoder[(A, B)]],
       left.schemaContracts ++ right.schemaContracts
     )
+
+  /** Specify join condition with lambda-style field access from both sides.
+    *
+    * Example:
+    * {{{
+    * users.join(depts.toQuery).on((u, d) => u.id === d.userId)
+    * }}}
+    */
+  def on(
+      f: (FieldSelector[A], FieldSelector[B]) => Expr[Boolean]
+  )(using encA: ProtoEncoder[A], encB: ProtoEncoder[B]): Query[(A, B)] =
+    val leftSelector = FieldSelector[A](using encA)
+    val rightSelector = FieldSelector[B](using encB)
+    val condition = f(leftSelector, rightSelector)
+    on(condition)
 
 /** Sort expression with direction.
   */
