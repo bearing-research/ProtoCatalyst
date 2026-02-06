@@ -243,3 +243,33 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Filter(NotEq(name, 'Admin')), got: $other")
+
+  test("quote with as alias"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").as("u")
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.SubqueryAlias("u", ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        () // ok
+      case other =>
+        fail(s"Expected SubqueryAlias(u, RelationRef), got: $other")
+
+  test("quote with filter and alias"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .filter(_.age > 21)
+        .as("adults")
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.SubqueryAlias(
+            "adults",
+            ProtoLogicalPlan.Filter(
+              ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _),
+              ProtoLogicalPlan.RelationRef("users", _, _)
+            )
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected SubqueryAlias(adults, Filter(RelationRef)), got: $other")

@@ -225,6 +225,20 @@ object QuoteMacro:
         for (childPlan, tableName) <- extractQueryPlanRec(child, schema)
         yield (ProtoLogicalPlan.Distinct(childPlan), tableName)
 
+      // query.orderBy(_.field.asc, _.field2.desc)
+      case Apply(Select(child, "orderBy"), sortExprs) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          sortOrders <- extractSortOrders(sortExprs, schema)
+        yield (ProtoLogicalPlan.Sort(sortOrders, global = true, childPlan), tableName)
+
+      // query.as("alias")
+      case Apply(Select(child, "as"), List(aliasExpr)) =>
+        for
+          (childPlan, tableName) <- extractQueryPlanRec(child, schema)
+          alias <- extractStringLiteral(aliasExpr)
+        yield (ProtoLogicalPlan.SubqueryAlias(alias, childPlan), tableName)
+
       // Table.apply[A]("tableName") - direct table creation
       case Apply(Apply(TypeApply(Select(_, "apply"), _), List(tableNameExpr)), _) =>
         extractStringLiteral(tableNameExpr).map { tableName =>
@@ -299,6 +313,52 @@ object QuoteMacro:
 
       case other =>
         Left(s"Cannot extract table name from: ${other.show}")
+
+  // ============================================================================
+  // Sort Order Extraction
+  // ============================================================================
+
+  private def extractSortOrders(using
+      q: Quotes
+  )(terms: List[q.reflect.Term], schema: ProtoSchema): Either[String, Vector[SortOrder]] =
+    val results = terms.map(extractSortOrder(_, schema))
+    val errors = results.collect { case Left(err) => err }
+    if errors.nonEmpty then Left(errors.mkString("; "))
+    else Right(results.collect { case Right(so) => so }.toVector)
+
+  private def extractSortOrder(using
+      q: Quotes
+  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, SortOrder] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractSortOrder(inner, schema)
+
+      case Block(_, expr) =>
+        extractSortOrder(expr, schema)
+
+      case Typed(expr, _) =>
+        extractSortOrder(expr, schema)
+
+      // _.field.asc / _.field.desc
+      case Select(exprTerm, sortMethod)
+          if Set("asc", "desc", "ascNullsFirst", "descNullsLast").contains(sortMethod) =>
+        extractValueExpr(exprTerm, schema).map { expr =>
+          val (direction, nullOrdering) = sortMethod match
+            case "asc"           => (SortDirection.Ascending, NullOrdering.NullsLast)
+            case "desc"          => (SortDirection.Descending, NullOrdering.NullsFirst)
+            case "ascNullsFirst" => (SortDirection.Ascending, NullOrdering.NullsFirst)
+            case "descNullsLast" => (SortDirection.Descending, NullOrdering.NullsLast)
+            case _               => (SortDirection.Ascending, NullOrdering.NullsLast)
+          SortOrder(expr, direction, nullOrdering)
+        }
+
+      // Default: ascending sort without explicit direction
+      case other =>
+        extractValueExpr(other, schema).map { expr =>
+          SortOrder(expr, SortDirection.Ascending, NullOrdering.NullsLast)
+        }
 
   // ============================================================================
   // Projection Extraction
