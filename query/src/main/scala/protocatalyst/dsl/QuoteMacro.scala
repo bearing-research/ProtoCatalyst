@@ -528,16 +528,28 @@ object QuoteMacro:
           right <- extractPredicateExpr(rightExpr, schema)
         yield ProtoExpr.Or(Vector(left, right))
 
-      // !expr
+      // !expr - direct method call
       case Select(inner, "unary_!") =>
         extractPredicateExpr(inner, schema).map(ProtoExpr.Not(_))
 
-      // expr.isNull
+      // !expr - via extension method: Expr$package.unary_!(innerExpr)
+      case Apply(fun, List(inner)) if extractMethodName(fun).contains("unary_!") =>
+        extractPredicateExpr(inner, schema).map(ProtoExpr.Not(_))
+
+      // expr.isNull - direct method call
       case Select(inner, "isNull") =>
         extractValueExpr(inner, schema).map(ProtoExpr.IsNull(_))
 
-      // expr.isNotNull
+      // expr.isNull - via extension method: Expr$package.isNull[T](innerExpr)
+      case Apply(fun, List(inner)) if extractMethodName(fun).contains("isNull") =>
+        extractValueExpr(inner, schema).map(ProtoExpr.IsNull(_))
+
+      // expr.isNotNull - direct method call
       case Select(inner, "isNotNull") =>
+        extractValueExpr(inner, schema).map(ProtoExpr.IsNotNull(_))
+
+      // expr.isNotNull - via extension method: Expr$package.isNotNull[T](innerExpr)
+      case Apply(fun, List(inner)) if extractMethodName(fun).contains("isNotNull") =>
         extractValueExpr(inner, schema).map(ProtoExpr.IsNotNull(_))
 
       // Literal true/false
@@ -658,6 +670,34 @@ object QuoteMacro:
         extractValueExpr(inner, schema).map { expr =>
           ProtoExpr.Multiply(expr, ProtoExpr.Literal(LiteralValue.IntValue(-1)))
         }
+
+      // String operations: expr.upper, expr.lower
+      case Select(inner, "upper") =>
+        extractValueExpr(inner, schema).map(ProtoExpr.Upper(_))
+
+      case Select(inner, "lower") =>
+        extractValueExpr(inner, schema).map(ProtoExpr.Lower(_))
+
+      // String operations via extension method: Expr$package.upper(innerExpr)
+      case Apply(fun, List(inner)) if extractMethodName(fun).contains("upper") =>
+        extractValueExpr(inner, schema).map(ProtoExpr.Upper(_))
+
+      case Apply(fun, List(inner)) if extractMethodName(fun).contains("lower") =>
+        extractValueExpr(inner, schema).map(ProtoExpr.Lower(_))
+
+      // String concat: str1 ++ str2
+      case Apply(Select(leftExpr, "++"), List(rightExpr)) =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield ProtoExpr.Concat(Vector(left, right))
+
+      // String concat via extension method: Expr$package.++(leftExpr)(rightExpr)
+      case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) if extractMethodName(fun).contains("++") =>
+        for
+          left <- extractValueExpr(leftExpr, schema)
+          right <- extractValueExpr(rightExpr, schema)
+        yield ProtoExpr.Concat(Vector(left, right))
 
       // Arithmetic via extension method: Expr$package.+(leftExpr)(rightExpr) - curried form
       case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) =>

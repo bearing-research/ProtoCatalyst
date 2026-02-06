@@ -189,7 +189,10 @@ ProtoLogicalPlan.Limit(
 | Equality | `===`, `=!=` | ✅ |
 | Boolean AND | `&&` | ✅ |
 | Boolean OR | `\|\|` | ✅ |
+| Boolean NOT | `!expr` | ✅ |
 | Arithmetic | `+`, `-`, `*`, `/` | ✅ |
+| Null checks | `.isNull`, `.isNotNull` | ✅ |
+| String ops | `.upper`, `.lower` | ✅ |
 | Int literals | `18`, `100` | ✅ |
 | String literals | `"Alice"` | ✅ |
 | Double literals | `50000.0` | ✅ |
@@ -240,7 +243,7 @@ sbt "query/testOnly *QuoteMacroSuite"
 # Run all query tests
 sbt "query/test"
 
-# Currently: 22 QuoteMacroSuite tests, 103 total query tests
+# Currently: 33 QuoteMacroSuite tests, 114 total query tests
 ```
 
 ## Known Limitations

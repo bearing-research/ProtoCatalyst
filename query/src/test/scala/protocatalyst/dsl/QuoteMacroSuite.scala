@@ -8,6 +8,7 @@ import protocatalyst.types.LiteralValue
 // Test case classes
 case class QuoteUser(name: String, age: Int, salary: Double) derives ProtoEncoder
 case class QuoteDept(id: Int, deptName: String) derives ProtoEncoder
+case class QuoteUserNullable(name: String, age: Int, nickname: Option[String]) derives ProtoEncoder
 
 class QuoteMacroSuite extends munit.FunSuite:
 
@@ -493,3 +494,89 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Join(users, depts, Cross, None), got: $other")
+
+  test("quote with isNull on nullable field"):
+    // Use nullable field to avoid optimizer folding (isNull on non-nullable is always false)
+    val query = QuoteMacro.quote {
+      Table[QuoteUserNullable]("users").filter(_.nickname.isNull)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.IsNull(ProtoExpr.ColumnRef("nickname", _, _, _)),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(IsNull(nickname)), got: $other")
+
+  test("quote with isNotNull on nullable field"):
+    // Use nullable field to avoid optimizer folding (isNotNull on non-nullable is always true)
+    val query = QuoteMacro.quote {
+      Table[QuoteUserNullable]("users").filter(_.nickname.isNotNull)
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.IsNotNull(ProtoExpr.ColumnRef("nickname", _, _, _)),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(IsNotNull(nickname)), got: $other")
+
+  test("quote with NOT operator"):
+    // The optimizer simplifies !(age > 18) to (age <= 18)
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(u => !(u.age > 18))
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.LtEq(ProtoExpr.ColumnRef("age", _, _, _), _),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        // Optimizer applied NOT simplification: !(a > b) => a <= b
+        ()
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Not(ProtoExpr.Gt(ProtoExpr.ColumnRef("age", _, _, _), _)),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        // Unoptimized form
+        ()
+      case other =>
+        fail(s"Expected Filter(LtEq or Not(Gt)), got: $other")
+
+  test("quote with upper string operation"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.name.upper === "ALICE")
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Eq(
+              ProtoExpr.Upper(ProtoExpr.ColumnRef("name", _, _, _)),
+              ProtoExpr.Literal(LiteralValue.StringValue("ALICE"))
+            ),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Eq(Upper(name), 'ALICE')), got: $other")
+
+  test("quote with lower string operation"):
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users").filter(_.name.lower === "alice")
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Eq(
+              ProtoExpr.Lower(ProtoExpr.ColumnRef("name", _, _, _)),
+              ProtoExpr.Literal(LiteralValue.StringValue("alice"))
+            ),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Eq(Lower(name), 'alice')), got: $other")

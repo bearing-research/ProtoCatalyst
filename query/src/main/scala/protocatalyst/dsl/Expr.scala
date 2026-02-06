@@ -1,5 +1,7 @@
 package protocatalyst.dsl
 
+import scala.annotation.targetName
+
 import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.expr.ProtoExpr
 
@@ -320,6 +322,29 @@ extension (expr: Expr[Any])
     BinaryExpr(
       ProtoExpr.Divide(expr.toProtoExpr, ProtoExpr.lit(value)),
       ProtoEncoder.given_ProtoEncoder_Double.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  // String operations for dynamic field access
+  @targetName("upperAny")
+  def upper: Expr[Any] =
+    UnaryExpr(ProtoExpr.Upper(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]])
+
+  @targetName("lowerAny")
+  def lower: Expr[Any] =
+    UnaryExpr(ProtoExpr.Lower(expr.toProtoExpr), ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]])
+
+  @targetName("concatLiteralAny")
+  def ++(value: String): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Concat(Vector(expr.toProtoExpr, ProtoExpr.lit(value))),
+      ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]]
+    )
+
+  @targetName("concatExprAny")
+  def ++(other: Expr[Any]): Expr[Any] =
+    BinaryExpr(
+      ProtoExpr.Concat(Vector(expr.toProtoExpr, other.toProtoExpr)),
+      ProtoEncoder.given_ProtoEncoder_String.asInstanceOf[ProtoEncoder[Any]]
     )
 
 // Internal expression implementations
