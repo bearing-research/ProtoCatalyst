@@ -47,10 +47,14 @@ object PlanComparator {
       }
     }
 
-    // Skip children comparison for structurally different equivalent plans
-    // These plan types represent the same semantics but with different tree structures
-    if (areStructurallyDifferentPlans(expected, actual)) {
-      return
+    // Handle structurally different equivalent plans by unwrapping/redirecting
+    unwrapEquivalentPlan(expected, actual) match {
+      case Some((unwrapped, target)) =>
+        comparePlans(unwrapped, target, path, diffs)
+        return
+      case None if areStructurallyDifferentPlans(expected, actual) =>
+        return
+      case _ => // continue with normal comparison
     }
 
     // Compare children count
@@ -65,6 +69,26 @@ object PlanComparator {
     // Recursively compare children
     expected.children.zip(actual.children).zipWithIndex.foreach { case ((e, a), i) =>
       comparePlans(e, a, s"$path/child[$i]", diffs)
+    }
+  }
+
+  /** Unwrap structurally different but semantically equivalent plan wrappers.
+    *
+    * For example, Spark parses `UNION` as `Distinct(Union(...))` while ProtoCatalyst may produce
+    * just `Union(...)`. In this case we unwrap the Distinct and compare the inner Union directly,
+    * so children count mismatches are still detected.
+    */
+  private def unwrapEquivalentPlan(
+      expected: LogicalPlan,
+      actual: LogicalPlan
+  ): Option[(LogicalPlan, LogicalPlan)] = {
+    (expected, actual) match {
+      // Spark: Distinct(Union(...)) vs ProtoCatalyst: Union(...)
+      case (d: Distinct, u: Union) if d.child.isInstanceOf[Union] =>
+        Some((d.child, u))
+      case (u: Union, d: Distinct) if d.child.isInstanceOf[Union] =>
+        Some((u, d.child))
+      case _ => None
     }
   }
 
