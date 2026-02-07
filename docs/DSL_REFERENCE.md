@@ -14,7 +14,7 @@ Both produce a `ProtoLogicalPlan` that is optimized and embedded as a bytecode c
 
 ## 1. IR Types
 
-### ProtoLogicalPlan (18 variants)
+### ProtoLogicalPlan (20 variants)
 
 | Plan Node | Description | Spark Equivalent | DSL Builder | `quote` Macro | Optimizer Rules |
 |-----------|-------------|-----------------|-------------|---------------|-----------------|
@@ -26,7 +26,7 @@ Both produce a `ProtoLogicalPlan` that is optimized and embedded as a bytecode c
 | `Limit` | LIMIT N | `GlobalLimit` / `LocalLimit` | `.limit(n)` | Yes | `EliminateLimits`, `LimitPushdown` |
 | `Distinct` | Remove duplicates | `Distinct` | `.distinct` | Yes | `EliminateDistinct`, `ReplaceDistinctWithAggregate` |
 | `SubqueryAlias` | AS alias | `SubqueryAlias` | `.as("alias")` | Yes | `RemoveRedundantAliases` |
-| `Window` | Window function computation | `Window` | - | - | - |
+| `Window` | Window function computation | `Window` | `.over(Window.partitionBy(...))` | Yes | - |
 | `Union` | UNION (with byName, allowMissing) | `Union` | `.union(other)` | Yes | `CombineUnions` |
 | `Intersect` | INTERSECT / INTERSECT ALL | `Intersect` | `.intersect(other)` | Yes | `ReplaceIntersectWithSemiJoin` |
 | `Except` | EXCEPT / EXCEPT ALL | `Except` | `.except(other)` | Yes | `ReplaceExceptWithFilter` |
@@ -37,7 +37,7 @@ Both produce a `ProtoLogicalPlan` that is optimized and embedded as a bytecode c
 | `Generate` | LATERAL VIEW / generator | `Generate` | - | - | - |
 | `Pivot` | PIVOT operation | `Pivot` | - | - | - |
 | `Unpivot` | UNPIVOT operation | `Unpivot` | - | - | - |
-| `ResolvedHint` | Optimizer hints (Broadcast, etc.) | `ResolvedHint` | - | - | - |
+| `ResolvedHint` | Optimizer hints (Broadcast, etc.) | `ResolvedHint` | `.broadcast`, `.hint(...)`, `.coalesce(n)` | Yes | - |
 
 **Spark has additional plans not in ProtoCatalyst:**
 - `Offset`, `Tail`, `LimitAll` - Pagination variants
@@ -51,7 +51,7 @@ Both produce a `ProtoLogicalPlan` that is optimized and embedded as a bytecode c
 - `Transpose` - Column-to-row transformation
 - `Range` - Sequence generation
 
-### ProtoExpr (81 variants)
+### ProtoExpr (93 variants)
 
 #### Leaf Nodes
 
@@ -161,18 +161,18 @@ Both produce a `ProtoLogicalPlan` that is optimized and embedded as a bytecode c
 
 | Expression | DSL | `quote` Macro | Optimizer Rules |
 |-----------|-----|---------------|-----------------|
-| `ScalarSubquery` | - | - | `RewriteCorrelatedSubquery` |
-| `Exists` | - | - | `RewriteCorrelatedSubquery` |
-| `InSubquery` | - | - | `RewriteCorrelatedSubquery` |
+| `ScalarSubquery` | `scalarSubquery(query)` | Yes | `RewriteCorrelatedSubquery` |
+| `Exists` | `exists(query)` / `notExists(query)` | Yes | `RewriteCorrelatedSubquery` |
+| `InSubquery` | `expr.in(query)` / `expr.notIn(query)` | Yes | `RewriteCorrelatedSubquery` |
 
 #### Window Functions (9 + WindowExpr wrapper)
 
 | Expression | DSL | `quote` Macro | Optimizer Rules |
 |-----------|-----|---------------|-----------------|
-| `RowNumber`, `Rank`, `DenseRank`, `Ntile` | - | - | - |
-| `Lead`, `Lag` | - | - | - |
-| `FirstValue`, `LastValue`, `NthValue` | - | - | - |
-| `WindowExpr` (wrapper with partition/order/frame) | - | - | - |
+| `RowNumber`, `Rank`, `DenseRank`, `Ntile` | `rowNumber()`, `rank()`, `denseRank()`, `ntile(n)` | Yes | - |
+| `Lead`, `Lag` | `lead(expr, offset)`, `lag(expr, offset)` | Yes | - |
+| `FirstValue`, `LastValue`, `NthValue` | `firstValue(expr)`, `lastValue(expr)` | Yes | - |
+| `WindowExpr` (wrapper with partition/order/frame) | `.over(Window.partitionBy(...).orderBy(...))` | Yes | - |
 
 **Spark has many more window capabilities:** `WindowSpecDefinition`, `WindowFrame` (row-based, range-based), `CumeDist`, `PercentRank`, `WindowGroupLimit`, specialized frame boundaries.
 
@@ -470,6 +470,14 @@ Spark's optimizer has **~75 unique rules** across **~20 batches**. ProtoCatalyst
 | `.leftJoin(other).on(cond)` | Left join | Yes |
 | `.rightJoin(other).on(cond)` | Right join | Yes |
 | `.groupBy(keys).agg(aggExprs)` | Aggregate | Yes |
+| `.in(subquery)` / `.notIn(subquery)` | IN subquery | Yes |
+| `exists(subquery)` / `notExists(subquery)` | EXISTS subquery | Yes |
+| `scalarSubquery(query)` | Scalar subquery | Yes |
+| Correlated subqueries | Inner query referencing outer columns | Yes |
+| `.over(Window.partitionBy(...))` | Window functions | Yes |
+| `rowNumber()`, `rank()`, `lead()`, etc. | Window function constructors | Yes |
+| `.broadcast`, `.coalesce(n)`, `.repartition(n)` | Optimizer hints | Yes |
+| `.hint(PlanHint.Broadcast(...))` | Custom hints | Yes |
 
 ### Expression Operations Handled
 
@@ -484,21 +492,20 @@ Spark's optimizer has **~75 unique rules** across **~20 batches**. ProtoCatalyst
 | Null | `isNull`, `isNotNull` | Yes |
 | Alias | `.as("name")` | Yes |
 | Aggregates | `count`, `countDistinct`, `sum`, `avg`, `min`, `max` | Yes |
+| Subqueries | `in`, `notIn`, `exists`, `notExists`, `scalarSubquery` | Yes |
+| Window | `rowNumber`, `rank`, `denseRank`, `ntile`, `lead`, `lag`, `firstValue`, `lastValue` | Yes |
 
-### NOT Handled in `quote` (requires runtime DSL)
+### NOT Handled in `quote` (requires runtime DSL or SQL path)
 
-- Window functions
 - Math functions (abs, ceil, floor, etc.)
 - Advanced string functions (substring, trim, replace, etc.)
 - Date/time functions
 - CASE WHEN / IF expressions
-- IN / LIKE expressions
+- LIKE expressions
 - Cast operations
-- Subquery expressions
-- Generator functions
+- Generator functions (explode, etc.)
 - CTE (With)
 - PIVOT / UNPIVOT
-- Optimizer hints
 
 ---
 
@@ -506,12 +513,14 @@ Spark's optimizer has **~75 unique rules** across **~20 batches**. ProtoCatalyst
 
 | Test Suite | Tests | Covers |
 |-----------|-------|--------|
-| `DslSuite` | ~30 | Runtime DSL: table, column, expr, filter, select, orderBy, limit, distinct, join, groupBy, set ops, serialization |
-| `QuoteMacroSuite` | ~51 | Compile-time macro: all plan operations, expression types, joins, aggregates, optimization, content hashing |
+| `DslSuite` | ~50 | Runtime DSL: table, column, expr, filter, select, orderBy, limit, distinct, join, groupBy, set ops, subqueries, window functions, hints, serialization |
+| `QuoteMacroSuite` | ~67 | Compile-time macro: all plan operations, expression types, joins, aggregates, subqueries (incl. correlated), window functions, hints, optimization, content hashing |
 | Optimizer rule suites | ~40+ | Individual rule tests in `core/src/test/scala/protocatalyst/optimizer/` |
+| `ParityTestSuite` | ~136 | Spark ↔ ProtoCatalyst plan parity across all expression and plan types |
+| `ProtobufArtifactCodecSuite` | ~52 | Protobuf serialization roundtrip for all IR types |
+| `ProtobufDecoderSuite` | ~41 | Protobuf → Spark LogicalPlan decoding |
 
 ### Notable Test Gaps
 
-- **Optimization verification in quote**: Tests accept both optimized and unoptimized forms rather than asserting specific optimizer effects
-- **Right join in QuoteMacro**: DSL implemented but no dedicated macro test
-- **No tests for**: window functions, CASE WHEN, subqueries, CTE, PIVOT (none of these have DSL support yet)
+- Math functions, date/time functions, CASE WHEN, LIKE, Cast — handled by SQL parser but not `quote { }` macro
+- Generator functions (explode, etc.), CTE, PIVOT/UNPIVOT — IR and SQL support exists but no DSL builders

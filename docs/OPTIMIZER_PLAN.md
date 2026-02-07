@@ -948,14 +948,14 @@ object EliminateSorts extends Rule[ProtoLogicalPlan] {
   def apply(plan: ProtoLogicalPlan): ProtoLogicalPlan = {
     plan.transformUp {
       // Sort on single row
-      case Sort(_, _, Limit(1, child)) => Limit(1, child)
+      case Sort(_, Limit(1, child)) => Limit(1, child)
 
       // Nested sorts (outer dominates)
-      case Sort(order1, global1, Sort(_, _, child)) =>
-        Sort(order1, global1, child)
+      case Sort(order1, Sort(_, child)) =>
+        Sort(order1, child)
 
       // Sort in subquery (if result order doesn't matter)
-      case Project(projectList, Sort(_, _, child)) =>
+      case Project(projectList, Sort(_, child)) =>
         Project(projectList, child)
     }
   }

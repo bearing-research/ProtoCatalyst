@@ -303,7 +303,6 @@ enum ProtoLogicalPlan:
 
   case Sort(
     order: Vector[SortOrder],
-    global: Boolean,  // true = final sort, false = per-partition
     child: ProtoLogicalPlan
   )
 
@@ -425,21 +424,20 @@ case class SourceInfo(
 )
 
 /**
- * Serialization format - simple binary with magic header.
- * Future: consider using protobuf/flatbuffers for cross-language support.
+ * Serialization format - PCAT binary container with format byte.
+ * Supports JSON (0x01) and Protobuf (0x02) payloads.
+ * Header: "PCAT" (4 bytes) + format byte (1 byte) + payload.
  */
 object ArtifactCodec:
-  val Magic: Array[Byte] = "PCAT".getBytes
+  val MagicPrefix: Array[Byte] = "PCAT".getBytes
+  val FormatJson: Byte = 0x01
+  val FormatProtobuf: Byte = 0x02
 
-  def serialize(artifact: CompiledArtifact): Array[Byte] =
-    // For MVP: Java serialization
-    // Production: custom binary format or protobuf
-    import java.io.*
-    val baos = new ByteArrayOutputStream()
-    baos.write(Magic)
-    val oos = new ObjectOutputStream(baos)
-    oos.writeObject(artifact)
-    oos.close()
+  def serializeWithHeader(artifact: CompiledArtifact,
+                          codec: ArtifactCodec = JsonArtifactCodec): Array[Byte] =
+    val payload = codec.serialize(artifact)
+    val formatByte = if codec.format == "protobuf" then FormatProtobuf else FormatJson
+    MagicPrefix ++ Array(formatByte) ++ payload
     baos.toByteArray
 
   def deserialize(bytes: Array[Byte]): Either[String, CompiledArtifact] =
@@ -1119,7 +1117,12 @@ object ProtoCatalystIntegration:
 | 12 | `SubqueryAlias` | Aliased subqueries | `(SELECT ...) AS t` |
 | 13 | `Window` | Window functions | `OVER (PARTITION BY)` |
 | 14 | `Values` | Inline data | `VALUES (1, 'a')` |
-| 15 | `With` (future) | CTEs | `WITH t AS (...)` |
+| 15 | `With` | CTEs | `WITH t AS (...)` |
+| 16 | `LateralJoin` | Correlated subquery join | `LATERAL (...)` |
+| 17 | `Generate` | Generator / LATERAL VIEW | `LATERAL VIEW explode(...)` |
+| 18 | `Pivot` | Pivot transformation | `PIVOT (...)` |
+| 19 | `Unpivot` | Unpivot transformation | `UNPIVOT (...)` |
+| 20 | `ResolvedHint` | Optimizer hints | `/*+ BROADCAST(t) */` |
 
 ### 3.6 Handling Unknown/Opaque Functions
 

@@ -213,24 +213,29 @@ ProtoLogicalPlan.Limit(
 | Double literals | `50000.0` | ✅ |
 | Boolean literals | `true`, `false` | ✅ |
 
-### Not Yet Implemented
+### Also Supported (added after initial release)
 
-| Operation | Notes |
-|-----------|-------|
-| Lambda-style `.select(_.field)` | Type inference issues with Dynamic; use explicit `Column[T, U]("field")` |
-| Subqueries | Nested query support |
+| Operation | Example | Status |
+|-----------|---------|--------|
+| Lambda-style `.select(_.field)` | `.select(u => (u.name, u.age))` | ✅ |
+| Subqueries | `.filter(_.id in subquery)`, `exists(...)`, `scalarSubquery(...)` | ✅ |
+| Correlated subqueries | Inner query referencing outer columns | ✅ |
+| Window functions | `rowNumber().over(Window.partitionBy(...))` | ✅ |
+| Hints | `.broadcast`, `.coalesce(4)`, `.repartition(8)` | ✅ |
 
 ## File Organization
 
 ```
 query/src/main/scala/protocatalyst/
 ├── dsl/
-│   ├── QuoteMacro.scala      # The quote { } macro implementation
+│   ├── QuoteMacro.scala      # The quote { } macro implementation (~2,200 lines)
 │   ├── Table.scala           # Table[A] entry point
 │   ├── Query.scala           # Query[A] builder
 │   ├── Expr.scala            # Expression DSL
 │   ├── Column.scala          # Column references
-│   └── FieldSelector.scala   # Dynamic field access (_.field)
+│   ├── FieldSelector.scala   # Dynamic field access (_.field) via transparent inline
+│   ├── functions.scala       # Aggregate functions, exists/notExists, scalarSubquery
+│   └── window.scala          # Window functions, WindowSpec, FrameBound
 ├── query/
 │   └── CompiledQuery.scala   # Result type with artifact
 └── ...

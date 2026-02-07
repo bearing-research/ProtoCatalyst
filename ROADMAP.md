@@ -1,200 +1,164 @@
 # ProtoCatalyst Roadmap
 
-## Current State (v0.1)
+## Current State
 
-### Completed
+ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime to compile time. The project is feature-complete for its core mission — compile-time encoder derivation, query optimization, and Spark execution of pre-optimized plans.
 
-**Core Encoder System**
-- [x] ProtoEncoder with compile-time derivation (Scala 3 Mirror)
-- [x] ProtoType enum covering all Spark DataTypes
-- [x] ProtoSchema for structured type information
+### By the Numbers
 
-**Type Support**
-- [x] Primitives: Boolean, Byte, Short, Int, Long, Float, Double
-- [x] String, Array[Byte] (Binary)
-- [x] BigInt, BigDecimal (DecimalType)
-- [x] Date/Time: LocalDate, LocalTime, Instant, LocalDateTime, java.sql.Date/Timestamp
-- [x] Timezone-aware: OffsetDateTime, ZonedDateTime, java.util.Date
-- [x] Intervals: Duration (DayTimeIntervalType), Period (YearMonthIntervalType)
-- [x] Collections: List, Seq, Vector, Set, Array, Map
-- [x] Tuples: Tuple2-22
-- [x] Option[T] (nullable wrapper)
-- [x] Case classes (nested structs)
-- [x] Scala 3 enums, Java enums
-- [x] Char(n), Varchar(n), NullType, UUID
-
-**Serialization**
-- [x] InlineRowSerializer with compile-time specialization
-- [x] InternalTypeConverter abstraction
-- [x] Mock runtime for testing without Spark dependency
-
-**Arrow Integration**
-- [x] InlineArrowWriter for Arrow batch writing
-- [x] ArrowBatchBuilder for resource management
-
-**Testing**
-- [x] 268 unit tests passing
-- [x] 26 Spark parity tests (golden file comparison)
-- [x] Benchmark infrastructure (JMH)
-
-**Documentation**
-- [x] ENCODER_DEEP_DIVE.md
-- [x] SPARK_INTEGRATION.md
-- [x] SPARK_MIGRATION_GUIDE.md
-- [x] BENCHMARKS.md
+| Metric | Count |
+|--------|------:|
+| Source lines | ~33,000 |
+| Test lines | ~30,000 |
+| Test cases | ~1,948 |
+| Modules | 10 |
+| Optimizer rules | 48 |
+| IR expression types | 93 |
+| IR plan node types | 20 |
+| Protobuf definitions | 4 files (176 generated Java classes) |
+| Commits | 101 |
 
 ---
 
-## Phase 1: Type Completeness ✅
+## Completed Phases
 
-**Status: Complete**
+### Phase 1: Core Encoder System ✅
 
-- [x] UUID encoder (common in modern applications)
-- [x] java.util.Date encoder (legacy compatibility)
-- [x] OffsetDateTime, ZonedDateTime (timezone-aware timestamps)
-- [x] LocalTime encoder (TimeType with precision support)
-- [ ] CalendarInterval encoder - *deferred* (requires Spark internal type)
+- ProtoEncoder with compile-time derivation (Scala 3 `Mirror`)
+- ProtoType enum covering all Spark DataTypes
+- Full type support: primitives, BigInt/BigDecimal, Date/Time, timezone-aware types, intervals, collections, tuples (2–22), Option, case classes, enums
+- InlineRowSerializer with compile-time specialization (3–27x faster than Spark)
+- InternalTypeConverter abstraction with mock runtime
+- Arrow integration (InlineArrowWriter, ArrowBatchBuilder)
+- 268 unit tests, 26 Spark parity tests
 
-**Parity Tests**
-- [x] Add parity tests for remaining primitive types (Byte, Short, Float)
-- [x] Add parity tests for date/time types (LocalDate, LocalDateTime)
-- [x] Add parity tests for binary type
-- [x] Edge case tests (nulls, empty collections, boundary values)
+### Phase 2: Spark Integration Readiness ✅
+
+- 100% parity with Spark's AgnosticEncoder types
+- Performance benchmarks: 10–27x faster roundtrip vs ExpressionEncoder
+- Migration documentation for Spark team
+
+### Phase 3: Compile-Time IR and Optimizer ✅
+
+- ProtoExpr (93 expression variants) — complete expression IR
+- ProtoLogicalPlan (20 plan node types) — full logical plan IR
+- 48 optimizer rules at compile time:
+  - Constant folding, boolean simplification, predicate canonicalization
+  - Filter combining, predicate pushdown, column pruning
+  - Limit pushdown, sort elimination, distinct elimination
+  - CTE inlining, correlated subquery rewriting
+  - Join optimization, set operation rewriting
+- ProtoLiftables — all IR types liftable as compile-time Expr constants
+- JSON serialization via upickle with full roundtrip support
+
+### Phase 4: Compile-Time SQL Parser ✅
+
+- Full SQL lexer and parser (recursive descent)
+- AST → ProtoLogicalPlan transformation
+- `SqlMacro.compileOptimized` — SQL parsed and optimized at compile time
+- SELECT, WHERE, JOIN, GROUP BY, ORDER BY, LIMIT, DISTINCT, UNION, INTERSECT, EXCEPT
+- Window functions, CTEs, PIVOT/UNPIVOT, LATERAL VIEW, subqueries, hints
+- 344 parser tests
+
+### Phase 5: Type-Safe DSL (`quote { }` Macro) ✅
+
+- `quote { }` macro — Scala DSL compiled to ProtoLogicalPlan at compile time
+- Typed FieldSelector via `transparent inline` macro — `_.name` returns `Column[User, String]`
+- Multi-column lambda select: `.select(u => (u.name, u.age))`
+- Full operation support:
+  - Filter, select, orderBy, limit, distinct, as (alias)
+  - Join (inner, left, right, cross) with typed conditions
+  - GroupBy + aggregates (count, sum, avg, min, max)
+  - Union, intersect, except
+  - Subqueries (IN, NOT IN, EXISTS, NOT EXISTS, scalar subquery)
+  - Correlated subqueries with outer schema resolution
+  - Window functions (rowNumber, rank, denseRank, lead, lag, etc.)
+  - Hints (broadcast, coalesce, repartition)
+- Comparison, boolean, arithmetic, null-check, string operators
+- 67 macro tests
+
+### Phase 6: Protobuf Serialization Format ✅
+
+- `proto` module — pure Java, consumable by both Scala 3 and 2.13
+- 4 `.proto` files: `types.proto`, `schema.proto`, `plan.proto`, `artifact.proto`
+- 176 generated Java classes
+- ProtoConverter — bidirectional Scala IR ↔ Java protobuf conversion (~1,400 lines)
+- ProtobufArtifactCodec implementing ArtifactCodec trait
+- PCAT binary container: `"PCAT" + format byte (0x01=JSON, 0x02=Protobuf) + payload`
+- ~3–10x smaller than JSON for typical plans
+- 52 core roundtrip tests, 41 spark-catalyst decoder tests
+
+### Phase 7: Spark Execution Bridge ✅
+
+- SparkQueryRunner — `execute(bytes, spark)` → DataFrame
+- ArtifactParser dispatches JSON (0x01) and Protobuf (0x02) formats
+- Protobuf decoders: ProtobufTypeDecoder, ProtobufExpressionDecoder, ProtobufPlanDecoder
+- JSON decoders: TypeDecoder, ExpressionDecoder, PlanDecoder (full coverage of all 93 expr + 20 plan types)
+- SparkPlanEncoder — bidirectional Spark → ProtoCatalyst JSON encoding
+- SchemaValidator — validates compile-time schema contracts against Spark catalog at runtime
+- Pivot, Unpivot, Generate converters (not stubs)
+- Hint passthrough (BROADCAST, SHUFFLE_MERGE, COALESCE, REPARTITION, etc.)
+- 136 parity tests, 289 total spark-catalyst tests
+
+### Phase 8: End-to-End Integration ✅
+
+- E2EArtifactGenerator — produces PCAT artifacts from `quote { }` and `CompiledQuery.sqlOptimized`
+- E2EIntegrationSuite — full compile → serialize → deserialize → Spark execute pipeline
+- SparkQueryRunner tests with real query execution against test data
 
 ---
 
-## Phase 2: Spark Integration Readiness ✅
+## Future Work
 
-**Status: Complete**
+### Spark Dataset[T] API (pending Spark 4.0 Scala 3 support)
 
-**Goal**: Prepare ProtoCatalyst for direct integration into Spark as the Scala 3 encoder
-
-**Type Coverage**
-- [x] 100% parity with Spark's AgnosticEncoder types
-- [x] All primitives, boxed types, temporals, collections covered
-- [x] Tuples 2-22, enums (Java + Scala 3), sealed traits
-- [x] VariantType supported at schema level (encoder deferred - requires Spark type)
-
-**Performance Benchmarks**
-- [x] Collection benchmarks (List/Map at 10, 100, 1000 elements)
-- [x] Memory allocation benchmarks with GC profiler
-- [x] 10-27x faster roundtrip vs ExpressionEncoder
-
-**Documentation**
-- [x] SPARK_MIGRATION_GUIDE.md - Integration guide for Spark team
-- [x] BENCHMARKS.md - Performance testing documentation
-- [x] File mapping: ProtoCatalyst → Spark equivalents
-
----
-
-## Phase 3: Full Spark Encoder
-
-**Priority: Medium**
-
-**Goal**: Enable full `Dataset[T]` API
-
-```scala
-// Target API
-import protocatalyst.spark.implicits._
-
-case class Person(name: String, age: Int) derives ProtoEncoder
-
-val ds: Dataset[Person] = spark.createDataset(Seq(
-  Person("Alice", 30),
-  Person("Bob", 25)
-))
-
-ds.filter(_.age > 25).map(p => p.copy(name = p.name.toUpperCase))
-```
-
-**Tasks**
-- [ ] Implement `toAgnosticEncoder[T]`: ProtoEncoder → AgnosticEncoder
-- [ ] Handle all ProtoType variants in type mapping
-- [ ] Create `protocatalyst.spark.implicits` for implicit encoder derivation
+When Spark publishes Scala 3 artifacts:
+- [ ] `toAgnosticEncoder[T]`: ProtoEncoder → AgnosticEncoder bridge
+- [ ] `protocatalyst.spark.implicits` for implicit encoder derivation
 - [ ] Integration tests for Dataset operations (map, filter, groupBy, join)
-- [ ] Performance benchmarks vs native ExpressionEncoder
 
----
+### Catalog-Aware Optimization
 
-## Phase 4: Advanced Features
+- [ ] Runtime statistics collection via SparkQueryRunner
+- [ ] Cost-based join reordering (complement compile-time rule-based optimization)
 
-**Priority: Low**
+### Ecosystem Integration
 
-**Sum Types / ADTs**
-- [ ] Sealed trait encoding with discriminator field
-- [ ] Pattern matching in Spark SQL
-
-**User-Defined Types**
-- [ ] ProtoUDT interface for custom serialization
-- [ ] Integration with Spark's UserDefinedType
-
-**Query Optimization**
-- [ ] Predicate pushdown verification
-- [ ] Column pruning support
-- [ ] Statistics collection
-
----
-
-## Phase 5: Ecosystem Integration
-
-**Priority: Future**
-
-**Connectors**
 - [ ] Parquet reader/writer using ProtoCatalyst schemas
-- [ ] Delta Lake integration
-- [ ] Iceberg integration
-
-**Streaming**
+- [ ] Delta Lake / Iceberg integration
 - [ ] Structured Streaming support
-- [ ] Kafka serialization/deserialization
-
-**Cross-Platform**
 - [ ] Arrow IPC for language interop (Python, Rust)
-- [ ] gRPC/Connect serialization
-
----
-
-## Version Milestones
-
-| Version | Target | Key Features |
-|---------|--------|--------------|
-| 0.1.0 | Complete | Core encoder, parity tests, Arrow writer |
-| 0.2.0 | Complete | Type completeness, comprehensive parity tests |
-| 0.3.0 | Complete | Spark integration readiness, benchmarks, migration guide |
-| 0.4.0 | Phase 3 | Full Dataset[T] API support (when Spark supports Scala 3) |
-| 1.0.0 | Phase 4+ | Production-ready, ported into Spark |
-
----
-
-## Contributing
-
-See individual phase tasks above. Priority items:
-
-1. **High impact**: Spark Scala 3 integration (Phase 3 - when Spark adds Scala 3 support)
-2. **Medium impact**: Additional parity tests, edge case coverage
-3. **Long-term**: Port ProtoCatalyst into Spark codebase
 
 ---
 
 ## Architecture Decisions
 
-### Why compile-time derivation?
+### Why compile-time?
 
 - Zero runtime reflection overhead
 - Type errors caught at compile time
-- Inline expansion for primitive types
+- Inline expansion for primitive types (3–27x faster serialization)
+- 48 optimizer rules execute during compilation, not at query time
 - Compatible with GraalVM native-image
 
 ### Why separate from Spark?
 
-- Test without Spark dependency (mock-runtime)
+- Test without Spark dependency (mock-runtime, 279 tests)
+- Scala 3 and 2.13 modules coexist cleanly
 - Support Arrow independently
 - Cleaner module boundaries
 - Easier to maintain across Spark versions
 
-### Why golden file testing?
+### Why dual serialization (JSON + Protobuf)?
 
-- Guarantees byte-level compatibility with Spark
+- JSON: human-readable, easy debugging, existing tooling
+- Protobuf: 3–10x smaller, faster serialization, schema evolution
+- PCAT container format supports both transparently via format byte
+- `proto` module is pure Java — works with both Scala 3 and 2.13
+
+### Why golden file / parity testing?
+
+- 136 parity tests guarantee Spark-compatible plan structure
 - Catches subtle serialization differences
 - Documents expected behavior
 - Enables testing without Spark runtime
