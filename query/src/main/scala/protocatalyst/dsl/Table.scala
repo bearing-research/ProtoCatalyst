@@ -205,4 +205,3 @@ object Table:
       enc: ProtoEncoder[A]
   ): Table[A] =
     new Table[A](tableName, enc, contract)
-

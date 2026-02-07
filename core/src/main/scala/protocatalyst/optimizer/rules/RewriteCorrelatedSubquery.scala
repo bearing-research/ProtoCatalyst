@@ -206,9 +206,8 @@ object RewriteCorrelatedSubquery extends Rule:
   /** Collect column references produced by a plan (for identifying outer columns). */
   private def collectProducedColumns(plan: ProtoLogicalPlan): Set[(String, Option[String])] =
     plan match
-      case ProtoLogicalPlan.RelationRef(name, alias, _) =>
-        // Tables produce columns qualified by alias or table name
-        Set.empty // We'd need schema info for actual columns
+      case ProtoLogicalPlan.RelationRef(name, alias, contract) =>
+        contract.requiredFields.map(f => (f.name, None)).toSet
       case ProtoLogicalPlan.Project(projectList, _) =>
         projectList.flatMap {
           case ProtoExpr.Alias(_, name)                   => Some((name, None))

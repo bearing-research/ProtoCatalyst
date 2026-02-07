@@ -134,6 +134,14 @@ object functions:
       ProtoEncoder.given_ProtoEncoder_Boolean
     )
 
+  // === Scalar Subquery ===
+
+  /** Scalar subquery: wraps a single-column query as a value expression. The inner query must
+    * return at most one row; result is null if no rows.
+    */
+  def scalarSubquery[A](subquery: Query[A])(using enc: ProtoEncoder[A]): Expr[A] =
+    FunctionExpr(ProtoExpr.ScalarSubquery(subquery.plan), enc)
+
   // === Internal expression types ===
 
   private[dsl] case class AggExpr[A](proto: ProtoExpr, encoder: ProtoEncoder[A]) extends Expr[A]:

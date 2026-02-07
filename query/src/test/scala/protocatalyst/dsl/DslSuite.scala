@@ -576,3 +576,314 @@ class DslSuite extends munit.FunSuite:
           ) =>
         () // ok
       case other => fail(s"Expected Filter with Not(Exists), got $other")
+
+  // === Correlated Subquery Tests ===
+
+  test("correlated EXISTS subquery"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+
+    val query = employees.filter { e =>
+      functions.exists(
+        depts.filter(d => d.id === e.age)
+      )
+    }
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Exists(
+              ProtoLogicalPlan.Filter(
+                ProtoExpr.Eq(
+                  ProtoExpr.ColumnRef("id", _, _, _),
+                  ProtoExpr.ColumnRef("age", _, _, _)
+                ),
+                ProtoLogicalPlan.RelationRef("departments", _, _)
+              )
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other => fail(s"Expected correlated EXISTS, got $other")
+
+  test("correlated NOT EXISTS subquery"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+
+    val query = employees.filter { e =>
+      functions.notExists(
+        depts.filter(d => d.id === e.age)
+      )
+    }
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Not(
+              ProtoExpr.Exists(
+                ProtoLogicalPlan.Filter(
+                  ProtoExpr.Eq(
+                    ProtoExpr.ColumnRef("id", _, _, _),
+                    ProtoExpr.ColumnRef("age", _, _, _)
+                  ),
+                  ProtoLogicalPlan.RelationRef("departments", _, _)
+                )
+              )
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other => fail(s"Expected correlated NOT EXISTS, got $other")
+
+  test("correlated EXISTS with compound inner predicate"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+
+    val query = employees.filter { e =>
+      functions.exists(
+        depts.filter(d => (d.id === e.age) && (d.name =!= "HR"))
+      )
+    }
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Exists(
+              ProtoLogicalPlan.Filter(
+                ProtoExpr.And(conditions),
+                ProtoLogicalPlan.RelationRef("departments", _, _)
+              )
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        assertEquals(conditions.size, 2)
+      case other => fail(s"Expected correlated EXISTS with And, got $other")
+
+  // === Scalar Subquery Tests ===
+
+  test("scalar subquery in select"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+    val salary = employees.col[Double]("salary")
+
+    val innerQuery = employees.select(functions.max(salary))
+    val query = depts.select(functions.scalarSubquery(innerQuery))
+
+    query.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ScalarSubquery(
+                ProtoLogicalPlan.Project(
+                  Vector(ProtoExpr.Max(_)),
+                  ProtoLogicalPlan.RelationRef("employees", _, _)
+                )
+              )
+            ),
+            ProtoLogicalPlan.RelationRef("departments", _, _)
+          ) =>
+        () // ok
+      case other => fail(s"Expected Project(ScalarSubquery(Max)), got $other")
+
+  test("scalar subquery in filter comparison"):
+    val employees = Table[User]("employees")
+    val depts = Table[Department]("departments")
+    val deptId = depts.col[Int]("id")
+
+    val subquery = depts.select(functions.min(deptId))
+    val query = employees.filter(e => e.age > functions.scalarSubquery(subquery))
+
+    query.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(
+              ProtoExpr.ColumnRef("age", _, _, _),
+              ProtoExpr.ScalarSubquery(_)
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other => fail(s"Expected Filter(Gt(age, ScalarSubquery)), got $other")
+
+  // === Window Function Tests ===
+
+  test("window rowNumber"):
+    val employees = Table[User]("employees")
+    val age = employees.col[Int]("age")
+    val salary = employees.col[Double]("salary")
+
+    import window.*
+
+    val query = employees.select(
+      rowNumber.over(Window.partitionBy(age).orderBy(salary.asc))
+    )
+
+    query.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(winExpr),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(ProtoExpr.RowNumber(), parts, ords, None) =>
+            assertEquals(parts.size, 1)
+            assertEquals(ords.size, 1)
+            parts.head match
+              case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+              case other => fail(s"Expected ColumnRef(age), got $other")
+            ords.head match
+              case SortOrder(ProtoExpr.ColumnRef("salary", _, _, _), SortDirection.Ascending, _) =>
+                () // ok
+              case other => fail(s"Expected salary ascending, got $other")
+          case other => fail(s"Expected WindowExpr(RowNumber), got $other")
+      case other => fail(s"Expected Project(WindowExpr(RowNumber)), got $other")
+
+  test("window rank and denseRank"):
+    val employees = Table[User]("employees")
+    val salary = employees.col[Double]("salary")
+
+    import window.*
+
+    val rankQuery = employees.select(
+      rank.over(Window.orderBy(salary.desc))
+    )
+
+    rankQuery.plan match
+      case ProtoLogicalPlan.Project(Vector(winExpr), _) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(ProtoExpr.Rank(), parts, ords, None) =>
+            assertEquals(parts.size, 0)
+            assertEquals(ords.size, 1)
+          case other => fail(s"Expected WindowExpr(Rank), got $other")
+      case other => fail(s"Expected Project with WindowExpr(Rank), got $other")
+
+    val denseRankQuery = employees.select(
+      denseRank.over(Window.orderBy(salary.desc))
+    )
+
+    denseRankQuery.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(ProtoExpr.WindowExpr(ProtoExpr.DenseRank(), _, _, None)),
+            _
+          ) =>
+        () // ok
+      case other => fail(s"Expected WindowExpr(DenseRank), got $other")
+
+  test("window aggregate sum"):
+    val employees = Table[User]("employees")
+    val age = employees.col[Int]("age")
+    val salary = employees.col[Double]("salary")
+
+    import window.*
+
+    val query = employees.select(
+      functions.sumDouble(salary).over(Window.partitionBy(age))
+    )
+
+    query.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(winExpr),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(
+                ProtoExpr.Sum(ProtoExpr.ColumnRef("salary", _, _, _)),
+                parts,
+                ords,
+                None
+              ) =>
+            assertEquals(parts.size, 1)
+            assertEquals(ords.size, 0)
+          case other => fail(s"Expected WindowExpr(Sum), got $other")
+      case other => fail(s"Expected Project with WindowExpr(Sum), got $other")
+
+  test("window lead and lag"):
+    val employees = Table[User]("employees")
+    val salary = employees.col[Double]("salary")
+    val age = employees.col[Int]("age")
+
+    import window.*
+
+    val leadQuery = employees.select(
+      lead(salary).over(Window.partitionBy(age).orderBy(salary.asc))
+    )
+
+    leadQuery.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.WindowExpr(
+                ProtoExpr.Lead(ProtoExpr.ColumnRef("salary", _, _, _), _, None),
+                _,
+                _,
+                None
+              )
+            ),
+            _
+          ) =>
+        () // ok
+      case other => fail(s"Expected WindowExpr(Lead), got $other")
+
+    val lagQuery = employees.select(
+      lag(salary, 2).over(Window.partitionBy(age).orderBy(salary.asc))
+    )
+
+    lagQuery.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.WindowExpr(
+                ProtoExpr.Lag(ProtoExpr.ColumnRef("salary", _, _, _), _, None),
+                _,
+                _,
+                None
+              )
+            ),
+            _
+          ) =>
+        () // ok
+      case other => fail(s"Expected WindowExpr(Lag), got $other")
+
+  test("window with frame spec"):
+    val employees = Table[User]("employees")
+    val age = employees.col[Int]("age")
+    val salary = employees.col[Double]("salary")
+
+    import window.*
+
+    val query = employees.select(
+      functions
+        .sumDouble(salary)
+        .over(
+          Window
+            .partitionBy(age)
+            .orderBy(salary.asc)
+            .rowsBetween(FrameBound.UnboundedPreceding, FrameBound.CurrentRow)
+        )
+    )
+
+    query.plan match
+      case ProtoLogicalPlan.Project(Vector(winExpr), _) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(
+                ProtoExpr.Sum(_),
+                parts,
+                ords,
+                Some(
+                  WindowFrame(FrameType.Rows, FrameBound.UnboundedPreceding, FrameBound.CurrentRow)
+                )
+              ) =>
+            assertEquals(parts.size, 1)
+            assertEquals(ords.size, 1)
+          case other => fail(s"Expected WindowExpr with frame spec, got $other")
+      case other => fail(s"Expected Project with WindowExpr, got $other")
+
+  test("aggregate .over() extension"):
+    val employees = Table[User]("employees")
+    val age = employees.col[Int]("age")
+
+    import window.*
+
+    val query = employees.select(
+      functions.count.over(Window.partitionBy(age))
+    )
+
+    query.plan match
+      case ProtoLogicalPlan.Project(Vector(winExpr), _) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(ProtoExpr.Count(_, false), parts, _, None) =>
+            assertEquals(parts.size, 1)
+          case other => fail(s"Expected WindowExpr(Count), got $other")
+      case other => fail(s"Expected Project with WindowExpr(Count), got $other")

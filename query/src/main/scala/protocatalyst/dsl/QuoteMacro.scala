@@ -4,7 +4,7 @@ import scala.quoted._
 
 import protocatalyst.artifact._
 import protocatalyst.encoder._
-import protocatalyst.expr.ProtoExpr
+import protocatalyst.expr._
 import protocatalyst.macros.ProtoLiftables.given
 import protocatalyst.optimizer.Optimizer
 import protocatalyst.plan._
@@ -149,15 +149,17 @@ object QuoteMacro:
       Quotes
   )(
       term: quotes.reflect.Term,
-      fallbackSchema: ProtoSchema
+      fallbackSchema: ProtoSchema,
+      outerSchema: Option[ProtoSchema] = None
   ): Either[String, PlanResult] =
-    matchPlan(term, fallbackSchema)
+    matchPlan(term, fallbackSchema, outerSchema)
 
   private def matchPlan(using
       Quotes
   )(
       term: quotes.reflect.Term,
-      fallbackSchema: ProtoSchema
+      fallbackSchema: ProtoSchema,
+      outerSchema: Option[ProtoSchema] = None
   ): Either[String, PlanResult] =
     import quotes.reflect.*
 
@@ -165,15 +167,15 @@ object QuoteMacro:
 
       // Handle Inlined wrapper
       case Inlined(_, _, inner) =>
-        extractQueryPlanRec(inner, fallbackSchema)
+        extractQueryPlanRec(inner, fallbackSchema, outerSchema)
 
       // Handle Block wrapper
       case Block(_, expr) =>
-        extractQueryPlanRec(expr, fallbackSchema)
+        extractQueryPlanRec(expr, fallbackSchema, outerSchema)
 
       // Handle Typed wrapper
       case Typed(expr, _) =>
-        extractQueryPlanRec(expr, fallbackSchema)
+        extractQueryPlanRec(expr, fallbackSchema, outerSchema)
 
       // Table[A]("tableName").toQuery
       case Apply(Select(tableExpr, "toQuery"), Nil) =>
@@ -182,82 +184,130 @@ object QuoteMacro:
       // query.filter(predicate) - TypeApply version
       case Apply(Apply(TypeApply(Select(child, "filter"), _), List(predicate)), _) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          filterExpr <- extractPredicateExpr(predicate, childSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          filterExpr <- extractPredicateExpr(predicate, childSchema, outerSchema)
         yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       // query.filter(predicate) - non-TypeApply version
       case Apply(Select(child, "filter"), List(predicate)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          filterExpr <- extractPredicateExpr(predicate, childSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          filterExpr <- extractPredicateExpr(predicate, childSchema, outerSchema)
         yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       // query.where(predicate) - alias for filter
       case Apply(Apply(TypeApply(Select(child, "where"), _), List(predicate)), _) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          filterExpr <- extractPredicateExpr(predicate, childSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          filterExpr <- extractPredicateExpr(predicate, childSchema, outerSchema)
         yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       case Apply(Select(child, "where"), List(predicate)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          filterExpr <- extractPredicateExpr(predicate, childSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          filterExpr <- extractPredicateExpr(predicate, childSchema, outerSchema)
         yield (ProtoLogicalPlan.Filter(filterExpr, childPlan), tableName, childSchema)
 
       // query.select(exprs*) - TypeApply version with implicits (single or multiple)
       case Apply(Apply(TypeApply(Select(child, "select"), _), selectors), _) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
           projExprs <- extractProjectExprs(selectors, childSchema)
         yield (ProtoLogicalPlan.Project(projExprs, childPlan), tableName, childSchema)
 
       // query.select(exprs*) - non-TypeApply version (single or multiple)
       case Apply(Select(child, "select"), selectors) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
           projExprs <- extractProjectExprs(selectors, childSchema)
         yield (ProtoLogicalPlan.Project(projExprs, childPlan), tableName, childSchema)
 
       // query.select[B1, B2](e1, e2)(enc1, enc2) - tuple overload with 2 implicits blocks
       case Apply(Apply(Apply(Select(child, "select"), selectors), _), _) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
           projExprs <- extractProjectExprs(selectors, childSchema)
         yield (ProtoLogicalPlan.Project(projExprs, childPlan), tableName, childSchema)
 
       // query.limit(n)
       case Apply(Select(child, "limit"), List(limitExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
           n <- extractIntLiteral(limitExpr)
         yield (ProtoLogicalPlan.Limit(n, childPlan), tableName, childSchema)
 
       // query.distinct
       case Select(child, "distinct") =>
-        for (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+        for (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
         yield (ProtoLogicalPlan.Distinct(childPlan), tableName, childSchema)
 
       // query.orderBy(_.field.asc, _.field2.desc)
       case Apply(Select(child, "orderBy"), sortExprs) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
           sortOrders <- extractSortOrders(sortExprs, childSchema)
         yield (ProtoLogicalPlan.Sort(sortOrders, global = true, childPlan), tableName, childSchema)
 
       // query.as("alias")
       case Apply(Select(child, "as"), List(aliasExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
           alias <- extractStringLiteral(aliasExpr)
         yield (ProtoLogicalPlan.SubqueryAlias(alias, childPlan), tableName, childSchema)
 
       // query.union(otherQuery)
       case Apply(Select(child, "union"), List(otherExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (
           ProtoLogicalPlan.Union(
             Vector(childPlan, otherPlan),
@@ -271,8 +321,12 @@ object QuoteMacro:
       // query.intersect(otherQuery)
       case Apply(Select(child, "intersect"), List(otherExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (
           ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = false),
           tableName,
@@ -282,8 +336,12 @@ object QuoteMacro:
       // query.intersectAll(otherQuery)
       case Apply(Select(child, "intersectAll"), List(otherExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (
           ProtoLogicalPlan.Intersect(childPlan, otherPlan, isAll = true),
           tableName,
@@ -293,22 +351,34 @@ object QuoteMacro:
       // query.except(otherQuery)
       case Apply(Select(child, "except"), List(otherExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = false), tableName, childSchema)
 
       // query.exceptAll(otherQuery)
       case Apply(Select(child, "exceptAll"), List(otherExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (ProtoLogicalPlan.Except(childPlan, otherPlan, isAll = true), tableName, childSchema)
 
       // query.crossJoin(otherQuery)(using encoder)
       case Apply(Apply(TypeApply(Select(child, "crossJoin"), _), List(otherExpr)), _) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (
           ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None),
           tableName,
@@ -318,8 +388,12 @@ object QuoteMacro:
       // query.crossJoin(otherQuery) - without explicit TypeApply
       case Apply(Select(child, "crossJoin"), List(otherExpr)) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
         yield (
           ProtoLogicalPlan.Join(childPlan, otherPlan, JoinType.Cross, None),
           tableName,
@@ -336,8 +410,12 @@ object QuoteMacro:
             _
           ) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
@@ -356,8 +434,12 @@ object QuoteMacro:
             _
           ) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
@@ -376,8 +458,12 @@ object QuoteMacro:
             _
           ) =>
         for
-          (childPlan, tableName, childSchema) <- extractQueryPlanRec(child, fallbackSchema)
-          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema)
+          (childPlan, tableName, childSchema) <- extractQueryPlanRec(
+            child,
+            fallbackSchema,
+            outerSchema
+          )
+          (otherPlan, _, _) <- extractQueryPlanRec(otherExpr, fallbackSchema, outerSchema)
           leftSchema <- extractSchemaFromQueryExpr(child)
           rightSchema <- extractSchemaFromQueryExpr(otherExpr)
           condition <- extractJoinCondition(condExpr, leftSchema, rightSchema)
@@ -499,6 +585,17 @@ object QuoteMacro:
   // Sort Order Extraction
   // ============================================================================
 
+  private val sortMethodNames = Set("asc", "desc", "ascNullsFirst", "descNullsLast")
+
+  private def sortOrderFromMethod(expr: ProtoExpr, method: String): SortOrder =
+    val (direction, nullOrdering) = method match
+      case "asc"           => (SortDirection.Ascending, NullOrdering.NullsLast)
+      case "desc"          => (SortDirection.Descending, NullOrdering.NullsFirst)
+      case "ascNullsFirst" => (SortDirection.Ascending, NullOrdering.NullsFirst)
+      case "descNullsLast" => (SortDirection.Descending, NullOrdering.NullsLast)
+      case _               => (SortDirection.Ascending, NullOrdering.NullsLast)
+    SortOrder(expr, direction, nullOrdering)
+
   private def extractSortOrders(using
       q: Quotes
   )(terms: List[q.reflect.Term], schema: ProtoSchema): Either[String, Vector[SortOrder]] =
@@ -522,18 +619,20 @@ object QuoteMacro:
       case Typed(expr, _) =>
         extractSortOrder(expr, schema)
 
-      // _.field.asc / _.field.desc
-      case Select(exprTerm, sortMethod)
-          if Set("asc", "desc", "ascNullsFirst", "descNullsLast").contains(sortMethod) =>
-        extractValueExpr(exprTerm, schema).map { expr =>
-          val (direction, nullOrdering) = sortMethod match
-            case "asc"           => (SortDirection.Ascending, NullOrdering.NullsLast)
-            case "desc"          => (SortDirection.Descending, NullOrdering.NullsFirst)
-            case "ascNullsFirst" => (SortDirection.Ascending, NullOrdering.NullsFirst)
-            case "descNullsLast" => (SortDirection.Descending, NullOrdering.NullsLast)
-            case _               => (SortDirection.Ascending, NullOrdering.NullsLast)
-          SortOrder(expr, direction, nullOrdering)
-        }
+      // _.field.asc / _.field.desc (direct Select form)
+      case Select(exprTerm, sortMethod) if sortMethodNames.contains(sortMethod) =>
+        extractValueExpr(exprTerm, schema).map(sortOrderFromMethod(_, sortMethod))
+
+      // Extension method form: Apply(TypeApply(Select(_, "desc"), _), List(exprTerm))
+      case Apply(TypeApply(fun, _), List(exprTerm))
+          if extractMethodName(fun).exists(sortMethodNames.contains) =>
+        val sortMethod = extractMethodName(fun).get
+        extractValueExpr(exprTerm, schema).map(sortOrderFromMethod(_, sortMethod))
+
+      // Extension method form without TypeApply: Apply(Select(_, "desc"), List(exprTerm))
+      case Apply(fun, List(exprTerm)) if extractMethodName(fun).exists(sortMethodNames.contains) =>
+        val sortMethod = extractMethodName(fun).get
+        extractValueExpr(exprTerm, schema).map(sortOrderFromMethod(_, sortMethod))
 
       // Default: ascending sort without explicit direction
       case other =>
@@ -645,84 +744,99 @@ object QuoteMacro:
 
   private def extractPredicateExpr(using
       q: Quotes
-  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, ProtoExpr] =
+  )(
+      term: q.reflect.Term,
+      schema: ProtoSchema,
+      outerSchema: Option[ProtoSchema] = None
+  ): Either[String, ProtoExpr] =
     import q.reflect.*
 
     term match
       case Inlined(_, _, inner) =>
-        extractPredicateExpr(inner, schema)
+        extractPredicateExpr(inner, schema, outerSchema)
 
       case Block(List(DefDef(_, _, _, Some(body))), _) =>
         // Lambda expression: f => body
-        extractPredicateExpr(body, schema)
+        extractPredicateExpr(body, schema, outerSchema)
 
       case Block(_, expr) =>
-        extractPredicateExpr(expr, schema)
+        extractPredicateExpr(expr, schema, outerSchema)
 
       case Typed(expr, _) =>
-        extractPredicateExpr(expr, schema)
+        extractPredicateExpr(expr, schema, outerSchema)
 
       // _.field > value (comparison with literal on right)
       case Apply(Select(leftExpr, op), List(rightExpr))
           if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield makeComparison(op, left, right)
 
       // _.field > value (via extension method with TypeApply)
-      case Apply(Apply(TypeApply(Select(_, op), _), List(leftExpr)), List(rightExpr))
+      // Also handles trait method === / =!= with evidence parameter:
+      //   Extension: Apply(Apply(TypeApply(Select(module, op), _), List(left)), List(right))
+      //   Trait:     Apply(Apply(TypeApply(Select(receiver, op), _), List(right)), List(evidence))
+      case Apply(Apply(TypeApply(Select(receiver, op), _), List(firstArg)), List(secondArg))
           if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
-        for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+        // Try extension method interpretation first (firstArg=left, secondArg=right)
+        val extensionResult = for
+          left <- extractValueExpr(firstArg, schema, outerSchema)
+          right <- extractValueExpr(secondArg, schema, outerSchema)
         yield makeComparison(op, left, right)
+        // Fall back to trait method interpretation (receiver=left, firstArg=right, secondArg=evidence)
+        extensionResult.left.flatMap { _ =>
+          for
+            left <- extractValueExpr(receiver, schema, outerSchema)
+            right <- extractValueExpr(firstArg, schema, outerSchema)
+          yield makeComparison(op, left, right)
+        }
 
       // _.field > value (via extension method without TypeApply - Expr$package pattern)
       case Apply(Apply(Select(_, op), List(leftExpr)), List(rightExpr))
           if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield makeComparison(op, left, right)
 
       // expr && expr
       case Apply(Select(leftExpr, "&&"), List(rightExpr)) =>
         for
-          left <- extractPredicateExpr(leftExpr, schema)
-          right <- extractPredicateExpr(rightExpr, schema)
+          left <- extractPredicateExpr(leftExpr, schema, outerSchema)
+          right <- extractPredicateExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.And(Vector(left, right))
 
       // expr || expr
       case Apply(Select(leftExpr, "||"), List(rightExpr)) =>
         for
-          left <- extractPredicateExpr(leftExpr, schema)
-          right <- extractPredicateExpr(rightExpr, schema)
+          left <- extractPredicateExpr(leftExpr, schema, outerSchema)
+          right <- extractPredicateExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Or(Vector(left, right))
 
       // !expr - direct method call
       case Select(inner, "unary_!") =>
-        extractPredicateExpr(inner, schema).map(ProtoExpr.Not(_))
+        extractPredicateExpr(inner, schema, outerSchema).map(ProtoExpr.Not(_))
 
       // !expr - via extension method: Expr$package.unary_!(innerExpr)
       case Apply(fun, List(inner)) if extractMethodName(fun).contains("unary_!") =>
-        extractPredicateExpr(inner, schema).map(ProtoExpr.Not(_))
+        extractPredicateExpr(inner, schema, outerSchema).map(ProtoExpr.Not(_))
 
       // expr.isNull - direct method call
       case Select(inner, "isNull") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.IsNull(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.IsNull(_))
 
       // expr.isNull - via extension method: Expr$package.isNull[T](innerExpr)
       case Apply(fun, List(inner)) if extractMethodName(fun).contains("isNull") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.IsNull(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.IsNull(_))
 
       // expr.isNotNull - direct method call
       case Select(inner, "isNotNull") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.IsNotNull(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.IsNotNull(_))
 
       // expr.isNotNull - via extension method: Expr$package.isNotNull[T](innerExpr)
       case Apply(fun, List(inner)) if extractMethodName(fun).contains("isNotNull") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.IsNotNull(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.IsNotNull(_))
 
       // Literal true/false
       case Literal(BooleanConstant(v)) =>
@@ -733,46 +847,50 @@ object QuoteMacro:
       // expr.in(subquery) - direct method call
       case Apply(Select(leftExpr, "in"), List(subqueryExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          subPlan <- extractSubqueryPlan(subqueryExpr)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          subPlan <- extractSubqueryPlan(subqueryExpr, Some(schema))
         yield ProtoExpr.InSubquery(left, subPlan)
 
       // expr.in(subquery) - extension method with TypeApply
       case Apply(Apply(TypeApply(Select(_, "in"), _), List(leftExpr)), List(subqueryExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          subPlan <- extractSubqueryPlan(subqueryExpr)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          subPlan <- extractSubqueryPlan(subqueryExpr, Some(schema))
         yield ProtoExpr.InSubquery(left, subPlan)
 
       // expr.notIn(subquery) - direct method call
       case Apply(Select(leftExpr, "notIn"), List(subqueryExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          subPlan <- extractSubqueryPlan(subqueryExpr)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          subPlan <- extractSubqueryPlan(subqueryExpr, Some(schema))
         yield ProtoExpr.Not(ProtoExpr.InSubquery(left, subPlan))
 
       // expr.notIn(subquery) - extension method with TypeApply
       case Apply(Apply(TypeApply(Select(_, "notIn"), _), List(leftExpr)), List(subqueryExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          subPlan <- extractSubqueryPlan(subqueryExpr)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          subPlan <- extractSubqueryPlan(subqueryExpr, Some(schema))
         yield ProtoExpr.Not(ProtoExpr.InSubquery(left, subPlan))
 
       // exists(subquery) - free function
       case Apply(TypeApply(fun, _), List(subqueryExpr))
           if extractMethodName(fun).contains("exists") =>
-        extractSubqueryPlan(subqueryExpr).map(ProtoExpr.Exists(_))
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(ProtoExpr.Exists(_))
 
       case Apply(fun, List(subqueryExpr)) if extractMethodName(fun).contains("exists") =>
-        extractSubqueryPlan(subqueryExpr).map(ProtoExpr.Exists(_))
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(ProtoExpr.Exists(_))
 
       // notExists(subquery) - free function
       case Apply(TypeApply(fun, _), List(subqueryExpr))
           if extractMethodName(fun).contains("notExists") =>
-        extractSubqueryPlan(subqueryExpr).map(plan => ProtoExpr.Not(ProtoExpr.Exists(plan)))
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(plan =>
+          ProtoExpr.Not(ProtoExpr.Exists(plan))
+        )
 
       case Apply(fun, List(subqueryExpr)) if extractMethodName(fun).contains("notExists") =>
-        extractSubqueryPlan(subqueryExpr).map(plan => ProtoExpr.Not(ProtoExpr.Exists(plan)))
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(plan =>
+          ProtoExpr.Not(ProtoExpr.Exists(plan))
+        )
 
       // Extension method call: Expr$package.op(leftExpr)(rightExpr) - curried form
       case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) =>
@@ -780,28 +898,28 @@ object QuoteMacro:
         methodOpt match
           case Some("in") =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              subPlan <- extractSubqueryPlan(rightExpr)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              subPlan <- extractSubqueryPlan(rightExpr, Some(schema))
             yield ProtoExpr.InSubquery(left, subPlan)
           case Some("notIn") =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              subPlan <- extractSubqueryPlan(rightExpr)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              subPlan <- extractSubqueryPlan(rightExpr, Some(schema))
             yield ProtoExpr.Not(ProtoExpr.InSubquery(left, subPlan))
           case Some(op) if Set(">", ">=", "<", "<=", "===", "=!=").contains(op) =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              right <- extractValueExpr(rightExpr, schema)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              right <- extractValueExpr(rightExpr, schema, outerSchema)
             yield makeComparison(op, left, right)
           case Some("&&") =>
             for
-              left <- extractPredicateExpr(leftExpr, schema)
-              right <- extractPredicateExpr(rightExpr, schema)
+              left <- extractPredicateExpr(leftExpr, schema, outerSchema)
+              right <- extractPredicateExpr(rightExpr, schema, outerSchema)
             yield ProtoExpr.And(Vector(left, right))
           case Some("||") =>
             for
-              left <- extractPredicateExpr(leftExpr, schema)
-              right <- extractPredicateExpr(rightExpr, schema)
+              left <- extractPredicateExpr(leftExpr, schema, outerSchema)
+              right <- extractPredicateExpr(rightExpr, schema, outerSchema)
             yield ProtoExpr.Or(Vector(left, right))
           case Some(op) =>
             Left(s"Unsupported operator '$op' in: ${term.show}")
@@ -815,22 +933,28 @@ object QuoteMacro:
 
   private def extractValueExpr(using
       q: Quotes
-  )(term: q.reflect.Term, schema: ProtoSchema): Either[String, ProtoExpr] =
+  )(
+      term: q.reflect.Term,
+      schema: ProtoSchema,
+      outerSchema: Option[ProtoSchema] = None
+  ): Either[String, ProtoExpr] =
     import q.reflect.*
 
     term match
       case Inlined(_, _, inner) =>
-        extractValueExpr(inner, schema)
+        extractValueExpr(inner, schema, outerSchema)
 
       case Block(_, expr) =>
-        extractValueExpr(expr, schema)
+        extractValueExpr(expr, schema, outerSchema)
 
       case Typed(expr, _) =>
-        extractValueExpr(expr, schema)
+        extractValueExpr(expr, schema, outerSchema)
 
       // _.fieldName via selectDynamic
       case Apply(Select(_, "selectDynamic"), List(Literal(StringConstant(fieldName)))) =>
-        schema.fields.find(_.name == fieldName) match
+        schema.fields
+          .find(_.name == fieldName)
+          .orElse(outerSchema.flatMap(_.fields.find(_.name == fieldName))) match
           case Some(field) =>
             Right(ProtoExpr.ColumnRef(fieldName, None, field.dataType, field.nullable))
           case None =>
@@ -838,8 +962,12 @@ object QuoteMacro:
 
       // Direct field access via Dynamic
       case Select(_, fieldName)
-          if !fieldName.startsWith("$") && schema.fields.exists(_.name == fieldName) =>
-        schema.fields.find(_.name == fieldName) match
+          if !fieldName.startsWith("$") &&
+            (schema.fields.exists(_.name == fieldName) ||
+              outerSchema.exists(_.fields.exists(_.name == fieldName))) =>
+        schema.fields
+          .find(_.name == fieldName)
+          .orElse(outerSchema.flatMap(_.fields.find(_.name == fieldName))) match
           case Some(field) =>
             Right(ProtoExpr.ColumnRef(fieldName, None, field.dataType, field.nullable))
           case None =>
@@ -866,12 +994,14 @@ object QuoteMacro:
 
       // Expr.lit(value)
       case Apply(Select(_, "lit"), List(valueExpr)) =>
-        extractValueExpr(valueExpr, schema)
+        extractValueExpr(valueExpr, schema, outerSchema)
 
       // FieldSelector.typedColumn[A, T](fs, "fieldName")(using enc) - from transparent inline macro
       case Apply(Apply(TypeApply(Select(_, "typedColumn"), _), List(_, fieldNameExpr)), _) =>
         extractStringLiteral(fieldNameExpr).flatMap { fieldName =>
-          schema.fields.find(_.name == fieldName) match
+          schema.fields
+            .find(_.name == fieldName)
+            .orElse(outerSchema.flatMap(_.fields.find(_.name == fieldName))) match
             case Some(field) =>
               Right(ProtoExpr.ColumnRef(fieldName, None, field.dataType, field.nullable))
             case None =>
@@ -882,8 +1012,8 @@ object QuoteMacro:
       case Apply(Apply(TypeApply(Select(_, op), _), List(leftExpr)), List(rightExpr))
           if Set("+", "-", "*", "/").contains(op) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield op match
           case "+" => ProtoExpr.Add(left, right)
           case "-" => ProtoExpr.Subtract(left, right)
@@ -906,88 +1036,135 @@ object QuoteMacro:
       // Arithmetic: left + right
       case Apply(Select(leftExpr, "+"), List(rightExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Add(left, right)
 
       // Arithmetic: left - right
       case Apply(Select(leftExpr, "-"), List(rightExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Subtract(left, right)
 
       // Arithmetic: left * right
       case Apply(Select(leftExpr, "*"), List(rightExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Multiply(left, right)
 
       // Arithmetic: left / right
       case Apply(Select(leftExpr, "/"), List(rightExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Divide(left, right)
 
       // Unary minus: -expr
       case Select(inner, "unary_-") =>
-        extractValueExpr(inner, schema).map { expr =>
+        extractValueExpr(inner, schema, outerSchema).map { expr =>
           ProtoExpr.Multiply(expr, ProtoExpr.Literal(LiteralValue.IntValue(-1)))
         }
 
       // String operations: expr.upper, expr.lower
       case Select(inner, "upper") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.Upper(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.Upper(_))
 
       case Select(inner, "lower") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.Lower(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.Lower(_))
 
       // String operations via extension method: Expr$package.upper(innerExpr)
       case Apply(fun, List(inner)) if extractMethodName(fun).contains("upper") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.Upper(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.Upper(_))
 
       case Apply(fun, List(inner)) if extractMethodName(fun).contains("lower") =>
-        extractValueExpr(inner, schema).map(ProtoExpr.Lower(_))
+        extractValueExpr(inner, schema, outerSchema).map(ProtoExpr.Lower(_))
 
       // String concat: str1 ++ str2
       case Apply(Select(leftExpr, "++"), List(rightExpr)) =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Concat(Vector(left, right))
 
       // String concat via extension method: Expr$package.++(leftExpr)(rightExpr)
       case Apply(Apply(fun, List(leftExpr)), List(rightExpr))
           if extractMethodName(fun).contains("++") =>
         for
-          left <- extractValueExpr(leftExpr, schema)
-          right <- extractValueExpr(rightExpr, schema)
+          left <- extractValueExpr(leftExpr, schema, outerSchema)
+          right <- extractValueExpr(rightExpr, schema, outerSchema)
         yield ProtoExpr.Concat(Vector(left, right))
+
+      // .over(windowSpec) — window function with specification
+      // Must be before the unguarded arithmetic catch-all below
+      case Apply(Select(innerExpr, "over"), List(specExpr)) =>
+        for
+          func <- extractWindowFunctionOrExpr(innerExpr, schema, outerSchema)
+          spec <- extractWindowSpec(specExpr, schema, outerSchema)
+        yield ProtoExpr.WindowExpr(func, spec._1, spec._2, spec._3)
+
+      // .over() via extension method with TypeApply
+      case Apply(TypeApply(Select(innerExpr, "over"), _), List(specExpr)) =>
+        for
+          func <- extractWindowFunctionOrExpr(innerExpr, schema, outerSchema)
+          spec <- extractWindowSpec(specExpr, schema, outerSchema)
+        yield ProtoExpr.WindowExpr(func, spec._1, spec._2, spec._3)
+
+      // .over() via curried extension: over$extension(expr)(spec)
+      case Apply(Apply(fun, List(innerExpr)), List(specExpr))
+          if extractMethodName(fun).contains("over") =>
+        for
+          func <- extractWindowFunctionOrExpr(innerExpr, schema, outerSchema)
+          spec <- extractWindowSpec(specExpr, schema, outerSchema)
+        yield ProtoExpr.WindowExpr(func, spec._1, spec._2, spec._3)
+
+      case Apply(Apply(TypeApply(fun, _), List(innerExpr)), List(specExpr))
+          if extractMethodName(fun).contains("over") =>
+        for
+          func <- extractWindowFunctionOrExpr(innerExpr, schema, outerSchema)
+          spec <- extractWindowSpec(specExpr, schema, outerSchema)
+        yield ProtoExpr.WindowExpr(func, spec._1, spec._2, spec._3)
+
+      // scalarSubquery(query) — scalar subquery as value expression
+      // Must be before the unguarded arithmetic catch-all below
+      case Apply(Apply(TypeApply(fun, _), List(subqueryExpr)), _)
+          if extractMethodName(fun).contains("scalarSubquery") =>
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(ProtoExpr.ScalarSubquery(_))
+
+      case Apply(Apply(fun, List(subqueryExpr)), _)
+          if extractMethodName(fun).contains("scalarSubquery") =>
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(ProtoExpr.ScalarSubquery(_))
+
+      case Apply(TypeApply(fun, _), List(subqueryExpr))
+          if extractMethodName(fun).contains("scalarSubquery") =>
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(ProtoExpr.ScalarSubquery(_))
+
+      case Apply(fun, List(subqueryExpr)) if extractMethodName(fun).contains("scalarSubquery") =>
+        extractSubqueryPlan(subqueryExpr, Some(schema)).map(ProtoExpr.ScalarSubquery(_))
 
       // Arithmetic via extension method: Expr$package.+(leftExpr)(rightExpr) - curried form
       case Apply(Apply(fun, List(leftExpr)), List(rightExpr)) =>
         extractMethodName(fun) match
           case Some("+") =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              right <- extractValueExpr(rightExpr, schema)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              right <- extractValueExpr(rightExpr, schema, outerSchema)
             yield ProtoExpr.Add(left, right)
           case Some("-") =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              right <- extractValueExpr(rightExpr, schema)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              right <- extractValueExpr(rightExpr, schema, outerSchema)
             yield ProtoExpr.Subtract(left, right)
           case Some("*") =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              right <- extractValueExpr(rightExpr, schema)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              right <- extractValueExpr(rightExpr, schema, outerSchema)
             yield ProtoExpr.Multiply(left, right)
           case Some("/") =>
             for
-              left <- extractValueExpr(leftExpr, schema)
-              right <- extractValueExpr(rightExpr, schema)
+              left <- extractValueExpr(leftExpr, schema, outerSchema)
+              right <- extractValueExpr(rightExpr, schema, outerSchema)
             yield ProtoExpr.Divide(left, right)
           case Some(op) =>
             Left(s"Unsupported arithmetic operator '$op' in: ${term.show}")
@@ -995,7 +1172,10 @@ object QuoteMacro:
             Left(s"Could not extract method name in: ${term.show}")
 
       case other =>
-        Left(s"Unsupported value expression: ${other.show}")
+        // Try as aggregate expression (e.g., max(e.salary) inside scalar subquery select)
+        extractAggregateExpr(other, schema) match
+          case Right(expr) => Right(expr)
+          case Left(_)     => Left(s"Unsupported value expression: ${other.show}")
 
   private def makeComparison(op: String, left: ProtoExpr, right: ProtoExpr): ProtoExpr =
     op match
@@ -1051,11 +1231,14 @@ object QuoteMacro:
     */
   private def extractSubqueryPlan(using
       q: Quotes
-  )(subqueryExpr: q.reflect.Term): Either[String, ProtoLogicalPlan] =
+  )(
+      subqueryExpr: q.reflect.Term,
+      outerSchema: Option[ProtoSchema] = None
+  ): Either[String, ProtoLogicalPlan] =
     // Use the subquery's type for schema if available; empty fallback is fine
     // because the inner Table[B] will derive its own schema from type args.
     val innerSchema = extractSchemaFromQueryExpr(subqueryExpr).getOrElse(ProtoSchema(Vector.empty))
-    extractQueryPlanRec(subqueryExpr, innerSchema).map(_._1)
+    extractQueryPlanRec(subqueryExpr, innerSchema, outerSchema).map(_._1)
 
   // ============================================================================
   // GroupBy/Aggregate Extraction
@@ -1295,6 +1478,309 @@ object QuoteMacro:
 
       case other =>
         Left(s"Unsupported aggregate expression: ${other.show}")
+
+  // ============================================================================
+  // Window Function Extraction
+  // ============================================================================
+
+  /** Extract the inner function of a .over() call — window functions, aggregates, or any expr. */
+  private def extractWindowFunctionOrExpr(using
+      q: Quotes
+  )(
+      term: q.reflect.Term,
+      schema: ProtoSchema,
+      outerSchema: Option[ProtoSchema]
+  ): Either[String, ProtoExpr] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractWindowFunctionOrExpr(inner, schema, outerSchema)
+
+      case Block(_, expr) =>
+        extractWindowFunctionOrExpr(expr, schema, outerSchema)
+
+      case Typed(expr, _) =>
+        extractWindowFunctionOrExpr(expr, schema, outerSchema)
+
+      // rowNumber (parameterless)
+      case sel @ Select(_, _) if extractMethodName(sel).contains("rowNumber") =>
+        Right(ProtoExpr.RowNumber())
+
+      case Ident("rowNumber") =>
+        Right(ProtoExpr.RowNumber())
+
+      // rank (parameterless)
+      case sel @ Select(_, _) if extractMethodName(sel).contains("rank") =>
+        Right(ProtoExpr.Rank())
+
+      case Ident("rank") =>
+        Right(ProtoExpr.Rank())
+
+      // denseRank (parameterless)
+      case sel @ Select(_, _) if extractMethodName(sel).contains("denseRank") =>
+        Right(ProtoExpr.DenseRank())
+
+      case Ident("denseRank") =>
+        Right(ProtoExpr.DenseRank())
+
+      // ntile(n)
+      case Apply(Apply(TypeApply(fun, _), List(argExpr)), _)
+          if extractMethodName(fun).contains("ntile") =>
+        extractValueExpr(argExpr, schema, outerSchema).map(ProtoExpr.Ntile(_))
+
+      case Apply(TypeApply(fun, _), List(argExpr)) if extractMethodName(fun).contains("ntile") =>
+        extractValueExpr(argExpr, schema, outerSchema).map(ProtoExpr.Ntile(_))
+
+      case Apply(fun, List(argExpr)) if extractMethodName(fun).contains("ntile") =>
+        extractValueExpr(argExpr, schema, outerSchema).map(ProtoExpr.Ntile(_))
+
+      // lead(expr, offset)(using enc) — 2 args + implicits
+      case Apply(Apply(Apply(TypeApply(fun, _), List(exprArg, offsetArg)), _), _)
+          if extractMethodName(fun).contains("lead") =>
+        for
+          input <- extractValueExprFromLambda(exprArg, schema)
+          offset <- extractValueExpr(offsetArg, schema, outerSchema)
+        yield ProtoExpr.Lead(input, offset, None)
+
+      case Apply(Apply(TypeApply(fun, _), List(exprArg, offsetArg)), _)
+          if extractMethodName(fun).contains("lead") =>
+        for
+          input <- extractValueExprFromLambda(exprArg, schema)
+          offset <- extractValueExpr(offsetArg, schema, outerSchema)
+        yield ProtoExpr.Lead(input, offset, None)
+
+      case Apply(TypeApply(fun, _), List(exprArg, offsetArg))
+          if extractMethodName(fun).contains("lead") =>
+        for
+          input <- extractValueExprFromLambda(exprArg, schema)
+          offset <- extractValueExpr(offsetArg, schema, outerSchema)
+        yield ProtoExpr.Lead(input, offset, None)
+
+      // lead(expr) — single arg with default offset
+      case Apply(Apply(TypeApply(fun, _), List(exprArg)), _)
+          if extractMethodName(fun).contains("lead") =>
+        extractValueExprFromLambda(exprArg, schema).map(input =>
+          ProtoExpr.Lead(input, ProtoExpr.lit(1), None)
+        )
+
+      case Apply(TypeApply(fun, _), List(exprArg)) if extractMethodName(fun).contains("lead") =>
+        extractValueExprFromLambda(exprArg, schema).map(input =>
+          ProtoExpr.Lead(input, ProtoExpr.lit(1), None)
+        )
+
+      case Apply(fun, List(exprArg)) if extractMethodName(fun).contains("lead") =>
+        extractValueExprFromLambda(exprArg, schema).map(input =>
+          ProtoExpr.Lead(input, ProtoExpr.lit(1), None)
+        )
+
+      // lag(expr, offset)(using enc) — same patterns as lead
+      case Apply(Apply(Apply(TypeApply(fun, _), List(exprArg, offsetArg)), _), _)
+          if extractMethodName(fun).contains("lag") =>
+        for
+          input <- extractValueExprFromLambda(exprArg, schema)
+          offset <- extractValueExpr(offsetArg, schema, outerSchema)
+        yield ProtoExpr.Lag(input, offset, None)
+
+      case Apply(Apply(TypeApply(fun, _), List(exprArg, offsetArg)), _)
+          if extractMethodName(fun).contains("lag") =>
+        for
+          input <- extractValueExprFromLambda(exprArg, schema)
+          offset <- extractValueExpr(offsetArg, schema, outerSchema)
+        yield ProtoExpr.Lag(input, offset, None)
+
+      case Apply(TypeApply(fun, _), List(exprArg, offsetArg))
+          if extractMethodName(fun).contains("lag") =>
+        for
+          input <- extractValueExprFromLambda(exprArg, schema)
+          offset <- extractValueExpr(offsetArg, schema, outerSchema)
+        yield ProtoExpr.Lag(input, offset, None)
+
+      // lag(expr) — single arg with default offset
+      case Apply(Apply(TypeApply(fun, _), List(exprArg)), _)
+          if extractMethodName(fun).contains("lag") =>
+        extractValueExprFromLambda(exprArg, schema).map(input =>
+          ProtoExpr.Lag(input, ProtoExpr.lit(1), None)
+        )
+
+      case Apply(TypeApply(fun, _), List(exprArg)) if extractMethodName(fun).contains("lag") =>
+        extractValueExprFromLambda(exprArg, schema).map(input =>
+          ProtoExpr.Lag(input, ProtoExpr.lit(1), None)
+        )
+
+      case Apply(fun, List(exprArg)) if extractMethodName(fun).contains("lag") =>
+        extractValueExprFromLambda(exprArg, schema).map(input =>
+          ProtoExpr.Lag(input, ProtoExpr.lit(1), None)
+        )
+
+      // firstValue(expr)(using enc)
+      case Apply(Apply(TypeApply(fun, _), List(exprArg)), _)
+          if extractMethodName(fun).contains("firstValue") =>
+        extractValueExprFromLambda(exprArg, schema).map(
+          ProtoExpr.FirstValue(_, ignoreNulls = false)
+        )
+
+      case Apply(TypeApply(fun, _), List(exprArg))
+          if extractMethodName(fun).contains("firstValue") =>
+        extractValueExprFromLambda(exprArg, schema).map(
+          ProtoExpr.FirstValue(_, ignoreNulls = false)
+        )
+
+      case Apply(fun, List(exprArg)) if extractMethodName(fun).contains("firstValue") =>
+        extractValueExprFromLambda(exprArg, schema).map(
+          ProtoExpr.FirstValue(_, ignoreNulls = false)
+        )
+
+      // lastValue(expr)(using enc)
+      case Apply(Apply(TypeApply(fun, _), List(exprArg)), _)
+          if extractMethodName(fun).contains("lastValue") =>
+        extractValueExprFromLambda(exprArg, schema).map(ProtoExpr.LastValue(_, ignoreNulls = false))
+
+      case Apply(TypeApply(fun, _), List(exprArg))
+          if extractMethodName(fun).contains("lastValue") =>
+        extractValueExprFromLambda(exprArg, schema).map(ProtoExpr.LastValue(_, ignoreNulls = false))
+
+      case Apply(fun, List(exprArg)) if extractMethodName(fun).contains("lastValue") =>
+        extractValueExprFromLambda(exprArg, schema).map(ProtoExpr.LastValue(_, ignoreNulls = false))
+
+      // Fallback: try aggregate extraction (sum, count, etc. as window)
+      case other =>
+        extractAggregateExpr(other, schema) match
+          case Right(expr) => Right(expr)
+          // Fallback: any value expression
+          case Left(_) => extractValueExpr(other, schema, outerSchema)
+
+  /** Extract window specification from Window.partitionBy(...).orderBy(...).rowsBetween(...) chain.
+    */
+  private def extractWindowSpec(using
+      q: Quotes
+  )(
+      term: q.reflect.Term,
+      schema: ProtoSchema,
+      outerSchema: Option[ProtoSchema]
+  ): Either[String, (Vector[ProtoExpr], Vector[SortOrder], Option[WindowFrame])] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractWindowSpec(inner, schema, outerSchema)
+
+      case Block(_, expr) =>
+        extractWindowSpec(expr, schema, outerSchema)
+
+      case Typed(expr, _) =>
+        extractWindowSpec(expr, schema, outerSchema)
+
+      // .rowsBetween(start, end)
+      case Apply(Select(inner, "rowsBetween"), List(startExpr, endExpr)) =>
+        for
+          (partition, order, _) <- extractWindowSpec(inner, schema, outerSchema)
+          start <- extractFrameBound(startExpr)
+          end <- extractFrameBound(endExpr)
+        yield (partition, order, Some(WindowFrame(FrameType.Rows, start, end)))
+
+      // .rangeBetween(start, end)
+      case Apply(Select(inner, "rangeBetween"), List(startExpr, endExpr)) =>
+        for
+          (partition, order, _) <- extractWindowSpec(inner, schema, outerSchema)
+          start <- extractFrameBound(startExpr)
+          end <- extractFrameBound(endExpr)
+        yield (partition, order, Some(WindowFrame(FrameType.Range, start, end)))
+
+      // .orderBy(sorts*) on WindowSpec
+      case Apply(Select(inner, "orderBy"), sortArgs) =>
+        for
+          (partition, _, _) <- extractWindowSpec(inner, schema, outerSchema)
+          orders <- extractSortOrders(unwrapVarargs(sortArgs), schema)
+        yield (partition, orders, None)
+
+      // Window.partitionBy(exprs*) — base case
+      case Apply(Select(_, "partitionBy"), partArgs) =>
+        val unwrapped = unwrapVarargs(partArgs)
+        val results = unwrapped.map(extractValueExpr(_, schema, outerSchema))
+        val errors = results.collect { case Left(err) => err }
+        if errors.nonEmpty then Left(errors.mkString("; "))
+        else Right((results.collect { case Right(e) => e }.toVector, Vector.empty, None))
+
+      case Apply(TypeApply(Select(_, "partitionBy"), _), partArgs) =>
+        val unwrapped = unwrapVarargs(partArgs)
+        val results = unwrapped.map(extractValueExpr(_, schema, outerSchema))
+        val errors = results.collect { case Left(err) => err }
+        if errors.nonEmpty then Left(errors.mkString("; "))
+        else Right((results.collect { case Right(e) => e }.toVector, Vector.empty, None))
+
+      // Window.orderBy(sorts*) — base case (no partition)
+      case Apply(TypeApply(Select(_, "orderBy"), _), sortArgs) =>
+        extractSortOrders(unwrapVarargs(sortArgs), schema)
+          .map(orders => (Vector.empty, orders, None))
+
+      case other =>
+        Left(s"Unsupported window specification: ${other.show}")
+
+  /** Extract a FrameBound from its AST representation. */
+  private def extractFrameBound(using
+      q: Quotes
+  )(term: q.reflect.Term): Either[String, FrameBound] =
+    import q.reflect.*
+
+    term match
+      case Inlined(_, _, inner) =>
+        extractFrameBound(inner)
+
+      case Block(_, expr) =>
+        extractFrameBound(expr)
+
+      case Typed(expr, _) =>
+        extractFrameBound(expr)
+
+      // FrameBound.UnboundedPreceding, FrameBound.CurrentRow, etc.
+      case Select(_, "UnboundedPreceding") => Right(FrameBound.UnboundedPreceding)
+      case Select(_, "UnboundedFollowing") => Right(FrameBound.UnboundedFollowing)
+      case Select(_, "CurrentRow")         => Right(FrameBound.CurrentRow)
+
+      // FrameBound.Preceding(n), FrameBound.Following(n)
+      case Apply(Select(_, "Preceding"), List(nExpr)) =>
+        extractLongLiteral(nExpr).map(FrameBound.Preceding(_))
+      case Apply(Select(_, "Following"), List(nExpr)) =>
+        extractLongLiteral(nExpr).map(FrameBound.Following(_))
+
+      // Apply with TypeApply for enum constructors
+      case Apply(TypeApply(Select(_, "Preceding"), _), List(nExpr)) =>
+        extractLongLiteral(nExpr).map(FrameBound.Preceding(_))
+      case Apply(TypeApply(Select(_, "Following"), _), List(nExpr)) =>
+        extractLongLiteral(nExpr).map(FrameBound.Following(_))
+
+      case other =>
+        Left(s"Unsupported frame bound: ${other.show}")
+
+  /** Extract a Long literal from a term. */
+  private def extractLongLiteral(using
+      q: Quotes
+  )(term: q.reflect.Term): Either[String, Long] =
+    import q.reflect.*
+    term match
+      case Inlined(_, _, inner)                => extractLongLiteral(inner)
+      case Literal(IntConstant(n))             => Right(n.toLong)
+      case Literal(LongConstant(n))            => Right(n)
+      case Apply(Select(_, "toLong"), List(e)) => extractLongLiteral(e)
+      case other => Left(s"Expected numeric literal for frame bound, got: ${other.show}")
+
+  /** Unwrap varargs from their AST representation. */
+  private def unwrapVarargs(using
+      q: Quotes
+  )(terms: List[q.reflect.Term]): List[q.reflect.Term] =
+    import q.reflect.*
+    terms.flatMap { term =>
+      term match
+        case Typed(Repeated(elems, _), _)                  => elems
+        case Repeated(elems, _)                            => elems
+        case t if t.getClass.getSimpleName == "SeqLiteral" =>
+          try
+            val elemsField = t.getClass.getMethod("elems")
+            elemsField.invoke(t).asInstanceOf[List[Term]]
+          catch case _: Exception => List(t)
+        case other => List(other)
+    }
 
   // ============================================================================
   // Join Condition Extraction (two-schema support)

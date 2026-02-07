@@ -43,4 +43,3 @@ object Column:
       enc: ProtoEncoder[T]
   ): Column[A, T] =
     new Column[A, T](name, protoType, nullable, enc, None)
-

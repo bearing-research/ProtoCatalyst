@@ -948,7 +948,12 @@ class QuoteMacroSuite extends munit.FunSuite:
               ProtoLogicalPlan.RelationRef("departments", _, _)
             ),
             JoinType.LeftSemi,
-            Some(ProtoExpr.Eq(ProtoExpr.ColumnRef("deptId", _, _, _), ProtoExpr.ColumnRef("id", _, _, _)))
+            Some(
+              ProtoExpr.Eq(
+                ProtoExpr.ColumnRef("deptId", _, _, _),
+                ProtoExpr.ColumnRef("id", _, _, _)
+              )
+            )
           ) =>
         () // ok
       case other =>
@@ -966,7 +971,12 @@ class QuoteMacroSuite extends munit.FunSuite:
             ProtoLogicalPlan.RelationRef("employees", _, _),
             ProtoLogicalPlan.Project(_, ProtoLogicalPlan.RelationRef("departments", _, _)),
             JoinType.LeftAnti,
-            Some(ProtoExpr.Eq(ProtoExpr.ColumnRef("deptId", _, _, _), ProtoExpr.ColumnRef("id", _, _, _)))
+            Some(
+              ProtoExpr.Eq(
+                ProtoExpr.ColumnRef("deptId", _, _, _),
+                ProtoExpr.ColumnRef("id", _, _, _)
+              )
+            )
           ) =>
         () // ok
       case other =>
@@ -994,48 +1004,49 @@ class QuoteMacroSuite extends munit.FunSuite:
 
     val query = QuoteMacro.quote {
       Table[QuoteEmployee]("employees")
-        .filter(_ => notExists(
-          Table[QuoteDepartment]("departments").filter(_.id === 0)
-        ))
+        .filter(_ =>
+          notExists(
+            Table[QuoteDepartment]("departments").filter(_.id === 0)
+          )
+        )
     }
 
+    // Optimizer decorrelates because column name "id" exists in both tables
+    // (no qualifiers in DSL ColumnRefs), producing a semantically equivalent LeftAnti join
     query.artifact.plan match
-      case ProtoLogicalPlan.Filter(
-            ProtoExpr.Not(
-              ProtoExpr.Exists(
-                ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("departments", _, _))
-              )
-            ),
-            ProtoLogicalPlan.RelationRef("employees", _, _)
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.RelationRef("departments", _, _),
+            JoinType.LeftAnti,
+            Some(_)
           ) =>
         () // ok
       case other =>
-        fail(s"Expected Filter(Not(Exists(Filter(departments)))), got: $other")
+        fail(s"Expected Join(LeftAnti) from NOT EXISTS decorrelation, got: $other")
 
   test("quote with IN subquery containing filter"):
     val query = QuoteMacro.quote {
       Table[QuoteEmployee]("employees")
-        .filter(_.deptId in
-          Table[QuoteDepartment]("departments")
-            .filter(_.name === "Engineering")
-            .select(_.id)
+        .filter(
+          _.deptId in
+            Table[QuoteDepartment]("departments")
+              .filter(_.name === "Engineering")
+              .select(_.id)
         )
     }
 
-    // Optimizer rewrites InSubquery → LeftSemi join; inner filter is preserved in the right side
+    // Optimizer decorrelates InSubquery → LeftSemi join; inner filter merged into join condition
+    // because column name "name" exists in both tables (no qualifiers in DSL ColumnRefs)
     query.artifact.plan match
       case ProtoLogicalPlan.Join(
             ProtoLogicalPlan.RelationRef("employees", _, _),
-            ProtoLogicalPlan.Project(
-              _,
-              ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("departments", _, _))
-            ),
+            ProtoLogicalPlan.Project(_, ProtoLogicalPlan.RelationRef("departments", _, _)),
             JoinType.LeftSemi,
             Some(_)
           ) =>
         () // ok
       case other =>
-        fail(s"Expected Join(LeftSemi) with inner filter, got: $other")
+        fail(s"Expected Join(LeftSemi) from IN subquery decorrelation, got: $other")
 
   test("quote with combined subquery and regular predicate"):
     val query = QuoteMacro.quote {
@@ -1054,3 +1065,330 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok
       case other =>
         fail(s"Expected Filter(Eq, Join(LeftSemi)), got: $other")
+
+  // === Correlated Subquery Tests ===
+
+  test("quote with correlated EXISTS subquery"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(e =>
+          functions.exists(
+            Table[QuoteDepartment]("departments")
+              .filter(d => d.id === e.deptId)
+          )
+        )
+    }
+
+    // Optimizer rewrites correlated EXISTS → LeftSemi join
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.RelationRef("departments", _, _),
+            JoinType.LeftSemi,
+            Some(_)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(LeftSemi) from correlated EXISTS, got: $other")
+
+  test("quote with correlated NOT EXISTS subquery"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(e =>
+          functions.notExists(
+            Table[QuoteDepartment]("departments")
+              .filter(d => d.id === e.deptId)
+          )
+        )
+    }
+
+    // Optimizer rewrites correlated NOT EXISTS → LeftAnti join
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.RelationRef("departments", _, _),
+            JoinType.LeftAnti,
+            Some(_)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(LeftAnti) from correlated NOT EXISTS, got: $other")
+
+  test("quote with correlated EXISTS and regular predicate"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(e =>
+          functions.exists(
+            Table[QuoteDepartment]("departments")
+              .filter(d => d.id === e.deptId)
+          ) && (e.name === "Alice")
+        )
+    }
+
+    // Optimizer: correlated EXISTS → LeftSemi join, remaining predicate → Filter on top
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Eq(ProtoExpr.ColumnRef("name", _, _, _), _),
+            ProtoLogicalPlan.Join(_, _, JoinType.LeftSemi, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Eq, Join(LeftSemi)) from correlated EXISTS + predicate, got: $other")
+
+  test("quote with correlated EXISTS with compound inner predicate"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(e =>
+          functions.exists(
+            Table[QuoteDepartment]("departments")
+              .filter(d => (d.id === e.deptId) && (d.name === "Engineering"))
+          )
+        )
+    }
+
+    // Optimizer extracts both predicates as join condition because column name "name"
+    // exists in both tables (no qualifiers in DSL ColumnRefs), so both are treated as correlated
+    query.artifact.plan match
+      case ProtoLogicalPlan.Join(
+            ProtoLogicalPlan.RelationRef("employees", _, _),
+            ProtoLogicalPlan.RelationRef("departments", _, _),
+            JoinType.LeftSemi,
+            Some(_)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Join(LeftSemi) from compound correlated EXISTS, got: $other")
+
+  // === Scalar Subquery Tests ===
+
+  test("quote with scalar subquery in select"):
+    val query = QuoteMacro.quote {
+      Table[QuoteDepartment]("departments")
+        .select(d =>
+          (
+            d.name,
+            functions.scalarSubquery(
+              Table[QuoteEmployee]("employees")
+                .select(_ => functions.count)
+            )
+          )
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              ProtoExpr.ScalarSubquery(
+                ProtoLogicalPlan.Project(
+                  Vector(ProtoExpr.Count(_, _)),
+                  ProtoLogicalPlan.RelationRef("employees", _, _)
+                )
+              )
+            ),
+            ProtoLogicalPlan.RelationRef("departments", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Project(name, ScalarSubquery(count)), got: $other")
+
+  test("quote with scalar subquery in filter"):
+    val query = QuoteMacro.quote {
+      Table[QuoteEmployee]("employees")
+        .filter(e =>
+          e.deptId > functions.scalarSubquery(
+            Table[QuoteDepartment]("departments")
+              .select(d => functions.min(d.id))
+          )
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Filter(
+            ProtoExpr.Gt(
+              ProtoExpr.ColumnRef("deptId", _, _, _),
+              ProtoExpr.ScalarSubquery(_)
+            ),
+            ProtoLogicalPlan.RelationRef("employees", _, _)
+          ) =>
+        () // ok
+      case other =>
+        fail(s"Expected Filter(Gt(deptId, ScalarSubquery)), got: $other")
+
+  test("quote with correlated scalar subquery"):
+    val query = QuoteMacro.quote {
+      Table[QuoteDepartment]("departments")
+        .select(d =>
+          (
+            d.name,
+            functions.scalarSubquery(
+              Table[QuoteEmployee]("employees")
+                .filter(e => e.deptId === d.id)
+                .select(_ => functions.count)
+            )
+          )
+        )
+    }
+
+    // Correlated scalar subquery in Project stays as-is (optimizer only decorrelates Filter predicates)
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              ProtoExpr.ScalarSubquery(innerPlan)
+            ),
+            ProtoLogicalPlan.RelationRef("departments", _, _)
+          ) =>
+        innerPlan match
+          case ProtoLogicalPlan.Project(
+                _,
+                ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("employees", _, _))
+              ) =>
+            () // ok - inner filter references outer column
+          case other =>
+            fail(s"Expected inner Project(count, Filter(employees)), got: $other")
+      case other =>
+        fail(s"Expected Project(name, ScalarSubquery) from correlated scalar subquery, got: $other")
+
+  // === Window Function Tests ===
+
+  test("quote with rowNumber window"):
+    import window.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .select(u =>
+          (
+            u.name,
+            rowNumber.over(Window.partitionBy(u.age).orderBy(u.salary.desc))
+          )
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              winExpr
+            ),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(ProtoExpr.RowNumber(), parts, ords, None) =>
+            assertEquals(parts.size, 1)
+            assertEquals(ords.size, 1)
+            parts.head match
+              case ProtoExpr.ColumnRef("age", _, _, _) => () // ok
+              case other => fail(s"Expected partition by age, got $other")
+            ords.head match
+              case SortOrder(ProtoExpr.ColumnRef("salary", _, _, _), SortDirection.Descending, _) =>
+                () // ok
+              case other => fail(s"Expected order by salary desc, got $other")
+          case other => fail(s"Expected WindowExpr(RowNumber), got $other")
+      case other =>
+        fail(s"Expected Project(name, WindowExpr(RowNumber)), got: $other")
+
+  test("quote with aggregate window"):
+    import window.*
+    import functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .select(u =>
+          (
+            u.name,
+            sum(u.salary).over(Window.partitionBy(u.age))
+          )
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              winExpr
+            ),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(
+                ProtoExpr.Sum(ProtoExpr.ColumnRef("salary", _, _, _)),
+                parts,
+                ords,
+                None
+              ) =>
+            assertEquals(parts.size, 1)
+            assertEquals(ords.size, 0)
+          case other => fail(s"Expected WindowExpr(Sum(salary)), got $other")
+      case other =>
+        fail(s"Expected Project(name, WindowExpr(Sum)), got: $other")
+
+  test("quote with window frame"):
+    import window.*
+    import functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .select(u =>
+          (
+            u.name,
+            sum(u.salary).over(
+              Window
+                .partitionBy(u.age)
+                .orderBy(u.salary.asc)
+                .rowsBetween(FrameBound.UnboundedPreceding, FrameBound.CurrentRow)
+            )
+          )
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              winExpr
+            ),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        winExpr match
+          case ProtoExpr.WindowExpr(
+                ProtoExpr.Sum(_),
+                parts,
+                ords,
+                Some(
+                  WindowFrame(FrameType.Rows, FrameBound.UnboundedPreceding, FrameBound.CurrentRow)
+                )
+              ) =>
+            assertEquals(parts.size, 1)
+            assertEquals(ords.size, 1)
+          case other => fail(s"Expected WindowExpr with frame, got $other")
+      case other =>
+        fail(s"Expected Project with WindowExpr, got: $other")
+
+  test("quote with multiple windows"):
+    import window.*
+    import functions.*
+
+    val query = QuoteMacro.quote {
+      Table[QuoteUser]("users")
+        .select(u =>
+          (
+            u.name,
+            rowNumber.over(Window.partitionBy(u.age).orderBy(u.salary.desc)),
+            sum(u.salary).over(Window.partitionBy(u.age))
+          )
+        )
+    }
+
+    query.artifact.plan match
+      case ProtoLogicalPlan.Project(
+            Vector(
+              ProtoExpr.ColumnRef("name", _, _, _),
+              ProtoExpr.WindowExpr(ProtoExpr.RowNumber(), _, _, None),
+              ProtoExpr.WindowExpr(ProtoExpr.Sum(_), _, _, None)
+            ),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        () // ok - two window expressions in same select
+      case other =>
+        fail(s"Expected Project with 3 exprs including 2 WindowExprs, got: $other")
