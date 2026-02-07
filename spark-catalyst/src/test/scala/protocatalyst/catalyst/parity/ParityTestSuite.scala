@@ -2757,6 +2757,382 @@ class ParityTestSuite extends FunSuite {
     )
   }
 
+  // === Expression decoder tests for newly added types ===
+
+  private def colRef(name: String): String =
+    s"""{"$$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "$name", "qualifier": null}"""
+
+  private def intLit(v: Int): String =
+    s"""{"$$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$$type": "protocatalyst.types.LiteralValue.IntValue", "value": $v}}"""
+
+  private def strLit(v: String): String =
+    s"""{"$$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$$type": "protocatalyst.types.LiteralValue.StringValue", "value": "$v"}}"""
+
+  /** Wraps an expression in a Project plan for testing ExpressionDecoder via ArtifactParser. */
+  private def projectPlan(expr: String): String =
+    s"""{
+      "$$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
+      "projectList": [$expr],
+      "child": {
+        "$$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+
+  private def assertExprDecodes(exprJson: String, label: String): Unit = {
+    val json = projectPlan(exprJson)
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"$label: Failed to parse: ${result.left.getOrElse("")}")
+  }
+
+  test("ExpressionDecoder handles math functions") {
+    // Abs
+    assertExprDecodes(
+      s"""{"$$type": "Abs", "child": ${colRef("x")}}""",
+      "Abs"
+    )
+    // Ceil
+    assertExprDecodes(
+      s"""{"$$type": "Ceil", "child": ${colRef("x")}}""",
+      "Ceil"
+    )
+    // Floor
+    assertExprDecodes(
+      s"""{"$$type": "Floor", "child": ${colRef("x")}}""",
+      "Floor"
+    )
+    // Round
+    assertExprDecodes(
+      s"""{"$$type": "Round", "child": ${colRef("x")}, "scale": ${intLit(2)}}""",
+      "Round"
+    )
+    // Sqrt
+    assertExprDecodes(
+      s"""{"$$type": "Sqrt", "child": ${colRef("x")}}""",
+      "Sqrt"
+    )
+    // Cbrt
+    assertExprDecodes(
+      s"""{"$$type": "Cbrt", "child": ${colRef("x")}}""",
+      "Cbrt"
+    )
+    // Pow
+    assertExprDecodes(
+      s"""{"$$type": "Pow", "left": ${colRef("x")}, "right": ${intLit(2)}}""",
+      "Pow"
+    )
+    // Pmod
+    assertExprDecodes(
+      s"""{"$$type": "Pmod", "left": ${colRef("x")}, "right": ${intLit(3)}}""",
+      "Pmod"
+    )
+    // Sign
+    assertExprDecodes(
+      s"""{"$$type": "Sign", "child": ${colRef("x")}}""",
+      "Sign"
+    )
+    // Exp
+    assertExprDecodes(
+      s"""{"$$type": "Exp", "child": ${colRef("x")}}""",
+      "Exp"
+    )
+    // Log with base
+    assertExprDecodes(
+      s"""{"$$type": "Log", "child": ${colRef("x")}, "base": ${intLit(10)}}""",
+      "Log with base"
+    )
+    // Log without base
+    assertExprDecodes(
+      s"""{"$$type": "Log", "child": ${colRef("x")}, "base": null}""",
+      "Log without base"
+    )
+    // Truncate
+    assertExprDecodes(
+      s"""{"$$type": "Truncate", "child": ${colRef("x")}, "scale": ${intLit(0)}}""",
+      "Truncate"
+    )
+  }
+
+  test("ExpressionDecoder handles string functions") {
+    // Trim (Both)
+    assertExprDecodes(
+      s"""{"$$type": "Trim", "child": ${colRef("s")}, "trimStr": null, "trimType": "Both"}""",
+      "Trim Both"
+    )
+    // Trim (Leading)
+    assertExprDecodes(
+      s"""{"$$type": "Trim", "child": ${colRef("s")}, "trimStr": ${strLit(
+          " "
+        )}, "trimType": "Leading"}""",
+      "Trim Leading"
+    )
+    // Trim (Trailing)
+    assertExprDecodes(
+      s"""{"$$type": "Trim", "child": ${colRef("s")}, "trimStr": null, "trimType": "Trailing"}""",
+      "Trim Trailing"
+    )
+    // Length
+    assertExprDecodes(
+      s"""{"$$type": "Length", "child": ${colRef("s")}}""",
+      "Length"
+    )
+    // Replace
+    assertExprDecodes(
+      s"""{"$$type": "Replace", "str": ${colRef("s")}, "search": ${strLit(
+          "a"
+        )}, "replace": ${strLit("b")}}""",
+      "Replace"
+    )
+    // StringLocate
+    assertExprDecodes(
+      s"""{"$$type": "StringLocate", "substr": ${strLit("x")}, "str": ${colRef(
+          "s"
+        )}, "start": null}""",
+      "StringLocate"
+    )
+    // Lpad
+    assertExprDecodes(
+      s"""{"$$type": "Lpad", "str": ${colRef("s")}, "len": ${intLit(10)}, "pad": ${strLit("0")}}""",
+      "Lpad"
+    )
+    // Rpad
+    assertExprDecodes(
+      s"""{"$$type": "Rpad", "str": ${colRef("s")}, "len": ${intLit(10)}, "pad": ${strLit("0")}}""",
+      "Rpad"
+    )
+    // StringSplit
+    assertExprDecodes(
+      s"""{"$$type": "StringSplit", "str": ${colRef("s")}, "delimiter": ${strLit(
+          ","
+        )}, "limit": null}""",
+      "StringSplit"
+    )
+    // Reverse
+    assertExprDecodes(
+      s"""{"$$type": "Reverse", "child": ${colRef("s")}}""",
+      "Reverse"
+    )
+    // StringRepeat
+    assertExprDecodes(
+      s"""{"$$type": "StringRepeat", "str": ${colRef("s")}, "times": ${intLit(3)}}""",
+      "StringRepeat"
+    )
+    // Like
+    assertExprDecodes(
+      s"""{"$$type": "Like", "value": ${colRef("s")}, "pattern": ${strLit(
+          "%test%"
+        )}, "escape": null}""",
+      "Like"
+    )
+  }
+
+  test("ExpressionDecoder handles NullIf") {
+    assertExprDecodes(
+      s"""{"$$type": "NullIf", "left": ${colRef("x")}, "right": ${intLit(0)}}""",
+      "NullIf"
+    )
+  }
+
+  test("ExpressionDecoder handles date/time functions") {
+    // CurrentDate
+    assertExprDecodes(
+      s"""{"$$type": "CurrentDate"}""",
+      "CurrentDate"
+    )
+    // CurrentTimestamp
+    assertExprDecodes(
+      s"""{"$$type": "CurrentTimestamp"}""",
+      "CurrentTimestamp"
+    )
+    // Year
+    assertExprDecodes(
+      s"""{"$$type": "Year", "child": ${colRef("d")}}""",
+      "Year"
+    )
+    // Month
+    assertExprDecodes(
+      s"""{"$$type": "Month", "child": ${colRef("d")}}""",
+      "Month"
+    )
+    // DayOfMonth
+    assertExprDecodes(
+      s"""{"$$type": "DayOfMonth", "child": ${colRef("d")}}""",
+      "DayOfMonth"
+    )
+    // Hour
+    assertExprDecodes(
+      s"""{"$$type": "Hour", "child": ${colRef("t")}}""",
+      "Hour"
+    )
+    // Minute
+    assertExprDecodes(
+      s"""{"$$type": "Minute", "child": ${colRef("t")}}""",
+      "Minute"
+    )
+    // Second
+    assertExprDecodes(
+      s"""{"$$type": "Second", "child": ${colRef("t")}}""",
+      "Second"
+    )
+    // DateAdd
+    assertExprDecodes(
+      s"""{"$$type": "DateAdd", "start": ${colRef("d")}, "days": ${intLit(7)}}""",
+      "DateAdd"
+    )
+    // DateSub
+    assertExprDecodes(
+      s"""{"$$type": "DateSub", "start": ${colRef("d")}, "days": ${intLit(7)}}""",
+      "DateSub"
+    )
+    // DateDiff
+    assertExprDecodes(
+      s"""{"$$type": "DateDiff", "end": ${colRef("d2")}, "start": ${colRef("d1")}}""",
+      "DateDiff"
+    )
+    // Extract
+    assertExprDecodes(
+      s"""{"$$type": "Extract", "field": "Year", "source": ${colRef("d")}}""",
+      "Extract"
+    )
+    // DateTrunc
+    assertExprDecodes(
+      s"""{"$$type": "DateTrunc", "field": "Month", "timestamp": ${colRef("t")}}""",
+      "DateTrunc"
+    )
+    // ToDate
+    assertExprDecodes(
+      s"""{"$$type": "ToDate", "str": ${colRef("s")}, "format": ${strLit("yyyy-MM-dd")}}""",
+      "ToDate with format"
+    )
+    // ToDate without format
+    assertExprDecodes(
+      s"""{"$$type": "ToDate", "str": ${colRef("s")}, "format": null}""",
+      "ToDate without format"
+    )
+    // ToTimestamp
+    assertExprDecodes(
+      s"""{"$$type": "ToTimestamp", "str": ${colRef("s")}, "format": null}""",
+      "ToTimestamp"
+    )
+  }
+
+  test("ExpressionDecoder handles window functions") {
+    // RowNumber
+    assertExprDecodes(
+      s"""{"$$type": "RowNumber"}""",
+      "RowNumber"
+    )
+    // Rank
+    assertExprDecodes(
+      s"""{"$$type": "Rank"}""",
+      "Rank"
+    )
+    // DenseRank
+    assertExprDecodes(
+      s"""{"$$type": "DenseRank"}""",
+      "DenseRank"
+    )
+    // Ntile
+    assertExprDecodes(
+      s"""{"$$type": "Ntile", "n": ${intLit(4)}}""",
+      "Ntile"
+    )
+    // Lead
+    assertExprDecodes(
+      s"""{"$$type": "Lead", "input": ${colRef("x")}, "offset": ${intLit(1)}, "default": null}""",
+      "Lead"
+    )
+    // Lag
+    assertExprDecodes(
+      s"""{"$$type": "Lag", "input": ${colRef("x")}, "offset": ${intLit(1)}, "default": ${intLit(
+          0
+        )}}""",
+      "Lag"
+    )
+    // FirstValue
+    assertExprDecodes(
+      s"""{"$$type": "FirstValue", "input": ${colRef("x")}, "ignoreNulls": false}""",
+      "FirstValue"
+    )
+    // LastValue
+    assertExprDecodes(
+      s"""{"$$type": "LastValue", "input": ${colRef("x")}, "ignoreNulls": true}""",
+      "LastValue"
+    )
+    // NthValue
+    assertExprDecodes(
+      s"""{"$$type": "NthValue", "input": ${colRef("x")}, "n": ${intLit(3)}}""",
+      "NthValue"
+    )
+  }
+
+  test("ExpressionDecoder handles WindowExpr") {
+    val windowExpr = s"""{
+      "$$type": "WindowExpr",
+      "function": {"$$type": "RowNumber"},
+      "partitionSpec": [${colRef("dept")}],
+      "orderSpec": [
+        {"child": ${colRef("salary")}, "direction": "Descending", "nullOrdering": "NullsLast"}
+      ],
+      "frameSpec": null
+    }"""
+    assertExprDecodes(windowExpr, "WindowExpr without frame")
+
+    val windowExprWithFrame = s"""{
+      "$$type": "WindowExpr",
+      "function": {"$$type": "Sum", "child": ${colRef("amount")}},
+      "partitionSpec": [${colRef("dept")}],
+      "orderSpec": [
+        {"child": ${colRef("date")}, "direction": "Ascending", "nullOrdering": "NullsFirst"}
+      ],
+      "frameSpec": {
+        "frameType": "Rows",
+        "lower": {"$$type": "protocatalyst.expr.FrameBound.UnboundedPreceding"},
+        "upper": {"$$type": "protocatalyst.expr.FrameBound.CurrentRow"}
+      }
+    }"""
+    assertExprDecodes(windowExprWithFrame, "WindowExpr with frame")
+  }
+
+  test("ExpressionDecoder handles subquery expressions") {
+    val subPlan = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+      "name": "sub",
+      "alias": null,
+      "schemaContract": {"fields": [], "fingerprint": 0}
+    }"""
+    // ScalarSubquery
+    assertExprDecodes(
+      s"""{"$$type": "ScalarSubquery", "plan": $subPlan}""",
+      "ScalarSubquery"
+    )
+    // Exists
+    assertExprDecodes(
+      s"""{"$$type": "Exists", "plan": $subPlan}""",
+      "Exists"
+    )
+    // InSubquery
+    assertExprDecodes(
+      s"""{"$$type": "InSubquery", "value": ${colRef("id")}, "plan": $subPlan}""",
+      "InSubquery"
+    )
+  }
+
+  test("ExpressionDecoder handles Grouping") {
+    // Single column
+    assertExprDecodes(
+      s"""{"$$type": "Grouping", "columns": [${colRef("dept")}]}""",
+      "Grouping single"
+    )
+    // Multiple columns (becomes GroupingID)
+    assertExprDecodes(
+      s"""{"$$type": "Grouping", "columns": [${colRef("dept")}, ${colRef("region")}]}""",
+      "Grouping multiple"
+    )
+  }
+
   test("PlanDecoder handles default sort direction") {
     // Direction "Unknown" should default to Ascending
     val json = """{

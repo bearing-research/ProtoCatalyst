@@ -2,45 +2,17 @@ package protocatalyst.catalyst.json
 
 import io.circe.{DecodingFailure, HCursor, Json}
 import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedFunction}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{
   AggregateExpression,
   Average,
   Complete,
   Count,
+  First,
+  Last,
   Max,
   Min,
   Sum
-}
-import org.apache.spark.sql.catalyst.expressions.{
-  Add,
-  Alias,
-  And,
-  BoundReference,
-  CaseWhen,
-  Cast,
-  Coalesce,
-  Concat,
-  EqualTo,
-  EvalMode,
-  Explode,
-  Expression,
-  GreaterThan,
-  GreaterThanOrEqual,
-  If,
-  In,
-  IsNotNull,
-  IsNull,
-  LessThan,
-  LessThanOrEqual,
-  Literal,
-  Lower,
-  Multiply,
-  Not,
-  Or,
-  PosExplode,
-  Substring,
-  Subtract,
-  Upper
 }
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -139,6 +111,9 @@ object ExpressionDecoder {
             children <- decodeExprs(childrenJson)
           } yield Coalesce(children)
 
+        case "protocatalyst.expr.ProtoExpr.NullIf" =>
+          decodeBinary(c, (l, r) => UnresolvedFunction(Seq("nullif"), Seq(l, r), false))
+
         // === Arithmetic ===
         case "protocatalyst.expr.ProtoExpr.Add" =>
           decodeBinary(c, Add.apply(_, _, EvalMode.LEGACY))
@@ -152,8 +127,63 @@ object ExpressionDecoder {
         case "protocatalyst.expr.ProtoExpr.Divide" =>
           decodeBinary(
             c,
-            (l, r) => org.apache.spark.sql.catalyst.expressions.Divide(l, r, EvalMode.LEGACY)
+            (l, r) => Divide(l, r, EvalMode.LEGACY)
           )
+
+        // === Math functions ===
+        case "protocatalyst.expr.ProtoExpr.Abs" =>
+          decodeUnary(c, child => Abs(child, failOnError = false))
+
+        case "protocatalyst.expr.ProtoExpr.Ceil" =>
+          decodeUnary(c, child => Ceil(child))
+
+        case "protocatalyst.expr.ProtoExpr.Floor" =>
+          decodeUnary(c, child => Floor(child))
+
+        case "protocatalyst.expr.ProtoExpr.Round" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+            scaleJson <- c.get[Json]("scale")
+            scale <- decode(scaleJson)
+          } yield Round(child, scale)
+
+        case "protocatalyst.expr.ProtoExpr.Truncate" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+            scaleJson <- c.get[Json]("scale")
+            scale <- decode(scaleJson)
+          } yield UnresolvedFunction(Seq("truncate"), Seq(child, scale), false)
+
+        case "protocatalyst.expr.ProtoExpr.Sqrt" =>
+          decodeUnary(c, child => Sqrt(child))
+
+        case "protocatalyst.expr.ProtoExpr.Cbrt" =>
+          decodeUnary(c, child => Cbrt(child))
+
+        case "protocatalyst.expr.ProtoExpr.Pow" =>
+          decodeBinary(c, Pow.apply)
+
+        case "protocatalyst.expr.ProtoExpr.Pmod" =>
+          decodeBinary(c, (l, r) => Pmod(l, r))
+
+        case "protocatalyst.expr.ProtoExpr.Sign" =>
+          decodeUnary(c, child => Signum(child))
+
+        case "protocatalyst.expr.ProtoExpr.Log" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+            baseJson <- c.get[Option[Json]]("base")
+            base <- baseJson.map(decode).sequence
+          } yield base match {
+            case Some(b) => Logarithm(b, child)
+            case None    => Log(child)
+          }
+
+        case "protocatalyst.expr.ProtoExpr.Exp" =>
+          decodeUnary(c, child => Exp(child))
 
         // === String functions ===
         case "protocatalyst.expr.ProtoExpr.Concat" =>
@@ -177,6 +207,90 @@ object ExpressionDecoder {
 
         case "protocatalyst.expr.ProtoExpr.Lower" =>
           decodeUnary(c, Lower.apply)
+
+        case "protocatalyst.expr.ProtoExpr.Trim" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+            trimStrJson <- c.get[Option[Json]]("trimStr")
+            trimStr <- trimStrJson.map(decode).sequence
+            trimType <- c.get[String]("trimType")
+          } yield trimType match {
+            case "Leading"  => StringTrimLeft(child, trimStr)
+            case "Trailing" => StringTrimRight(child, trimStr)
+            case _          => StringTrim(child, trimStr)
+          }
+
+        case "protocatalyst.expr.ProtoExpr.Length" =>
+          decodeUnary(c, child => Length(child))
+
+        case "protocatalyst.expr.ProtoExpr.Replace" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            searchJson <- c.get[Json]("search")
+            search <- decode(searchJson)
+            replaceJson <- c.get[Json]("replace")
+            replace <- decode(replaceJson)
+          } yield StringReplace(str, search, replace)
+
+        case "protocatalyst.expr.ProtoExpr.StringLocate" =>
+          for {
+            substrJson <- c.get[Json]("substr")
+            substr <- decode(substrJson)
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            startJson <- c.get[Option[Json]]("start")
+            start <- startJson.map(decode).sequence
+          } yield StringLocate(substr, str, start.getOrElse(Literal(1)))
+
+        case "protocatalyst.expr.ProtoExpr.Lpad" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            lenJson <- c.get[Json]("len")
+            len <- decode(lenJson)
+            padJson <- c.get[Json]("pad")
+            pad <- decode(padJson)
+          } yield StringLPad(str, len, pad)
+
+        case "protocatalyst.expr.ProtoExpr.Rpad" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            lenJson <- c.get[Json]("len")
+            len <- decode(lenJson)
+            padJson <- c.get[Json]("pad")
+            pad <- decode(padJson)
+          } yield StringRPad(str, len, pad)
+
+        case "protocatalyst.expr.ProtoExpr.StringSplit" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            delimJson <- c.get[Json]("delimiter")
+            delim <- decode(delimJson)
+          } yield StringSplitSQL(str, delim)
+
+        case "protocatalyst.expr.ProtoExpr.Reverse" =>
+          decodeUnary(c, child => Reverse(child))
+
+        case "protocatalyst.expr.ProtoExpr.StringRepeat" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            timesJson <- c.get[Json]("times")
+            times <- decode(timesJson)
+          } yield StringRepeat(str, times)
+
+        // === Pattern matching ===
+        case "protocatalyst.expr.ProtoExpr.Like" =>
+          for {
+            valueJson <- c.get[Json]("value")
+            value <- decode(valueJson)
+            patternJson <- c.get[Json]("pattern")
+            pattern <- decode(patternJson)
+          } yield Like(value, pattern, '\\')
 
         // === Aggregates ===
         case "protocatalyst.expr.ProtoExpr.Count" =>
@@ -271,6 +385,205 @@ object ExpressionDecoder {
             childrenJson <- c.get[Vector[Json]]("children")
             children <- decodeExprs(childrenJson)
           } yield UnresolvedFunction(Seq("stack"), numRows +: children, false)
+
+        // === Subquery expressions ===
+        case "protocatalyst.expr.ProtoExpr.ScalarSubquery" =>
+          for {
+            planJson <- c.get[Json]("plan")
+            plan <- PlanDecoder.decode(planJson)
+          } yield ScalarSubquery(plan)
+
+        case "protocatalyst.expr.ProtoExpr.Exists" =>
+          for {
+            planJson <- c.get[Json]("plan")
+            plan <- PlanDecoder.decode(planJson)
+          } yield Exists(plan)
+
+        case "protocatalyst.expr.ProtoExpr.InSubquery" =>
+          for {
+            valueJson <- c.get[Json]("value")
+            value <- decode(valueJson)
+            planJson <- c.get[Json]("plan")
+            plan <- PlanDecoder.decode(planJson)
+          } yield InSubquery(Seq(value), ListQuery(plan))
+
+        // === Window functions ===
+        case "protocatalyst.expr.ProtoExpr.RowNumber" =>
+          success(RowNumber())
+
+        case "protocatalyst.expr.ProtoExpr.Rank" =>
+          success(Rank(Nil))
+
+        case "protocatalyst.expr.ProtoExpr.DenseRank" =>
+          success(DenseRank(Nil))
+
+        case "protocatalyst.expr.ProtoExpr.Ntile" =>
+          for {
+            nJson <- c.get[Json]("n")
+            n <- decode(nJson)
+          } yield NTile(n)
+
+        case "protocatalyst.expr.ProtoExpr.Lead" =>
+          for {
+            inputJson <- c.get[Json]("input")
+            input <- decode(inputJson)
+            offsetJson <- c.get[Json]("offset")
+            offset <- decode(offsetJson)
+            defaultJson <- c.get[Option[Json]]("default")
+            default <- defaultJson.map(decode).sequence
+          } yield Lead(input, offset, default.getOrElse(Literal(null)), false)
+
+        case "protocatalyst.expr.ProtoExpr.Lag" =>
+          for {
+            inputJson <- c.get[Json]("input")
+            input <- decode(inputJson)
+            offsetJson <- c.get[Json]("offset")
+            offset <- decode(offsetJson)
+            defaultJson <- c.get[Option[Json]]("default")
+            default <- defaultJson.map(decode).sequence
+          } yield Lag(input, offset, default.getOrElse(Literal(null)), false)
+
+        case "protocatalyst.expr.ProtoExpr.FirstValue" =>
+          for {
+            inputJson <- c.get[Json]("input")
+            input <- decode(inputJson)
+            ignoreNulls <- c.get[Boolean]("ignoreNulls")
+          } yield AggregateExpression(First(input, ignoreNulls), Complete, false, None)
+
+        case "protocatalyst.expr.ProtoExpr.LastValue" =>
+          for {
+            inputJson <- c.get[Json]("input")
+            input <- decode(inputJson)
+            ignoreNulls <- c.get[Boolean]("ignoreNulls")
+          } yield AggregateExpression(Last(input, ignoreNulls), Complete, false, None)
+
+        case "protocatalyst.expr.ProtoExpr.NthValue" =>
+          for {
+            inputJson <- c.get[Json]("input")
+            input <- decode(inputJson)
+            nJson <- c.get[Json]("n")
+            n <- decode(nJson)
+          } yield NthValue(input, n, false)
+
+        case "protocatalyst.expr.ProtoExpr.WindowExpr" =>
+          for {
+            funcJson <- c.get[Json]("function")
+            func <- decode(funcJson)
+            partJson <- c.get[Vector[Json]]("partitionSpec")
+            partitionSpec <- decodeExprs(partJson)
+            orderJson <- c.get[Vector[Json]]("orderSpec")
+            orderSpec <- decodeSortOrders(orderJson)
+            frameJson <- c.get[Option[Json]]("frameSpec")
+            frame <- frameJson.map(decodeWindowFrame).sequence
+          } yield {
+            val windowFrame = frame.getOrElse(UnspecifiedFrame)
+            val spec = WindowSpecDefinition(partitionSpec, orderSpec, windowFrame)
+            WindowExpression(func, spec)
+          }
+
+        // === Date/Time functions ===
+        case "protocatalyst.expr.ProtoExpr.CurrentDate" =>
+          success(CurrentDate())
+
+        case "protocatalyst.expr.ProtoExpr.CurrentTimestamp" =>
+          success(CurrentTimestamp())
+
+        case "protocatalyst.expr.ProtoExpr.DateAdd" =>
+          for {
+            startJson <- c.get[Json]("start")
+            start <- decode(startJson)
+            daysJson <- c.get[Json]("days")
+            days <- decode(daysJson)
+          } yield DateAdd(start, days)
+
+        case "protocatalyst.expr.ProtoExpr.DateSub" =>
+          for {
+            startJson <- c.get[Json]("start")
+            start <- decode(startJson)
+            daysJson <- c.get[Json]("days")
+            days <- decode(daysJson)
+          } yield DateSub(start, days)
+
+        case "protocatalyst.expr.ProtoExpr.DateDiff" =>
+          for {
+            endJson <- c.get[Json]("end")
+            end <- decode(endJson)
+            startJson <- c.get[Json]("start")
+            start <- decode(startJson)
+          } yield DateDiff(end, start)
+
+        case "protocatalyst.expr.ProtoExpr.Extract" =>
+          for {
+            field <- c.get[String]("field")
+            sourceJson <- c.get[Json]("source")
+            source <- decode(sourceJson)
+          } yield UnresolvedFunction(
+            Seq("extract"),
+            Seq(Literal(UTF8String.fromString(field.toLowerCase), StringType), source),
+            false
+          )
+
+        case "protocatalyst.expr.ProtoExpr.DateTrunc" =>
+          for {
+            field <- c.get[String]("field")
+            tsJson <- c.get[Json]("timestamp")
+            ts <- decode(tsJson)
+          } yield TruncTimestamp(Literal(UTF8String.fromString(field.toLowerCase), StringType), ts)
+
+        case "protocatalyst.expr.ProtoExpr.ToDate" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            fmtJson <- c.get[Option[Json]]("format")
+            fmt <- fmtJson.map(decode).sequence
+          } yield fmt match {
+            case Some(f) =>
+              UnresolvedFunction(Seq("to_date"), Seq(str, f), false)
+            case None =>
+              UnresolvedFunction(Seq("to_date"), Seq(str), false)
+          }
+
+        case "protocatalyst.expr.ProtoExpr.ToTimestamp" =>
+          for {
+            strJson <- c.get[Json]("str")
+            str <- decode(strJson)
+            fmtJson <- c.get[Option[Json]]("format")
+            fmt <- fmtJson.map(decode).sequence
+          } yield fmt match {
+            case Some(f) =>
+              UnresolvedFunction(Seq("to_timestamp"), Seq(str, f), false)
+            case None =>
+              UnresolvedFunction(Seq("to_timestamp"), Seq(str), false)
+          }
+
+        case "protocatalyst.expr.ProtoExpr.Year" =>
+          decodeUnary(c, child => Year(child))
+
+        case "protocatalyst.expr.ProtoExpr.Month" =>
+          decodeUnary(c, child => Month(child))
+
+        case "protocatalyst.expr.ProtoExpr.DayOfMonth" =>
+          decodeUnary(c, child => DayOfMonth(child))
+
+        case "protocatalyst.expr.ProtoExpr.Hour" =>
+          decodeUnary(c, child => Hour(child))
+
+        case "protocatalyst.expr.ProtoExpr.Minute" =>
+          decodeUnary(c, child => Minute(child))
+
+        case "protocatalyst.expr.ProtoExpr.Second" =>
+          decodeUnary(c, child => Second(child))
+
+        // === Grouping ===
+        case "protocatalyst.expr.ProtoExpr.Grouping" =>
+          for {
+            columnsJson <- c.get[Vector[Json]]("columns")
+            columns <- decodeExprs(columnsJson)
+          } yield {
+            // Grouping takes a single child; for multiple columns use GroupingID
+            if (columns.size == 1) Grouping(columns.head)
+            else GroupingID(columns)
+          }
 
         // === Opaque function call ===
         case "protocatalyst.expr.ProtoExpr.OpaqueCall" =>
@@ -417,6 +730,75 @@ object ExpressionDecoder {
         } yield (when, thenVal)
       case _ =>
         failure("Expected array of 2 elements for branch", c.history)
+    }
+  }
+
+  private def decodeSortOrders(jsons: Vector[Json]): EitherResult[Seq[SortOrder]] = {
+    var result: Vector[SortOrder] = Vector.empty
+    var error: Option[DecodingFailure] = None
+    val iter = jsons.iterator
+    while (iter.hasNext && error.isEmpty) {
+      decodeSortOrder(iter.next().hcursor) match {
+        case scala.Right(so) => result = result :+ so
+        case scala.Left(err) => error = Some(err)
+      }
+    }
+    error match {
+      case Some(err) => scala.Left(err)
+      case None      => scala.Right(result)
+    }
+  }
+
+  private def decodeSortOrder(c: HCursor): EitherResult[SortOrder] = {
+    for {
+      childJson <- c.get[Json]("child")
+      child <- decode(childJson)
+      dir <- c.get[String]("direction")
+      nullOrd <- c.get[String]("nullOrdering")
+    } yield {
+      val direction = dir match {
+        case "Descending" => Descending
+        case _            => Ascending
+      }
+      val nullOrdering = nullOrd match {
+        case "NullsLast"  => NullsLast
+        case "NullsFirst" => NullsFirst
+        case _            =>
+          if (direction == Ascending) NullsFirst else NullsLast
+      }
+      SortOrder(child, direction, nullOrdering, Seq.empty)
+    }
+  }
+
+  private def decodeWindowFrame(json: Json): EitherResult[WindowFrame] = {
+    val c = json.hcursor
+    for {
+      frameType <- c.get[String]("frameType")
+      lowerJson <- c.get[Json]("lower")
+      lower <- decodeFrameBound(lowerJson)
+      upperJson <- c.get[Json]("upper")
+      upper <- decodeFrameBound(upperJson)
+    } yield {
+      val ft = frameType match {
+        case "Range" => RangeFrame
+        case _       => RowFrame
+      }
+      SpecifiedWindowFrame(ft, lower, upper)
+    }
+  }
+
+  private def decodeFrameBound(json: Json): EitherResult[Expression] = {
+    val c = json.hcursor
+    c.get[String]("$type").flatMap {
+      case t if t.endsWith("UnboundedPreceding") => success(UnboundedPreceding)
+      case t if t.endsWith("UnboundedFollowing") => success(UnboundedFollowing)
+      case t if t.endsWith("CurrentRow")         => success(CurrentRow)
+      case t if t.endsWith("Preceding")          =>
+        c.get[Long]("n").map(n => UnaryMinus(Literal(n.toInt)))
+      case t if t.endsWith("Following") =>
+        c.get[Long]("n").map(n => Literal(n.toInt))
+      case other =>
+        failure(s"Unknown FrameBound type: $other", c.history)
     }
   }
 
