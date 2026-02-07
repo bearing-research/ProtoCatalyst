@@ -2,9 +2,12 @@ package protocatalyst.catalyst.json
 
 import io.circe.Json
 import org.apache.spark.sql.catalyst.analysis.{
+  UnresolvedAlias,
   UnresolvedAttribute,
   UnresolvedFunction,
-  UnresolvedRelation
+  UnresolvedGenerator,
+  UnresolvedRelation,
+  UnresolvedStar
 }
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{
@@ -61,18 +64,26 @@ object SparkPlanEncoder {
           "child" -> encode(s.child)
         )
 
-      case l: GlobalLimit =>
+      // Spark wraps LIMIT as GlobalLimit(LocalLimit(child)) — unwrap to single Limit
+      case GlobalLimit(Literal(n: Int, _), LocalLimit(_, child)) =>
         Json.obj(
           "$type" -> Json.fromString("Limit"),
-          "limitExpr" -> encodeExpr(l.limitExpr),
-          "child" -> encode(l.child)
+          "limit" -> Json.fromInt(n),
+          "child" -> encode(child)
         )
 
-      case l: LocalLimit =>
+      case GlobalLimit(Literal(n: Int, _), child) =>
         Json.obj(
           "$type" -> Json.fromString("Limit"),
-          "limitExpr" -> encodeExpr(l.limitExpr),
-          "child" -> encode(l.child)
+          "limit" -> Json.fromInt(n),
+          "child" -> encode(child)
+        )
+
+      case LocalLimit(Literal(n: Int, _), child) =>
+        Json.obj(
+          "$type" -> Json.fromString("Limit"),
+          "limit" -> Json.fromInt(n),
+          "child" -> encode(child)
         )
 
       case d: Distinct =>
@@ -86,7 +97,7 @@ object SparkPlanEncoder {
           "$type" -> Json.fromString("Union"),
           "children" -> Json.arr(u.children.map(encode): _*),
           "byName" -> Json.fromBoolean(u.byName),
-          "allowMissingCol" -> Json.fromBoolean(u.allowMissingCol)
+          "allowMissingColumns" -> Json.fromBoolean(u.allowMissingCol)
         )
 
       case i: Intersect =>
@@ -130,27 +141,29 @@ object SparkPlanEncoder {
 
       case w: UnresolvedWith =>
         Json.obj(
-          "$type" -> Json.fromString("WithCTE"),
+          "$type" -> Json.fromString("With"),
           "cteRelations" -> Json.arr(w.cteRelations.map { case (name, sub) =>
-            Json.obj(
-              "name" -> Json.fromString(name),
-              "subquery" -> encode(sub.child)
-            )
+            Json.arr(Json.fromString(name), encode(sub.child))
           }: _*),
+          "recursive" -> Json.fromBoolean(false),
           "child" -> encode(w.child)
         )
 
       case w: WithCTE =>
+        // Extract name from SubqueryAlias inside CTERelationDef
+        val cteRelations = w.cteDefs.map { cteDef =>
+          cteDef.child match {
+            case SubqueryAlias(identifier, child) =>
+              Json.arr(Json.fromString(identifier.name), encode(child))
+            case other =>
+              Json.arr(Json.fromString("cte"), encode(other))
+          }
+        }
         Json.obj(
-          "$type" -> Json.fromString("WithCTE"),
-          "cteDefs" -> Json.arr(w.cteDefs.map(encode): _*),
+          "$type" -> Json.fromString("With"),
+          "cteRelations" -> Json.arr(cteRelations: _*),
+          "recursive" -> Json.fromBoolean(false),
           "child" -> encode(w.plan)
-        )
-
-      case c: CTERelationDef =>
-        Json.obj(
-          "$type" -> Json.fromString("CTERelationDef"),
-          "child" -> encode(c.child)
         )
 
       case p: Pivot =>
@@ -212,6 +225,16 @@ object SparkPlanEncoder {
           "condition" -> lj.condition.map(encodeExpr).getOrElse(Json.Null)
         )
 
+      // UnresolvedHaving — Spark's unresolved HAVING clause, encode as Filter
+      case uh if uh.getClass.getSimpleName == "UnresolvedHaving" =>
+        val condition = uh.expressions.head
+        val child = uh.children.head
+        Json.obj(
+          "$type" -> Json.fromString("Filter"),
+          "condition" -> encodeExpr(condition),
+          "child" -> encode(child)
+        )
+
       case other =>
         Json.obj(
           "$type" -> Json.fromString(other.getClass.getSimpleName),
@@ -248,6 +271,25 @@ object SparkPlanEncoder {
           "$type" -> Json.fromString("Alias"),
           "child" -> encodeExpr(alias.child),
           "name" -> Json.fromString(alias.name)
+        )
+
+      // UnresolvedAlias — Spark wraps SELECT expressions, encode as Alias to match decoder output
+      case ua: UnresolvedAlias =>
+        Json.obj(
+          "$type" -> Json.fromString("Alias"),
+          "child" -> encodeExpr(ua.child),
+          "name" -> Json.fromString(ua.child.sql)
+        )
+
+      // UnresolvedStar — SELECT * or t.*
+      case star: UnresolvedStar =>
+        val target = star.target
+        Json.obj(
+          "$type" -> Json.fromString("ColumnRef"),
+          "name" -> Json.fromString("*"),
+          "qualifier" -> target
+            .map(parts => Json.fromString(parts.mkString(".")))
+            .getOrElse(Json.Null)
         )
 
       case EqualTo(left, right) =>
@@ -700,6 +742,20 @@ object SparkPlanEncoder {
       // Aggregate expressions
       case AggregateExpression(aggFunc, _, _, _, _) =>
         encodeAggFunc(aggFunc)
+
+      // UnresolvedGenerator — map known generators to their Proto types
+      case ug: UnresolvedGenerator =>
+        ug.name.funcName.toLowerCase match {
+          case "explode"    => encodeUnary("Explode", ug.children.head)
+          case "posexplode" => encodeUnary("PosExplode", ug.children.head)
+          case "inline"     => encodeUnary("Inline", ug.children.head)
+          case _            =>
+            Json.obj(
+              "$type" -> Json.fromString("OpaqueCall"),
+              "functionName" -> Json.fromString(ug.name.funcName),
+              "arguments" -> Json.arr(ug.children.map(encodeExpr): _*)
+            )
+        }
 
       // Unresolved function - encode as OpaqueCall
       case f: UnresolvedFunction =>
