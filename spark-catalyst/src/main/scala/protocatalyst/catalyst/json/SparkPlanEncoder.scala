@@ -7,7 +7,17 @@ import org.apache.spark.sql.catalyst.analysis.{
   UnresolvedRelation
 }
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.expressions.aggregate.{
+  AggregateExpression,
+  AggregateFunction,
+  Average,
+  Count,
+  First,
+  Last,
+  Max,
+  Min,
+  Sum
+}
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -141,6 +151,65 @@ object SparkPlanEncoder {
         Json.obj(
           "$type" -> Json.fromString("CTERelationDef"),
           "child" -> encode(c.child)
+        )
+
+      case p: Pivot =>
+        Json.obj(
+          "$type" -> Json.fromString("Pivot"),
+          "groupingExprs" -> Json.arr(
+            p.groupByExprsOpt.getOrElse(Seq.empty).map(encodeExpr): _*
+          ),
+          "pivotColumn" -> encodeExpr(p.pivotColumn),
+          "pivotValues" -> Json.arr(p.pivotValues.map(encodeExpr): _*),
+          "aggregates" -> Json.arr(p.aggregates.map(encodeExpr): _*),
+          "child" -> encode(p.child)
+        )
+
+      case u: Unpivot =>
+        Json.obj(
+          "$type" -> Json.fromString("Unpivot"),
+          "valueColumnName" -> Json.fromString(u.valueColumnNames.headOption.getOrElse("value")),
+          "variableColumnName" -> Json.fromString(u.variableColumnName),
+          "columns" -> Json.arr(
+            u.values
+              .getOrElse(Seq.empty)
+              .zip(u.aliases.getOrElse(Seq.empty))
+              .map { case (exprs, alias) =>
+                Json.arr(
+                  encodeExpr(exprs.head),
+                  alias.map(Json.fromString).getOrElse(Json.Null)
+                )
+              }: _*
+          ),
+          "child" -> encode(u.child)
+        )
+
+      case g: Generate =>
+        Json.obj(
+          "$type" -> Json.fromString("Generate"),
+          "generator" -> encodeExpr(g.generator),
+          "generatorOutput" -> Json.arr(
+            g.generatorOutput.map(a => Json.fromString(a.name)): _*
+          ),
+          "outer" -> Json.fromBoolean(g.outer),
+          "child" -> encode(g.child)
+        )
+
+      case w: Window =>
+        Json.obj(
+          "$type" -> Json.fromString("Window"),
+          "windowExpressions" -> Json.arr(w.windowExpressions.map(encodeExpr): _*),
+          "partitionSpec" -> Json.arr(w.partitionSpec.map(encodeExpr): _*),
+          "orderSpec" -> Json.arr(w.orderSpec.map(encodeSortOrder): _*),
+          "child" -> encode(w.child)
+        )
+
+      case lj: LateralJoin =>
+        Json.obj(
+          "$type" -> Json.fromString("LateralJoin"),
+          "left" -> encode(lj.left),
+          "lateral" -> encode(lj.right.plan),
+          "condition" -> lj.condition.map(encodeExpr).getOrElse(Json.Null)
         )
 
       case other =>
@@ -288,6 +357,51 @@ object SparkPlanEncoder {
           "right" -> encodeExpr(right)
         )
 
+      // === Math functions ===
+      case Abs(child, _) =>
+        encodeUnary("Abs", child)
+
+      case Ceil(child) =>
+        encodeUnary("Ceil", child)
+
+      case Floor(child) =>
+        encodeUnary("Floor", child)
+
+      case Round(child, scale, _) =>
+        Json.obj(
+          "$type" -> Json.fromString("Round"),
+          "child" -> encodeExpr(child),
+          "scale" -> encodeExpr(scale)
+        )
+
+      case Sqrt(child) =>
+        encodeUnary("Sqrt", child)
+
+      case Cbrt(child) =>
+        encodeUnary("Cbrt", child)
+
+      case Pow(left, right) =>
+        encodeBinary("Pow", left, right)
+
+      case Pmod(left, right, _) =>
+        encodeBinary("Pmod", left, right)
+
+      case Signum(child) =>
+        encodeUnary("Sign", child)
+
+      case Logarithm(base, child) =>
+        Json.obj(
+          "$type" -> Json.fromString("Log"),
+          "child" -> encodeExpr(child),
+          "base" -> encodeExpr(base)
+        )
+
+      case Log(child) =>
+        encodeUnary("Log", child)
+
+      case Exp(child) =>
+        encodeUnary("Exp", child)
+
       case c: Cast =>
         Json.obj(
           "$type" -> Json.fromString("Cast"),
@@ -334,6 +448,253 @@ object SparkPlanEncoder {
           "str" -> encodeExpr(str),
           "pos" -> encodeExpr(pos),
           "len" -> encodeExpr(len)
+        )
+
+      // === String functions ===
+      case StringTrim(srcStr, trimStr) =>
+        Json.obj(
+          "$type" -> Json.fromString("Trim"),
+          "child" -> encodeExpr(srcStr),
+          "trimStr" -> trimStr.map(encodeExpr).getOrElse(Json.Null),
+          "trimType" -> Json.fromString("Both")
+        )
+
+      case StringTrimLeft(srcStr, trimStr) =>
+        Json.obj(
+          "$type" -> Json.fromString("Trim"),
+          "child" -> encodeExpr(srcStr),
+          "trimStr" -> trimStr.map(encodeExpr).getOrElse(Json.Null),
+          "trimType" -> Json.fromString("Leading")
+        )
+
+      case StringTrimRight(srcStr, trimStr) =>
+        Json.obj(
+          "$type" -> Json.fromString("Trim"),
+          "child" -> encodeExpr(srcStr),
+          "trimStr" -> trimStr.map(encodeExpr).getOrElse(Json.Null),
+          "trimType" -> Json.fromString("Trailing")
+        )
+
+      case Length(child) =>
+        encodeUnary("Length", child)
+
+      case StringReplace(srcExpr, searchExpr, replaceExpr) =>
+        Json.obj(
+          "$type" -> Json.fromString("Replace"),
+          "str" -> encodeExpr(srcExpr),
+          "search" -> encodeExpr(searchExpr),
+          "replace" -> encodeExpr(replaceExpr)
+        )
+
+      case StringLocate(substr, str, start) =>
+        Json.obj(
+          "$type" -> Json.fromString("StringLocate"),
+          "substr" -> encodeExpr(substr),
+          "str" -> encodeExpr(str),
+          "start" -> encodeExpr(start)
+        )
+
+      case StringLPad(str, len, pad) =>
+        Json.obj(
+          "$type" -> Json.fromString("Lpad"),
+          "str" -> encodeExpr(str),
+          "len" -> encodeExpr(len),
+          "pad" -> encodeExpr(pad)
+        )
+
+      case StringRPad(str, len, pad) =>
+        Json.obj(
+          "$type" -> Json.fromString("Rpad"),
+          "str" -> encodeExpr(str),
+          "len" -> encodeExpr(len),
+          "pad" -> encodeExpr(pad)
+        )
+
+      case StringSplitSQL(str, delimiter) =>
+        Json.obj(
+          "$type" -> Json.fromString("StringSplit"),
+          "str" -> encodeExpr(str),
+          "delimiter" -> encodeExpr(delimiter)
+        )
+
+      case Reverse(child) =>
+        encodeUnary("Reverse", child)
+
+      case StringRepeat(str, times) =>
+        Json.obj(
+          "$type" -> Json.fromString("StringRepeat"),
+          "str" -> encodeExpr(str),
+          "times" -> encodeExpr(times)
+        )
+
+      // === Pattern matching ===
+      case Like(left, right, _) =>
+        Json.obj(
+          "$type" -> Json.fromString("Like"),
+          "value" -> encodeExpr(left),
+          "pattern" -> encodeExpr(right)
+        )
+
+      // === Control flow ===
+      case If(predicate, trueValue, falseValue) =>
+        Json.obj(
+          "$type" -> Json.fromString("If"),
+          "predicate" -> encodeExpr(predicate),
+          "trueValue" -> encodeExpr(trueValue),
+          "falseValue" -> encodeExpr(falseValue)
+        )
+
+      // === BoundReference ===
+      case BoundReference(ordinal, dataType, nullable) =>
+        Json.obj(
+          "$type" -> Json.fromString("BoundRef"),
+          "index" -> Json.fromInt(ordinal),
+          "dataType" -> encodeDataType(dataType),
+          "nullable" -> Json.fromBoolean(nullable)
+        )
+
+      // === Date/Time functions ===
+      case _: CurrentDate =>
+        Json.obj("$type" -> Json.fromString("CurrentDate"))
+
+      case _: CurrentTimestamp =>
+        Json.obj("$type" -> Json.fromString("CurrentTimestamp"))
+
+      case DateAdd(startDate, days) =>
+        Json.obj(
+          "$type" -> Json.fromString("DateAdd"),
+          "start" -> encodeExpr(startDate),
+          "days" -> encodeExpr(days)
+        )
+
+      case DateSub(startDate, days) =>
+        Json.obj(
+          "$type" -> Json.fromString("DateSub"),
+          "start" -> encodeExpr(startDate),
+          "days" -> encodeExpr(days)
+        )
+
+      case DateDiff(endDate, startDate) =>
+        Json.obj(
+          "$type" -> Json.fromString("DateDiff"),
+          "end" -> encodeExpr(endDate),
+          "start" -> encodeExpr(startDate)
+        )
+
+      case TruncTimestamp(format, timestamp, _) =>
+        Json.obj(
+          "$type" -> Json.fromString("DateTrunc"),
+          "field" -> encodeExpr(format),
+          "timestamp" -> encodeExpr(timestamp)
+        )
+
+      case Year(child) =>
+        encodeUnary("Year", child)
+
+      case Month(child) =>
+        encodeUnary("Month", child)
+
+      case DayOfMonth(child) =>
+        encodeUnary("DayOfMonth", child)
+
+      case Hour(child, _) =>
+        encodeUnary("Hour", child)
+
+      case Minute(child, _) =>
+        encodeUnary("Minute", child)
+
+      case Second(child, _) =>
+        encodeUnary("Second", child)
+
+      // === Subquery expressions ===
+      case s: ScalarSubquery =>
+        Json.obj(
+          "$type" -> Json.fromString("ScalarSubquery"),
+          "plan" -> encode(s.plan)
+        )
+
+      case e: Exists =>
+        Json.obj(
+          "$type" -> Json.fromString("Exists"),
+          "plan" -> encode(e.plan)
+        )
+
+      case InSubquery(values, ListQuery(plan, _, _, _, _, _)) =>
+        Json.obj(
+          "$type" -> Json.fromString("InSubquery"),
+          "value" -> encodeExpr(values.head),
+          "plan" -> encode(plan)
+        )
+
+      // === Window functions ===
+      case WindowExpression(func, WindowSpecDefinition(partitionSpec, orderSpec, frame)) =>
+        Json.obj(
+          "$type" -> Json.fromString("WindowExpr"),
+          "function" -> encodeExpr(func),
+          "partitionSpec" -> Json.arr(partitionSpec.map(encodeExpr): _*),
+          "orderSpec" -> Json.arr(orderSpec.map(encodeSortOrder): _*),
+          "frameSpec" -> encodeWindowFrame(frame)
+        )
+
+      case _: RowNumber =>
+        Json.obj("$type" -> Json.fromString("RowNumber"))
+
+      case _: Rank =>
+        Json.obj("$type" -> Json.fromString("Rank"))
+
+      case _: DenseRank =>
+        Json.obj("$type" -> Json.fromString("DenseRank"))
+
+      case NTile(buckets) =>
+        Json.obj(
+          "$type" -> Json.fromString("Ntile"),
+          "n" -> encodeExpr(buckets)
+        )
+
+      case Lead(input, offset, default, ignoreNulls) =>
+        Json.obj(
+          "$type" -> Json.fromString("Lead"),
+          "input" -> encodeExpr(input),
+          "offset" -> encodeExpr(offset),
+          "default" -> encodeExpr(default)
+        )
+
+      case Lag(input, inputOffset, default, ignoreNulls) =>
+        Json.obj(
+          "$type" -> Json.fromString("Lag"),
+          "input" -> encodeExpr(input),
+          "offset" -> encodeExpr(inputOffset),
+          "default" -> encodeExpr(default)
+        )
+
+      case NthValue(input, offset, _) =>
+        Json.obj(
+          "$type" -> Json.fromString("NthValue"),
+          "input" -> encodeExpr(input),
+          "n" -> encodeExpr(offset)
+        )
+
+      // === Generator expressions ===
+      case Explode(child) =>
+        encodeUnary("Explode", child)
+
+      case PosExplode(child) =>
+        encodeUnary("PosExplode", child)
+
+      case i: org.apache.spark.sql.catalyst.expressions.Inline =>
+        encodeUnary("Inline", i.child)
+
+      // === Grouping ===
+      case Grouping(child) =>
+        Json.obj(
+          "$type" -> Json.fromString("Grouping"),
+          "columns" -> Json.arr(encodeExpr(child))
+        )
+
+      case GroupingID(groupByExprs) =>
+        Json.obj(
+          "$type" -> Json.fromString("Grouping"),
+          "columns" -> Json.arr(groupByExprs.map(encodeExpr): _*)
         )
 
       // Aggregate expressions
@@ -389,6 +750,20 @@ object SparkPlanEncoder {
           "child" -> encodeExpr(child)
         )
 
+      case f: First =>
+        Json.obj(
+          "$type" -> Json.fromString("FirstValue"),
+          "input" -> encodeExpr(f.child),
+          "ignoreNulls" -> Json.fromBoolean(f.ignoreNulls)
+        )
+
+      case l: Last =>
+        Json.obj(
+          "$type" -> Json.fromString("LastValue"),
+          "input" -> encodeExpr(l.child),
+          "ignoreNulls" -> Json.fromBoolean(l.ignoreNulls)
+        )
+
       case other =>
         Json.obj(
           "$type" -> Json.fromString(other.getClass.getSimpleName),
@@ -405,6 +780,47 @@ object SparkPlanEncoder {
         if (so.nullOrdering == NullsFirst) "NullsFirst" else "NullsLast"
       )
     )
+  }
+
+  private def encodeUnary(typeName: String, child: Expression): Json =
+    Json.obj(
+      "$type" -> Json.fromString(typeName),
+      "child" -> encodeExpr(child)
+    )
+
+  private def encodeBinary(typeName: String, left: Expression, right: Expression): Json =
+    Json.obj(
+      "$type" -> Json.fromString(typeName),
+      "left" -> encodeExpr(left),
+      "right" -> encodeExpr(right)
+    )
+
+  private def encodeWindowFrame(frame: WindowFrame): Json = frame match {
+    case SpecifiedWindowFrame(frameType, lower, upper) =>
+      Json.obj(
+        "frameType" -> Json.fromString(frameType match {
+          case RowFrame   => "Rows"
+          case RangeFrame => "Range"
+        }),
+        "lower" -> encodeFrameBound(lower),
+        "upper" -> encodeFrameBound(upper)
+      )
+    case _ => Json.Null
+  }
+
+  private def encodeFrameBound(bound: Expression): Json = bound match {
+    case UnboundedPreceding =>
+      Json.obj("$type" -> Json.fromString("UnboundedPreceding"))
+    case UnboundedFollowing =>
+      Json.obj("$type" -> Json.fromString("UnboundedFollowing"))
+    case CurrentRow =>
+      Json.obj("$type" -> Json.fromString("CurrentRow"))
+    case UnaryMinus(Literal(n: Int, IntegerType), _) =>
+      Json.obj("$type" -> Json.fromString("Preceding"), "n" -> Json.fromInt(n))
+    case Literal(n: Int, IntegerType) =>
+      Json.obj("$type" -> Json.fromString("Following"), "n" -> Json.fromInt(n))
+    case other =>
+      Json.obj("$type" -> Json.fromString("Unknown"), "value" -> Json.fromString(other.toString))
   }
 
   private def encodeLiteralValue(value: Any, dataType: DataType): Json = {

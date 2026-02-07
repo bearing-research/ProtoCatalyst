@@ -3133,6 +3133,124 @@ class ParityTestSuite extends FunSuite {
     )
   }
 
+  // === SparkPlanEncoder round-trip tests ===
+  // These verify that encoding a Spark Expression to JSON and decoding it back produces valid output.
+
+  import protocatalyst.catalyst.json.{ExpressionDecoder, SparkPlanEncoder}
+  import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
+  import org.apache.spark.sql.catalyst.expressions._
+  import org.apache.spark.sql.catalyst.expressions.aggregate.{
+    AggregateExpression,
+    Complete,
+    First,
+    Last
+  }
+  import org.apache.spark.sql.types.IntegerType
+
+  /** Encode a Spark Expression to JSON and decode it back, asserting success. */
+  private def assertEncoderRoundTrip(expr: Expression, label: String): Unit = {
+    val json = SparkPlanEncoder.encodeExpr(expr)
+    val jsonStr = json.noSpaces
+    assert(
+      !json.hcursor.get[String]("_unsupported").isRight,
+      s"$label: encoded as _unsupported: $jsonStr"
+    )
+    val decoded = ExpressionDecoder.decode(json)
+    assert(decoded.isRight, s"$label: decode failed: ${decoded.left.getOrElse("")} from $jsonStr")
+  }
+
+  private def col(name: String): UnresolvedAttribute = UnresolvedAttribute(Seq(name))
+
+  test("SparkPlanEncoder round-trips math functions") {
+    assertEncoderRoundTrip(Abs(col("x"), failOnError = false), "Abs")
+    assertEncoderRoundTrip(Ceil(col("x")), "Ceil")
+    assertEncoderRoundTrip(Floor(col("x")), "Floor")
+    assertEncoderRoundTrip(Round(col("x"), Literal(2)), "Round")
+    assertEncoderRoundTrip(Sqrt(col("x")), "Sqrt")
+    assertEncoderRoundTrip(Cbrt(col("x")), "Cbrt")
+    assertEncoderRoundTrip(Pow(col("x"), Literal(2)), "Pow")
+    assertEncoderRoundTrip(Pmod(col("x"), Literal(3)), "Pmod")
+    assertEncoderRoundTrip(Signum(col("x")), "Sign/Signum")
+    assertEncoderRoundTrip(Log(col("x")), "Log")
+    assertEncoderRoundTrip(Logarithm(Literal(10), col("x")), "Logarithm")
+    assertEncoderRoundTrip(Exp(col("x")), "Exp")
+  }
+
+  test("SparkPlanEncoder round-trips string functions") {
+    assertEncoderRoundTrip(StringTrim(col("s"), None), "StringTrim")
+    assertEncoderRoundTrip(StringTrimLeft(col("s"), None), "StringTrimLeft")
+    assertEncoderRoundTrip(StringTrimRight(col("s"), None), "StringTrimRight")
+    assertEncoderRoundTrip(Length(col("s")), "Length")
+    assertEncoderRoundTrip(
+      StringReplace(col("s"), Literal("a"), Literal("b")),
+      "StringReplace"
+    )
+    assertEncoderRoundTrip(StringLocate(Literal("a"), col("s"), Literal(1)), "StringLocate")
+    assertEncoderRoundTrip(StringLPad(col("s"), Literal(10), Literal(" ")), "StringLPad")
+    assertEncoderRoundTrip(StringRPad(col("s"), Literal(10), Literal(" ")), "StringRPad")
+    assertEncoderRoundTrip(StringSplitSQL(col("s"), Literal(",")), "StringSplitSQL")
+    assertEncoderRoundTrip(Reverse(col("s")), "Reverse")
+    assertEncoderRoundTrip(StringRepeat(col("s"), Literal(3)), "StringRepeat")
+    assertEncoderRoundTrip(Like(col("s"), Literal("abc%"), '\\'), "Like")
+  }
+
+  test("SparkPlanEncoder round-trips date/time functions") {
+    assertEncoderRoundTrip(CurrentDate(), "CurrentDate")
+    assertEncoderRoundTrip(CurrentTimestamp(), "CurrentTimestamp")
+    assertEncoderRoundTrip(DateAdd(col("d"), Literal(7)), "DateAdd")
+    assertEncoderRoundTrip(DateSub(col("d"), Literal(7)), "DateSub")
+    assertEncoderRoundTrip(DateDiff(col("d2"), col("d1")), "DateDiff")
+    assertEncoderRoundTrip(Year(col("d")), "Year")
+    assertEncoderRoundTrip(Month(col("d")), "Month")
+    assertEncoderRoundTrip(DayOfMonth(col("d")), "DayOfMonth")
+    assertEncoderRoundTrip(Hour(col("ts")), "Hour")
+    assertEncoderRoundTrip(Minute(col("ts")), "Minute")
+    assertEncoderRoundTrip(Second(col("ts")), "Second")
+  }
+
+  test("SparkPlanEncoder round-trips window functions") {
+    assertEncoderRoundTrip(RowNumber(), "RowNumber")
+    assertEncoderRoundTrip(Rank(Nil), "Rank")
+    assertEncoderRoundTrip(DenseRank(Nil), "DenseRank")
+    assertEncoderRoundTrip(NTile(Literal(4)), "NTile")
+    assertEncoderRoundTrip(
+      Lead(col("x"), Literal(1), Literal(null, IntegerType), false),
+      "Lead"
+    )
+    assertEncoderRoundTrip(
+      Lag(col("x"), Literal(1), Literal(null, IntegerType), false),
+      "Lag"
+    )
+    assertEncoderRoundTrip(NthValue(col("x"), Literal(2), false), "NthValue")
+  }
+
+  test("SparkPlanEncoder round-trips WindowExpression") {
+    val func = RowNumber()
+    val spec = WindowSpecDefinition(
+      Seq(col("dept")),
+      Seq(SortOrder(col("salary"), Descending, NullsLast, Seq.empty)),
+      SpecifiedWindowFrame(RowFrame, UnboundedPreceding, CurrentRow)
+    )
+    assertEncoderRoundTrip(WindowExpression(func, spec), "WindowExpression")
+  }
+
+  test("SparkPlanEncoder round-trips misc expressions") {
+    assertEncoderRoundTrip(If(col("cond"), Literal(1), Literal(0)), "If")
+    assertEncoderRoundTrip(Explode(col("arr")), "Explode")
+    assertEncoderRoundTrip(PosExplode(col("arr")), "PosExplode")
+  }
+
+  test("SparkPlanEncoder round-trips First/Last aggregates") {
+    assertEncoderRoundTrip(
+      AggregateExpression(First(col("x"), false), Complete, false, None),
+      "First"
+    )
+    assertEncoderRoundTrip(
+      AggregateExpression(Last(col("x"), true), Complete, false, None),
+      "Last"
+    )
+  }
+
   test("PlanDecoder handles default sort direction") {
     // Direction "Unknown" should default to Ascending
     val json = """{
