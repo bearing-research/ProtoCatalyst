@@ -1,0 +1,121 @@
+syntax = "proto3";
+package protocatalyst.v1;
+option java_package = "io.protocatalyst.proto.v1";
+option java_multiple_files = true;
+
+import "protocatalyst/v1/types.proto";
+
+// ============================================================================
+// Tensor data types
+// ============================================================================
+
+enum TensorDTypeEnum {
+  TENSOR_DTYPE_FLOAT16 = 0;
+  TENSOR_DTYPE_FLOAT32 = 1;
+  TENSOR_DTYPE_FLOAT64 = 2;
+  TENSOR_DTYPE_BFLOAT16 = 3;
+  TENSOR_DTYPE_INT8 = 4;
+  TENSOR_DTYPE_INT16 = 5;
+  TENSOR_DTYPE_INT32 = 6;
+  TENSOR_DTYPE_INT64 = 7;
+  TENSOR_DTYPE_UINT8 = 8;
+  TENSOR_DTYPE_BOOL = 9;
+  TENSOR_DTYPE_COMPLEX64 = 10;
+  TENSOR_DTYPE_COMPLEX128 = 11;
+}
+
+// ============================================================================
+// Dimension and shape
+// ============================================================================
+
+message DimMsg {
+  oneof dim {
+    int32 static_size = 1;
+    DynamicDimMsg dynamic = 2;
+  }
+}
+
+message DynamicDimMsg {
+  optional string name = 1;
+}
+
+enum DataLayoutEnum {
+  DATA_LAYOUT_DEFAULT = 0;
+  DATA_LAYOUT_NCHW = 1;
+  DATA_LAYOUT_NHWC = 2;
+}
+
+message TensorTypeMsg {
+  TensorDTypeEnum dtype = 1;
+  repeated DimMsg shape = 2;
+  DataLayoutEnum layout = 3;
+}
+
+// ============================================================================
+// Tensor data (for constants)
+// ============================================================================
+
+message TensorDataMsg {
+  TensorDTypeEnum dtype = 1;
+  repeated int32 shape = 2;
+  bytes raw_bytes = 3;
+}
+
+// ============================================================================
+// Initializer
+// ============================================================================
+
+message InitializerMsg {
+  oneof initializer {
+    EmptyMsg zeros = 1;
+    EmptyMsg ones = 2;
+    XavierInitMsg xavier = 3;
+    KaimingInitMsg kaiming = 4;
+    NormalInitMsg normal = 5;
+    UniformInitMsg uniform = 6;
+  }
+}
+
+message XavierInitMsg { double gain = 1; }
+message KaimingInitMsg { string mode = 1; string nonlinearity = 2; }
+message NormalInitMsg { double mean = 1; double std = 2; }
+message UniformInitMsg { double low = 1; double high = 2; }
+
+// ============================================================================
+// Supporting enums
+// ============================================================================
+
+enum PadModeEnum {
+  PAD_MODE_CONSTANT = 0;
+  PAD_MODE_REFLECT = 1;
+  PAD_MODE_EDGE = 2;
+}
+
+enum ReductionEnum {
+  REDUCTION_MEAN = 0;
+  REDUCTION_SUM = 1;
+  REDUCTION_NONE = 2;
+}
+
+// ============================================================================
+// Op attributes (for OpaqueOp)
+// ============================================================================
+
+message OpAttributeMsg {
+  oneof attr {
+    int64 int_attr = 1;
+    double float_attr = 2;
+    string string_attr = 3;
+    IntsAttrMsg ints_attr = 4;
+    FloatsAttrMsg floats_attr = 5;
+    TensorDataMsg tensor_attr = 6;
+  }
+}
+
+message IntsAttrMsg { repeated int64 values = 1; }
+message FloatsAttrMsg { repeated double values = 1; }
+
+message OpAttributeEntryMsg {
+  string key = 1;
+  OpAttributeMsg value = 2;
+}

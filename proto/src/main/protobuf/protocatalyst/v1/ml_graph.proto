@@ -1,0 +1,511 @@
+syntax = "proto3";
+package protocatalyst.v1;
+option java_package = "io.protocatalyst.proto.v1";
+option java_multiple_files = true;
+
+import "protocatalyst/v1/ml_types.proto";
+
+// ============================================================================
+// TensorExprMsg — ~71 tensor operation variants
+// ============================================================================
+
+message TensorExprMsg {
+  oneof expr {
+    // Leaf nodes (1-3)
+    InputExprMsg input = 1;
+    ConstantExprMsg constant = 2;
+    ParameterExprMsg parameter = 3;
+
+    // Linear algebra (10-12)
+    MatMulExprMsg mat_mul = 10;
+    GemmExprMsg gemm = 11;
+    LinearExprMsg linear = 12;
+
+    // Convolution (15-16)
+    ConvExprMsg conv = 15;
+    ConvTransposeExprMsg conv_transpose = 16;
+
+    // Activations (20-29)
+    UnaryTensorMsg relu = 20;
+    LeakyReluExprMsg leaky_relu = 21;
+    UnaryTensorMsg sigmoid = 22;
+    UnaryTensorMsg tanh_act = 23;
+    AxisTensorMsg softmax = 24;
+    AxisTensorMsg log_softmax = 25;
+    GeluExprMsg gelu = 26;
+    UnaryTensorMsg silu = 27;
+    AlphaTensorMsg elu = 28;
+    UnaryTensorMsg hard_swish = 29;
+
+    // Element-wise arithmetic (31-41)
+    BinaryTensorMsg add = 31;
+    BinaryTensorMsg sub = 32;
+    BinaryTensorMsg mul = 33;
+    BinaryTensorMsg div = 34;
+    BinaryTensorMsg pow = 35;
+    UnaryTensorMsg sqrt = 36;
+    UnaryTensorMsg neg = 37;
+    UnaryTensorMsg abs = 38;
+    UnaryTensorMsg exp = 39;
+    UnaryTensorMsg log_expr = 40;
+    ClipExprMsg clip = 41;
+
+    // Pooling (43-46)
+    PoolExprMsg max_pool = 43;
+    AvgPoolExprMsg avg_pool = 44;
+    UnaryTensorMsg global_avg_pool = 45;
+    AdaptiveAvgPoolExprMsg adaptive_avg_pool = 46;
+
+    // Normalization (48-51)
+    BatchNormExprMsg batch_norm = 48;
+    LayerNormExprMsg layer_norm = 49;
+    GroupNormExprMsg group_norm = 50;
+    InstanceNormExprMsg instance_norm = 51;
+
+    // Reduction (53-57)
+    ReduceExprMsg reduce_sum = 53;
+    ReduceExprMsg reduce_mean = 54;
+    ReduceExprMsg reduce_max = 55;
+    ReduceExprMsg reduce_min = 56;
+    ReduceExprMsg reduce_prod = 57;
+
+    // Shape manipulation (60-71)
+    ReshapeExprMsg reshape = 60;
+    TransposeExprMsg transpose = 61;
+    FlattenExprMsg flatten = 62;
+    AxesTensorMsg squeeze = 63;
+    AxesTensorMsg unsqueeze = 64;
+    ConcatExprMsg concat = 65;
+    SplitExprMsg split = 66;
+    SliceExprMsg slice = 67;
+    GatherExprMsg gather = 68;
+    ScatterExprMsg scatter = 69;
+    PadExprMsg pad = 70;
+    ExpandExprMsg expand = 71;
+
+    // Recurrent (73-74)
+    LSTMExprMsg lstm = 73;
+    GRUExprMsg gru = 74;
+
+    // Attention (76-77)
+    ScaledDotProductAttentionExprMsg scaled_dot_product_attention = 76;
+    MultiHeadAttentionExprMsg multi_head_attention = 77;
+
+    // Embedding (79)
+    EmbeddingExprMsg embedding = 79;
+
+    // Regularization (81)
+    DropoutExprMsg dropout = 81;
+
+    // Loss functions (83-87)
+    CrossEntropyLossExprMsg cross_entropy_loss = 83;
+    LossExprMsg mse_loss = 84;
+    LossExprMsg l1_loss = 85;
+    CrossEntropyLossExprMsg bce_loss = 86;
+    CrossEntropyLossExprMsg bce_with_logits_loss = 87;
+
+    // Comparison / logical (89-92)
+    BinaryTensorMsg equal = 89;
+    BinaryTensorMsg greater = 90;
+    BinaryTensorMsg less = 91;
+    WhereTensorMsg where_expr = 92;
+
+    // Type casting (94)
+    TensorCastExprMsg cast_tensor = 94;
+
+    // Opaque / custom op (96)
+    OpaqueOpExprMsg opaque_op = 96;
+  }
+}
+
+// ============================================================================
+// Structural tensor messages (reusable)
+// ============================================================================
+
+message UnaryTensorMsg {
+  TensorExprMsg input = 1;
+}
+
+message BinaryTensorMsg {
+  TensorExprMsg left = 1;
+  TensorExprMsg right = 2;
+}
+
+message WhereTensorMsg {
+  TensorExprMsg condition = 1;
+  TensorExprMsg x = 2;
+  TensorExprMsg y = 3;
+}
+
+message AxisTensorMsg {
+  TensorExprMsg input = 1;
+  int32 axis = 2;
+}
+
+message AlphaTensorMsg {
+  TensorExprMsg input = 1;
+  double alpha = 2;
+}
+
+message AxesTensorMsg {
+  TensorExprMsg input = 1;
+  repeated int32 axes = 2;
+}
+
+message ReduceExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 axes = 2;
+  bool keep_dims = 3;
+}
+
+// ============================================================================
+// Specific expression messages
+// ============================================================================
+
+// --- Leaf nodes ---
+
+message InputExprMsg {
+  string name = 1;
+  TensorTypeMsg tensor_type = 2;
+}
+
+message ConstantExprMsg {
+  string name = 1;
+  TensorTypeMsg tensor_type = 2;
+  TensorDataMsg data = 3;
+}
+
+message ParameterExprMsg {
+  string name = 1;
+  TensorTypeMsg tensor_type = 2;
+  optional InitializerMsg initializer = 3;
+}
+
+// --- Linear algebra ---
+
+message MatMulExprMsg {
+  TensorExprMsg left = 1;
+  TensorExprMsg right = 2;
+  bool trans_a = 3;
+  bool trans_b = 4;
+}
+
+message GemmExprMsg {
+  TensorExprMsg a = 1;
+  TensorExprMsg b = 2;
+  optional TensorExprMsg c = 3;
+  double alpha = 4;
+  double beta = 5;
+  bool trans_a = 6;
+  bool trans_b = 7;
+}
+
+message LinearExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg weight = 2;
+  optional TensorExprMsg bias = 3;
+}
+
+// --- Convolution ---
+
+message ConvExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg weight = 2;
+  optional TensorExprMsg bias = 3;
+  repeated int32 strides = 4;
+  repeated int32 pads = 5;
+  repeated int32 dilations = 6;
+  int32 group = 7;
+}
+
+message ConvTransposeExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg weight = 2;
+  optional TensorExprMsg bias = 3;
+  repeated int32 strides = 4;
+  repeated int32 pads = 5;
+  repeated int32 output_pads = 6;
+  repeated int32 dilations = 7;
+  int32 group = 8;
+}
+
+// --- Activations ---
+
+message LeakyReluExprMsg {
+  TensorExprMsg input = 1;
+  double alpha = 2;
+}
+
+message GeluExprMsg {
+  TensorExprMsg input = 1;
+  bool approximate = 2;
+}
+
+// --- Element-wise ---
+
+message ClipExprMsg {
+  TensorExprMsg input = 1;
+  optional double min = 2;
+  optional double max = 3;
+}
+
+// --- Pooling ---
+
+message PoolExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 kernel_size = 2;
+  repeated int32 strides = 3;
+  repeated int32 pads = 4;
+}
+
+message AvgPoolExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 kernel_size = 2;
+  repeated int32 strides = 3;
+  repeated int32 pads = 4;
+  bool count_include_pad = 5;
+}
+
+message AdaptiveAvgPoolExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 output_size = 2;
+}
+
+// --- Normalization ---
+
+message BatchNormExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg scale = 2;
+  TensorExprMsg bias = 3;
+  TensorExprMsg running_mean = 4;
+  TensorExprMsg running_var = 5;
+  double epsilon = 6;
+  double momentum = 7;
+  bool training = 8;
+}
+
+message LayerNormExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 normalized_shape = 2;
+  optional TensorExprMsg weight = 3;
+  optional TensorExprMsg bias = 4;
+  double epsilon = 5;
+}
+
+message GroupNormExprMsg {
+  TensorExprMsg input = 1;
+  int32 num_groups = 2;
+  optional TensorExprMsg weight = 3;
+  optional TensorExprMsg bias = 4;
+  double epsilon = 5;
+}
+
+message InstanceNormExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg scale = 2;
+  TensorExprMsg bias = 3;
+  double epsilon = 4;
+}
+
+// --- Shape manipulation ---
+
+message ReshapeExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 shape = 2;
+}
+
+message TransposeExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 perm = 2;
+}
+
+message FlattenExprMsg {
+  TensorExprMsg input = 1;
+  int32 axis = 2;
+}
+
+message ConcatExprMsg {
+  repeated TensorExprMsg inputs = 1;
+  int32 axis = 2;
+}
+
+message SplitExprMsg {
+  TensorExprMsg input = 1;
+  int32 axis = 2;
+  repeated int32 split_sizes = 3;
+}
+
+message SliceExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 starts = 2;
+  repeated int32 ends = 3;
+  repeated int32 axes = 4;
+  repeated int32 steps = 5;
+}
+
+message GatherExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg indices = 2;
+  int32 axis = 3;
+}
+
+message ScatterExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg indices = 2;
+  TensorExprMsg updates = 3;
+  int32 axis = 4;
+}
+
+message PadExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 pads = 2;
+  PadModeEnum mode = 3;
+  double constant_value = 4;
+}
+
+message ExpandExprMsg {
+  TensorExprMsg input = 1;
+  repeated int32 shape = 2;
+}
+
+// --- Recurrent ---
+
+message LSTMExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg weight_ih = 2;
+  TensorExprMsg weight_hh = 3;
+  optional TensorExprMsg bias = 4;
+  int32 hidden_size = 5;
+  int32 num_layers = 6;
+  bool bidirectional = 7;
+  double dropout = 8;
+}
+
+message GRUExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg weight_ih = 2;
+  TensorExprMsg weight_hh = 3;
+  optional TensorExprMsg bias = 4;
+  int32 hidden_size = 5;
+  int32 num_layers = 6;
+  bool bidirectional = 7;
+  double dropout = 8;
+}
+
+// --- Attention ---
+
+message ScaledDotProductAttentionExprMsg {
+  TensorExprMsg query = 1;
+  TensorExprMsg key = 2;
+  TensorExprMsg value = 3;
+  optional TensorExprMsg mask = 4;
+  double dropout = 5;
+  bool is_causal = 6;
+}
+
+message MultiHeadAttentionExprMsg {
+  TensorExprMsg query = 1;
+  TensorExprMsg key = 2;
+  TensorExprMsg value = 3;
+  TensorExprMsg w_q = 4;
+  TensorExprMsg w_k = 5;
+  TensorExprMsg w_v = 6;
+  TensorExprMsg w_o = 7;
+  int32 num_heads = 8;
+  optional TensorExprMsg mask = 9;
+  double dropout = 10;
+}
+
+// --- Embedding ---
+
+message EmbeddingExprMsg {
+  TensorExprMsg indices = 1;
+  TensorExprMsg weight = 2;
+  optional int32 padding_idx = 3;
+}
+
+// --- Regularization ---
+
+message DropoutExprMsg {
+  TensorExprMsg input = 1;
+  double ratio = 2;
+  bool training = 3;
+}
+
+// --- Loss functions ---
+
+message CrossEntropyLossExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg target = 2;
+  optional TensorExprMsg weight = 3;
+  ReductionEnum reduction = 4;
+}
+
+message LossExprMsg {
+  TensorExprMsg input = 1;
+  TensorExprMsg target = 2;
+  ReductionEnum reduction = 3;
+}
+
+// --- Cast ---
+
+message TensorCastExprMsg {
+  TensorExprMsg input = 1;
+  TensorDTypeEnum target_dtype = 2;
+}
+
+// --- Opaque op ---
+
+message OpaqueOpExprMsg {
+  string name = 1;
+  repeated TensorExprMsg inputs = 2;
+  repeated OpAttributeEntryMsg attributes = 3;
+  TensorTypeMsg output_type = 4;
+}
+
+// ============================================================================
+// Compute graph
+// ============================================================================
+
+message GraphIOMsg {
+  string name = 1;
+  TensorTypeMsg tensor_type = 2;
+}
+
+message NamedNodeMsg {
+  string name = 1;
+  TensorExprMsg expr = 2;
+  TensorTypeMsg output_type = 3;
+}
+
+message ComputeGraphMsg {
+  string name = 1;
+  repeated GraphIOMsg inputs = 2;
+  repeated GraphIOMsg outputs = 3;
+  repeated NamedNodeMsg nodes = 4;
+  int32 opset_version = 5;
+}
+
+// ============================================================================
+// ML Artifact
+// ============================================================================
+
+message MLArtifactVersionMsg {
+  int32 major = 1;
+  int32 minor = 2;
+  int32 patch = 3;
+}
+
+message MLSourceInfoMsg {
+  string source_file = 1;
+  int32 line_number = 2;
+}
+
+message CompiledMLArtifactMsg {
+  MLArtifactVersionMsg format_version = 1;
+  string protocatalyst_version = 2;
+  int64 compiled_at = 3;
+  int64 content_hash = 4;
+  ComputeGraphMsg graph = 5;
+  optional MLSourceInfoMsg source_info = 6;
+}

@@ -22,7 +22,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(proto, core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark, sparkCatalyst)
+  .aggregate(proto, core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -203,6 +203,24 @@ lazy val benchmarkSpark = project
       "--add-opens=java.base/java.util=ALL-UNNAMED"
     ),
     run / fork := true
+  )
+
+// ML Core module: tensor IR, computation graph, optimizer
+lazy val mlCore = project
+  .in(file("ml-core"))
+  .dependsOn(proto)
+  .settings(
+    name := "protocatalyst-ml-core",
+    commonSettings
+  )
+
+// ML Query module: typed tensor DSL and shape checking
+lazy val mlQuery = project
+  .in(file("ml-query"))
+  .dependsOn(mlCore)
+  .settings(
+    name := "protocatalyst-ml-query",
+    commonSettings
   )
 
 // Spark Catalyst integration module (Scala 2.13) - Convert ProtoLogicalPlan to Spark LogicalPlan
