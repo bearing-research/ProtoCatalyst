@@ -156,7 +156,6 @@ class Query[A] private[dsl] (
     new Query(
       ProtoLogicalPlan.Sort(
         orders.map(_.toSortOrder).toVector,
-        global = true,
         plan
       ),
       outputEncoder,

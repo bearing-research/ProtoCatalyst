@@ -52,7 +52,7 @@ class TransformSuite extends munit.FunSuite:
     def findFilter(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Filter] = plan match
       case f @ ProtoLogicalPlan.Filter(_, _)  => Some(f)
       case ProtoLogicalPlan.Project(_, child) => findFilter(child)
-      case ProtoLogicalPlan.Sort(_, _, child) => findFilter(child)
+      case ProtoLogicalPlan.Sort(_, child)    => findFilter(child)
       case ProtoLogicalPlan.Limit(_, child)   => findFilter(child)
       case ProtoLogicalPlan.Distinct(child)   => findFilter(child)
       case _                                  => None
@@ -68,12 +68,12 @@ class TransformSuite extends munit.FunSuite:
     assert(result.isRight)
 
     def findSort(plan: ProtoLogicalPlan): Option[ProtoLogicalPlan.Sort] = plan match
-      case s @ ProtoLogicalPlan.Sort(_, _, _) => Some(s)
-      case ProtoLogicalPlan.Limit(_, child)   => findSort(child)
-      case _                                  => None
+      case s @ ProtoLogicalPlan.Sort(_, _)  => Some(s)
+      case ProtoLogicalPlan.Limit(_, child) => findSort(child)
+      case _                                => None
 
     findSort(result.toOption.get) match
-      case Some(ProtoLogicalPlan.Sort(orders, true, _)) =>
+      case Some(ProtoLogicalPlan.Sort(orders, _)) =>
         assertEquals(orders.size, 1)
         assertEquals(orders.head.direction, SortDirection.Descending)
       case _ => fail("Expected Sort plan")
@@ -97,7 +97,7 @@ class TransformSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Distinct(_)       => true
       case ProtoLogicalPlan.Project(_, child) => hasDistinct(child)
       case ProtoLogicalPlan.Filter(_, child)  => hasDistinct(child)
-      case ProtoLogicalPlan.Sort(_, _, child) => hasDistinct(child)
+      case ProtoLogicalPlan.Sort(_, child)    => hasDistinct(child)
       case ProtoLogicalPlan.Limit(_, child)   => hasDistinct(child)
       case _                                  => false
 
@@ -209,7 +209,7 @@ class TransformSuite extends munit.FunSuite:
       case a @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(a)
       case ProtoLogicalPlan.Project(_, child)      => findAggregate(child)
       case ProtoLogicalPlan.Filter(_, child)       => findAggregate(child)
-      case ProtoLogicalPlan.Sort(_, _, child)      => findAggregate(child)
+      case ProtoLogicalPlan.Sort(_, child)         => findAggregate(child)
       case ProtoLogicalPlan.Limit(_, child)        => findAggregate(child)
       case ProtoLogicalPlan.Distinct(child)        => findAggregate(child)
       case _                                       => None
@@ -232,7 +232,7 @@ class TransformSuite extends munit.FunSuite:
       case a @ ProtoLogicalPlan.Aggregate(_, _, _) => Some(a)
       case ProtoLogicalPlan.Project(_, child)      => findAggregate(child)
       case ProtoLogicalPlan.Filter(_, child)       => findAggregate(child)
-      case ProtoLogicalPlan.Sort(_, _, child)      => findAggregate(child)
+      case ProtoLogicalPlan.Sort(_, child)         => findAggregate(child)
       case ProtoLogicalPlan.Limit(_, child)        => findAggregate(child)
       case ProtoLogicalPlan.Distinct(child)        => findAggregate(child)
       case _                                       => None
@@ -256,10 +256,10 @@ class TransformSuite extends munit.FunSuite:
     // HAVING becomes a Filter on top of Aggregate
     def findFilterAfterAggregate(plan: ProtoLogicalPlan): Boolean = plan match
       case ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.Aggregate(_, _, _)) => true
-      case ProtoLogicalPlan.Sort(_, _, child) => findFilterAfterAggregate(child)
-      case ProtoLogicalPlan.Limit(_, child)   => findFilterAfterAggregate(child)
-      case ProtoLogicalPlan.Distinct(child)   => findFilterAfterAggregate(child)
-      case _                                  => false
+      case ProtoLogicalPlan.Sort(_, child)  => findFilterAfterAggregate(child)
+      case ProtoLogicalPlan.Limit(_, child) => findFilterAfterAggregate(child)
+      case ProtoLogicalPlan.Distinct(child) => findFilterAfterAggregate(child)
+      case _                                => false
 
     assert(
       findFilterAfterAggregate(result.toOption.get),
@@ -281,7 +281,7 @@ class TransformSuite extends munit.FunSuite:
         }
       case ProtoLogicalPlan.Project(_, child) => findSum(child)
       case ProtoLogicalPlan.Filter(_, child)  => findSum(child)
-      case ProtoLogicalPlan.Sort(_, _, child) => findSum(child)
+      case ProtoLogicalPlan.Sort(_, child)    => findSum(child)
       case ProtoLogicalPlan.Limit(_, child)   => findSum(child)
       case _                                  => false
 
@@ -306,7 +306,7 @@ class TransformSuite extends munit.FunSuite:
         }
       case ProtoLogicalPlan.Project(_, child) => countAggregates(child)
       case ProtoLogicalPlan.Filter(_, child)  => countAggregates(child)
-      case ProtoLogicalPlan.Sort(_, _, child) => countAggregates(child)
+      case ProtoLogicalPlan.Sort(_, child)    => countAggregates(child)
       case ProtoLogicalPlan.Limit(_, child)   => countAggregates(child)
       case _                                  => 0
 

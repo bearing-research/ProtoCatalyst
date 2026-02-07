@@ -181,10 +181,10 @@ object SqlVerifier:
       case ProtoLogicalPlan.Aggregate(grouping, aggs, child) =>
         s"${pad}Aggregate(groupBy=[${grouping.map(prettyPrintProtoExpr).mkString(", ")}], aggs=[${aggs.map(prettyPrintProtoExpr).mkString(", ")}])\n${prettyPrintPlan(child, indent + 1)}"
 
-      case ProtoLogicalPlan.Sort(order, global, child) =>
+      case ProtoLogicalPlan.Sort(order, child) =>
         val orders =
           order.map(o => s"${prettyPrintProtoExpr(o.child)} ${o.direction}").mkString(", ")
-        s"${pad}Sort([$orders], global=$global)\n${prettyPrintPlan(child, indent + 1)}"
+        s"${pad}Sort([$orders])\n${prettyPrintPlan(child, indent + 1)}"
 
       case ProtoLogicalPlan.Limit(n, child) =>
         s"${pad}Limit($n)\n${prettyPrintPlan(child, indent + 1)}"

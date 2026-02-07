@@ -118,7 +118,6 @@ class OptimizerSuite extends munit.FunSuite with RuleTestBase:
     val plan = ProtoLogicalPlan.Distinct(
       ProtoLogicalPlan.Sort(
         Vector(SortOrder($"a", SortDirection.Ascending, NullOrdering.NullsFirst)),
-        global = true,
         ProtoLogicalPlan.Union(
           Vector(
             ProtoLogicalPlan.Union(
@@ -138,7 +137,7 @@ class OptimizerSuite extends munit.FunSuite with RuleTestBase:
     def countUnionChildren(p: ProtoLogicalPlan): Int = p match
       case ProtoLogicalPlan.Union(children, _, _)   => children.size
       case ProtoLogicalPlan.Distinct(child)         => countUnionChildren(child)
-      case ProtoLogicalPlan.Sort(_, _, child)       => countUnionChildren(child)
+      case ProtoLogicalPlan.Sort(_, child)          => countUnionChildren(child)
       case ProtoLogicalPlan.SubqueryAlias(_, child) => countUnionChildren(child)
       case _                                        => 0
     val unionChildCount = countUnionChildren(optimized)

@@ -480,8 +480,8 @@ object ProtoLiftables:
           )
         }
 
-      case ProtoLogicalPlan.Sort(order, global, child) =>
-        '{ ProtoLogicalPlan.Sort(${ Expr(order) }, ${ Expr(global) }, ${ Expr(child) }) }
+      case ProtoLogicalPlan.Sort(order, child) =>
+        '{ ProtoLogicalPlan.Sort(${ Expr(order) }, ${ Expr(child) }) }
 
       case ProtoLogicalPlan.Limit(limit, child) =>
         '{ ProtoLogicalPlan.Limit(${ Expr(limit) }, ${ Expr(child) }) }

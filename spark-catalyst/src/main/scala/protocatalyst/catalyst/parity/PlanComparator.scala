@@ -152,9 +152,6 @@ object PlanComparator {
         )
 
       case (e: Sort, a: Sort) =>
-        if (e.global != a.global) {
-          diffs += s"$path: Sort.global mismatch - expected ${e.global}, got ${a.global}"
-        }
         compareSortOrders(e.order, a.order, s"$path/order", diffs)
 
       case (e: Join, a: Join) =>

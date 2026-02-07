@@ -54,7 +54,6 @@ class PlanDslExampleSuite extends munit.FunSuite with PlanTestBase:
     query match
       case ProtoLogicalPlan.Sort(
             _,
-            _,
             ProtoLogicalPlan.Aggregate(
               _,
               _,
@@ -138,13 +137,13 @@ class PlanDslExampleSuite extends munit.FunSuite with PlanTestBase:
     val sortOrder = Vector(SortOrder(col("a"), SortDirection.Ascending, NullOrdering.NullsFirst))
 
     // Sort(Sort(relation))
-    val input = relation("t").sort(sortOrder.head)().sort(sortOrder.head)()
+    val input = relation("t").sort(sortOrder.head).sort(sortOrder.head)
 
     val result = RemoveRedundantSorts(input)
 
     // Should have only one sort
     result match
-      case ProtoLogicalPlan.Sort(_, _, ProtoLogicalPlan.RelationRef(_, _, _)) => ()
+      case ProtoLogicalPlan.Sort(_, ProtoLogicalPlan.RelationRef(_, _, _)) => ()
       case _ => fail(s"Expected single Sort over RelationRef, got $result")
 
   test("ReplaceDistinctWithAggregate: DISTINCT becomes GROUP BY (DSL style)"):

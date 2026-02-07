@@ -146,7 +146,7 @@ class DslSuite extends munit.FunSuite:
     val query = users.orderBy(age.desc)
 
     query.plan match
-      case ProtoLogicalPlan.Sort(orders, true, _) =>
+      case ProtoLogicalPlan.Sort(orders, _) =>
         assertEquals(orders.size, 1)
         assertEquals(orders(0).direction, SortDirection.Descending)
       case other => fail(s"Expected Sort, got $other")
@@ -290,7 +290,6 @@ class DslSuite extends munit.FunSuite:
       case ProtoLogicalPlan.Limit(
             100,
             ProtoLogicalPlan.Sort(
-              _,
               _,
               ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.Filter(_, _)))
             )

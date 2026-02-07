@@ -77,8 +77,8 @@ trait PlanTestBase:
       s"Aggregate(groupBy=[${grouping.map(exprString).mkString(", ")}], aggs=[${aggs.map(exprString).mkString(", ")}])"
     case ProtoLogicalPlan.Join(_, _, jt, cond) =>
       cond.fold(s"Join($jt)")(c => s"Join($jt, ${exprString(c)})")
-    case ProtoLogicalPlan.Sort(order, global, _) =>
-      s"Sort(${order.map(o => s"${exprString(o.child)} ${o.direction}").mkString(", ")}, global=$global)"
+    case ProtoLogicalPlan.Sort(order, _) =>
+      s"Sort(${order.map(o => s"${exprString(o.child)} ${o.direction}").mkString(", ")})"
     case ProtoLogicalPlan.Limit(n, _) =>
       s"Limit($n)"
     case ProtoLogicalPlan.Distinct(_) =>
@@ -128,7 +128,7 @@ trait PlanTestBase:
     case ProtoLogicalPlan.Filter(_, child)           => Vector(child)
     case ProtoLogicalPlan.Aggregate(_, _, child)     => Vector(child)
     case ProtoLogicalPlan.Join(l, r, _, _)           => Vector(l, r)
-    case ProtoLogicalPlan.Sort(_, _, child)          => Vector(child)
+    case ProtoLogicalPlan.Sort(_, child)             => Vector(child)
     case ProtoLogicalPlan.Limit(_, child)            => Vector(child)
     case ProtoLogicalPlan.Distinct(child)            => Vector(child)
     case ProtoLogicalPlan.SubqueryAlias(_, child)    => Vector(child)

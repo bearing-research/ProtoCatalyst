@@ -24,11 +24,11 @@ object RemoveRedundantSorts extends Rule:
   override def apply(plan: ProtoLogicalPlan): ProtoLogicalPlan =
     TreeTransform.transformPlanUp(plan) {
       // Nested sorts - outer sort dominates (inner becomes meaningless)
-      case ProtoLogicalPlan.Sort(outerOrder, outerGlobal, ProtoLogicalPlan.Sort(_, _, child)) =>
-        ProtoLogicalPlan.Sort(outerOrder, outerGlobal, child)
+      case ProtoLogicalPlan.Sort(outerOrder, ProtoLogicalPlan.Sort(_, child)) =>
+        ProtoLogicalPlan.Sort(outerOrder, child)
 
       // Empty sort order is a no-op
-      case ProtoLogicalPlan.Sort(order, _, child) if order.isEmpty =>
+      case ProtoLogicalPlan.Sort(order, child) if order.isEmpty =>
         child
 
       // Sort with same order as another sort child (would need order tracking)

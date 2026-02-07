@@ -59,10 +59,9 @@ object PlanConverter:
           toMock(child)
         )
 
-      case Sort(order, global, child) =>
+      case Sort(order, child) =>
         MLP.Sort(
           order.map(convertSortOrder),
-          global,
           toMock(child)
         )
 
@@ -228,10 +227,9 @@ object PlanConverter:
           fromMock(child)
         )
 
-      case MLP.Sort(order, global, child) =>
+      case MLP.Sort(order, child) =>
         PLP.Sort(
           order.map(fromMockSortOrder).toVector,
-          global,
           fromMock(child)
         )
 

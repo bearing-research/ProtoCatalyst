@@ -242,7 +242,6 @@ class IntegrationParitySuite extends munit.FunSuite {
         |        "nullOrdering": "NullsLast"
         |      }
         |    ],
-        |    "global": true,
         |    "child": {
         |      "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
         |      "projectList": [

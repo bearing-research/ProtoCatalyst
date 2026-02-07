@@ -47,34 +47,34 @@ object EliminateSorts extends Rule:
   override def apply(plan: ProtoLogicalPlan): ProtoLogicalPlan =
     TreeTransform.transformPlanUp(plan) {
       // Sort on single row is redundant
-      case ProtoLogicalPlan.Sort(_, _, limit @ ProtoLogicalPlan.Limit(1, _)) =>
+      case ProtoLogicalPlan.Sort(_, limit @ ProtoLogicalPlan.Limit(1, _)) =>
         limit
 
       // Nested sorts: outer sort dominates
-      case ProtoLogicalPlan.Sort(outerOrder, outerGlobal, ProtoLogicalPlan.Sort(_, _, child)) =>
-        ProtoLogicalPlan.Sort(outerOrder, outerGlobal, child)
+      case ProtoLogicalPlan.Sort(outerOrder, ProtoLogicalPlan.Sort(_, child)) =>
+        ProtoLogicalPlan.Sort(outerOrder, child)
 
       // Empty sort order (no-op)
-      case ProtoLogicalPlan.Sort(order, _, child) if order.isEmpty =>
+      case ProtoLogicalPlan.Sort(order, child) if order.isEmpty =>
         child
 
       // Sort consumed by Aggregate (order doesn't matter for aggregation)
       case agg @ ProtoLogicalPlan.Aggregate(
             grouping,
             aggregates,
-            ProtoLogicalPlan.Sort(_, _, child)
+            ProtoLogicalPlan.Sort(_, child)
           ) =>
         ProtoLogicalPlan.Aggregate(grouping, aggregates, child)
 
       // Sort consumed by Distinct (order doesn't matter for distinctness)
-      case ProtoLogicalPlan.Distinct(ProtoLogicalPlan.Sort(_, _, child)) =>
+      case ProtoLogicalPlan.Distinct(ProtoLogicalPlan.Sort(_, child)) =>
         ProtoLogicalPlan.Distinct(child)
 
       // Sort through SubqueryAlias: push sort inside
-      case ProtoLogicalPlan.Sort(order, global, ProtoLogicalPlan.SubqueryAlias(alias, child)) =>
-        ProtoLogicalPlan.SubqueryAlias(alias, ProtoLogicalPlan.Sort(order, global, child))
+      case ProtoLogicalPlan.Sort(order, ProtoLogicalPlan.SubqueryAlias(alias, child)) =>
+        ProtoLogicalPlan.SubqueryAlias(alias, ProtoLogicalPlan.Sort(order, child))
 
       // Sort through Hint: push sort inside
-      case ProtoLogicalPlan.Sort(order, global, ProtoLogicalPlan.ResolvedHint(hints, child)) =>
-        ProtoLogicalPlan.ResolvedHint(hints, ProtoLogicalPlan.Sort(order, global, child))
+      case ProtoLogicalPlan.Sort(order, ProtoLogicalPlan.ResolvedHint(hints, child)) =>
+        ProtoLogicalPlan.ResolvedHint(hints, ProtoLogicalPlan.Sort(order, child))
     }

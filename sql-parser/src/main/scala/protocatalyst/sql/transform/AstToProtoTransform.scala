@@ -120,7 +120,7 @@ object AstToProtoTransform:
       sorted <- stmt.orderBy match
         case orders if orders.nonEmpty =>
           transformOrderBy(orders, ctx).map { sortOrders =>
-            ProtoLogicalPlan.Sort(sortOrders, global = true, projected)
+            ProtoLogicalPlan.Sort(sortOrders, projected)
           }
         case _ =>
           Right(projected)

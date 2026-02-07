@@ -101,7 +101,7 @@ object EliminateOuterJoin extends Rule:
       case ProtoLogicalPlan.Join(left, right, _, _) =>
         collectAliases(left) ++ collectAliases(right)
       case ProtoLogicalPlan.Aggregate(_, _, child) => collectAliases(child)
-      case ProtoLogicalPlan.Sort(_, _, child)      => collectAliases(child)
+      case ProtoLogicalPlan.Sort(_, child)         => collectAliases(child)
       case ProtoLogicalPlan.Limit(_, child)        => collectAliases(child)
       case ProtoLogicalPlan.Distinct(child)        => collectAliases(child)
       case _                                       => Set.empty

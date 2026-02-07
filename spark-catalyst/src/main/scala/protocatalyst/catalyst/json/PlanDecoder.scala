@@ -84,10 +84,9 @@ object PlanDecoder {
           for {
             orderJson <- c.get[Vector[Json]]("order")
             order <- decodeSortOrders(orderJson)
-            global <- c.get[Boolean]("global")
             childJson <- c.get[Json]("child")
             child <- decode(childJson)
-          } yield Sort(order, global, child)
+          } yield Sort(order, global = true, child)
 
         case "protocatalyst.plan.ProtoLogicalPlan.Limit" =>
           for {

@@ -102,11 +102,11 @@ object PlanDsl:
 
     /** Add a sort (ORDER BY clause). */
     def orderBy(orders: SortOrder*): ProtoLogicalPlan =
-      ProtoLogicalPlan.Sort(orders.toVector, global = true, plan)
+      ProtoLogicalPlan.Sort(orders.toVector, plan)
 
-    /** Add a sort with global flag. */
-    def sort(orders: SortOrder*)(global: Boolean = true): ProtoLogicalPlan =
-      ProtoLogicalPlan.Sort(orders.toVector, global, plan)
+    /** Add a sort. */
+    def sort(orders: SortOrder*): ProtoLogicalPlan =
+      ProtoLogicalPlan.Sort(orders.toVector, plan)
 
     /** Add a limit. */
     def limit(n: Int): ProtoLogicalPlan =

@@ -71,7 +71,7 @@ object MockQueryBinder:
       case Project(_, child)      => collectSchemas(child, catalog)
       case Filter(_, child)       => collectSchemas(child, catalog)
       case Aggregate(_, _, child) => collectSchemas(child, catalog)
-      case Sort(_, _, child)      => collectSchemas(child, catalog)
+      case Sort(_, child)         => collectSchemas(child, catalog)
       case Limit(_, child)        => collectSchemas(child, catalog)
       case Distinct(child)        => collectSchemas(child, catalog)
       case Window(_, _, _, child) => collectSchemas(child, catalog)
@@ -171,12 +171,12 @@ object MockQueryBinder:
             BoundPlan(Aggregate(boundGrouping, boundAggs, boundChild))
           case err => err
 
-      case Sort(order, global, child) =>
+      case Sort(order, child) =>
         bindPlan(child, ctx) match
           case BoundPlan(boundChild) =>
             val boundOrder =
               order.map(o => SortOrder(bindExpr(o.child, ctx), o.direction, o.nullOrdering))
-            BoundPlan(Sort(boundOrder, global, boundChild))
+            BoundPlan(Sort(boundOrder, boundChild))
           case err => err
 
       case Limit(n, child) =>

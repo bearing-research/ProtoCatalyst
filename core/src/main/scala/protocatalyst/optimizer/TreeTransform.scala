@@ -483,7 +483,7 @@ object TreeTransform:
         then plan
         else Aggregate(newGrouping, newAggregates, newChild)
 
-      case Sort(order, global, child) =>
+      case Sort(order, child) =>
         val newOrder = order.map { so =>
           val newExpr = transform(so.child)
           if newExpr eq so.child then so else so.copy(child = newExpr)
@@ -491,7 +491,7 @@ object TreeTransform:
         val orderChanged = newOrder.zip(order).exists((a, b) => !(a eq b))
         val newChild = transformPlanExprs(child)(transform)
         if !orderChanged && (newChild eq child) then plan
-        else Sort(newOrder, global, newChild)
+        else Sort(newOrder, newChild)
 
       case Limit(limit, child) =>
         val newChild = transformPlanExprs(child)(transform)
@@ -645,9 +645,9 @@ object TreeTransform:
         val newChild = transform(child)
         if newChild eq child then plan else Aggregate(groupingExprs, aggregateExprs, newChild)
 
-      case Sort(order, global, child) =>
+      case Sort(order, child) =>
         val newChild = transform(child)
-        if newChild eq child then plan else Sort(order, global, newChild)
+        if newChild eq child then plan else Sort(order, newChild)
 
       case Limit(limit, child) =>
         val newChild = transform(child)

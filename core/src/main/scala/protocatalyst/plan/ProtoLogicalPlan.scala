@@ -36,7 +36,6 @@ enum ProtoLogicalPlan extends Serializable:
 
   case Sort(
       order: Vector[SortOrder],
-      global: Boolean,
       child: ProtoLogicalPlan
   )
 

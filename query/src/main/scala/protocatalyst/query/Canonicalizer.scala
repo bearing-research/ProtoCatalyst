@@ -139,10 +139,9 @@ object Canonicalizer:
           transformPlan(child, exprTransform)
         )
 
-      case Sort(order, global, child) =>
+      case Sort(order, child) =>
         Sort(
           order.map(so => so.copy(child = exprTransform(so.child))),
-          global,
           transformPlan(child, exprTransform)
         )
 

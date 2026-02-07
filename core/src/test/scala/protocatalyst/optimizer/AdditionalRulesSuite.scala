@@ -315,10 +315,10 @@ class AdditionalRulesSuite extends munit.FunSuite:
   test("RemoveRedundantSorts: remove duplicate consecutive sorts"):
     val sortOrder = Vector(SortOrder(col("a"), Ascending, NullsFirst))
     val input =
-      ProtoLogicalPlan.Sort(sortOrder, false, ProtoLogicalPlan.Sort(sortOrder, false, table("t")))
+      ProtoLogicalPlan.Sort(sortOrder, ProtoLogicalPlan.Sort(sortOrder, table("t")))
     val result = RemoveRedundantSorts(input)
     result match
-      case ProtoLogicalPlan.Sort(_, _, ProtoLogicalPlan.RelationRef(_, _, _)) => ()
+      case ProtoLogicalPlan.Sort(_, ProtoLogicalPlan.RelationRef(_, _, _)) => ()
       case _ => fail(s"Expected single sort, got $result")
 
   test("RemoveRedundantSorts: outer sort dominates even with different inner order"):
@@ -326,11 +326,11 @@ class AdditionalRulesSuite extends munit.FunSuite:
     val sortOrder1 = Vector(SortOrder(col("a"), Ascending, NullsFirst))
     val sortOrder2 = Vector(SortOrder(col("b"), Descending, NullsLast))
     val input =
-      ProtoLogicalPlan.Sort(sortOrder1, false, ProtoLogicalPlan.Sort(sortOrder2, false, table("t")))
+      ProtoLogicalPlan.Sort(sortOrder1, ProtoLogicalPlan.Sort(sortOrder2, table("t")))
     val result = RemoveRedundantSorts(input)
     // Inner sort should be removed since outer sort dominates
     result match
-      case ProtoLogicalPlan.Sort(order, _, ProtoLogicalPlan.RelationRef(_, _, _)) =>
+      case ProtoLogicalPlan.Sort(order, ProtoLogicalPlan.RelationRef(_, _, _)) =>
         assertEquals(order, sortOrder1)
       case _ => fail(s"Expected single sort with outer order, got $result")
 

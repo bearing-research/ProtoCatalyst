@@ -286,7 +286,7 @@ object QuoteMacro:
             outerSchema
           )
           sortOrders <- extractSortOrders(sortExprs, childSchema)
-        yield (ProtoLogicalPlan.Sort(sortOrders, global = true, childPlan), tableName, childSchema)
+        yield (ProtoLogicalPlan.Sort(sortOrders, childPlan), tableName, childSchema)
 
       // query.as("alias")
       case Apply(Select(child, "as"), List(aliasExpr)) =>

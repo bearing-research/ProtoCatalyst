@@ -132,7 +132,7 @@ class LimitSortSuite extends munit.FunSuite with RuleTestBase:
 
     val optimized = EliminateSorts(input)
     optimized match
-      case ProtoLogicalPlan.Sort(order, _, ProtoLogicalPlan.RelationRef(_, _, _)) =>
+      case ProtoLogicalPlan.Sort(order, ProtoLogicalPlan.RelationRef(_, _, _)) =>
         assertEquals(order.head.child.asInstanceOf[ProtoExpr.ColumnRef].name, "a")
       case _ => fail(s"Expected Sort(a, Scan) without inner Sort, got $optimized")
 
@@ -140,7 +140,6 @@ class LimitSortSuite extends munit.FunSuite with RuleTestBase:
     // Sort with no order -> child
     val plan = ProtoLogicalPlan.Sort(
       Vector.empty,
-      global = true,
       relation("t")
     )
     val optimized = EliminateSorts(plan)

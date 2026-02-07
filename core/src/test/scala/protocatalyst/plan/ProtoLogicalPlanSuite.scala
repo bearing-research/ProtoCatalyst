@@ -156,11 +156,10 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
         NullOrdering.NullsFirst
       )
     )
-    val plan = ProtoLogicalPlan.Sort(order, global = true, baseRelation)
+    val plan = ProtoLogicalPlan.Sort(order, baseRelation)
     plan match
-      case ProtoLogicalPlan.Sort(o, g, _) =>
+      case ProtoLogicalPlan.Sort(o, _) =>
         assertEquals(o.size, 1)
-        assertEquals(g, true)
       case _ => fail(s"Expected Sort, got $plan")
 
   test("Sort with multiple orders"):
@@ -176,9 +175,9 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
         NullOrdering.NullsLast
       )
     )
-    val plan = ProtoLogicalPlan.Sort(order, global = false, baseRelation)
+    val plan = ProtoLogicalPlan.Sort(order, baseRelation)
     plan match
-      case ProtoLogicalPlan.Sort(o, false, _) =>
+      case ProtoLogicalPlan.Sort(o, _) =>
         assertEquals(o.size, 2)
       case _ => fail(s"Expected Sort, got $plan")
 
@@ -434,7 +433,6 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
           NullOrdering.NullsFirst
         )
       ),
-      global = true,
       projected
     )
     val limited = ProtoLogicalPlan.Limit(10, sorted)
@@ -442,7 +440,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     limited match
       case ProtoLogicalPlan.Limit(
             10,
-            ProtoLogicalPlan.Sort(_, _, ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, _)))
+            ProtoLogicalPlan.Sort(_, ProtoLogicalPlan.Project(_, ProtoLogicalPlan.Filter(_, _)))
           ) =>
         ()
       case _ => fail(s"Expected complex nested plan, got $limited")

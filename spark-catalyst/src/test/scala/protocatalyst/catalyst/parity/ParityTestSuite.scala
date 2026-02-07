@@ -258,7 +258,7 @@ class ParityTestSuite extends FunSuite {
             "nullOrdering": "NullsLast"
           }
         ],
-        "global": true,
+
         "child": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [
@@ -1425,7 +1425,7 @@ class ParityTestSuite extends FunSuite {
             "nullOrdering": "NullsFirst"
           }
         ],
-        "global": true,
+
         "child": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [
@@ -2463,7 +2463,7 @@ class ParityTestSuite extends FunSuite {
             "nullOrdering": "NullsLast"
           }
         ],
-        "global": true,
+
         "child": {
           "$type": "protocatalyst.plan.ProtoLogicalPlan.Project",
           "projectList": [
@@ -2612,7 +2612,6 @@ class ParityTestSuite extends FunSuite {
           "nullOrdering": "UnknownNullOrdering"
         }
       ],
-      "global": true,
       "child": {"$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef", "name": "t", "alias": null, "schemaContract": {"fields": [], "fingerprint": 0}}
     }"""
     val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)

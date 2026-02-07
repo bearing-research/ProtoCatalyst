@@ -27,7 +27,7 @@ object PropagateEmptyRelation extends Rule:
         child
 
       // Sort on empty → empty
-      case ProtoLogicalPlan.Sort(_, _, child) if isEmpty(child) =>
+      case ProtoLogicalPlan.Sort(_, child) if isEmpty(child) =>
         child
 
       // Distinct on empty → empty

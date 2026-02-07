@@ -279,7 +279,7 @@ object PushDownPredicates extends Rule:
         collectColumnRefs(child).map { case (name, _) => (name, Some(alias)) }
 
       case ProtoLogicalPlan.Filter(_, child)   => collectColumnRefs(child)
-      case ProtoLogicalPlan.Sort(_, _, child)  => collectColumnRefs(child)
+      case ProtoLogicalPlan.Sort(_, child)     => collectColumnRefs(child)
       case ProtoLogicalPlan.Limit(_, child)    => collectColumnRefs(child)
       case ProtoLogicalPlan.Distinct(child)    => collectColumnRefs(child)
       case ProtoLogicalPlan.ResolvedHint(_, c) => collectColumnRefs(c)

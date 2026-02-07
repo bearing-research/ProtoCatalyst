@@ -120,7 +120,7 @@ object InlineCTE extends Rule:
         case ProtoLogicalPlan.Project(_, child)          => countInPlan(child)
         case ProtoLogicalPlan.Filter(_, child)           => countInPlan(child)
         case ProtoLogicalPlan.Aggregate(_, _, child)     => countInPlan(child)
-        case ProtoLogicalPlan.Sort(_, _, child)          => countInPlan(child)
+        case ProtoLogicalPlan.Sort(_, child)             => countInPlan(child)
         case ProtoLogicalPlan.Limit(_, child)            => countInPlan(child)
         case ProtoLogicalPlan.Distinct(child)            => countInPlan(child)
         case ProtoLogicalPlan.SubqueryAlias(_, child)    => countInPlan(child)

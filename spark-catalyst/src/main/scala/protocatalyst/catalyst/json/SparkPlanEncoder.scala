@@ -47,7 +47,7 @@ object SparkPlanEncoder {
         Json.obj(
           "$type" -> Json.fromString("Sort"),
           "order" -> Json.arr(s.order.map(encodeSortOrder): _*),
-          "global" -> Json.fromBoolean(s.global),
+          "global" -> Json.fromBoolean(true),
           "child" -> encode(s.child)
         )
 

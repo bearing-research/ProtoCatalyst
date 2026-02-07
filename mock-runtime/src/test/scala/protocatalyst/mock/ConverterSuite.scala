@@ -297,16 +297,14 @@ class ConverterSuite extends munit.FunSuite:
           NullOrdering.NullsLast
         )
       ),
-      true,
       ProtoLogicalPlan.RelationRef("users", None, schema)
     )
 
     val mock = PlanConverter.toMock(proto)
 
     mock match
-      case MockLogicalPlan.Sort(order, global, _) =>
+      case MockLogicalPlan.Sort(order, _) =>
         assertEquals(order.size, 1)
-        assertEquals(global, true)
         assertEquals(order.head.direction, MockExpression.SortDirection.Descending)
       case other =>
         fail(s"Expected Sort, got $other")

@@ -84,7 +84,7 @@ class MockQueryBinderSuite extends munit.FunSuite:
     MockQueryBinder.bind(compiled.artifact.plan, catalog) match
       case MockQueryBinder.BoundPlan(plan) =>
         plan match
-          case ProtoLogicalPlan.Sort(orders, _, _) =>
+          case ProtoLogicalPlan.Sort(orders, _) =>
             assert(orders.forall(o => containsBoundRef(o.child)), "Expected BoundRef in sort order")
           case _ => fail("Expected Sort plan")
       case MockQueryBinder.BindingError(msg, _) =>

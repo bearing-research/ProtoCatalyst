@@ -368,7 +368,6 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
           NullOrdering.NullsLast
         )
       ),
-      global = true,
       baseRelation
     )
     val artifact = makeArtifactWithPlan(plan, simpleSchema)

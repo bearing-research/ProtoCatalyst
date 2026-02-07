@@ -72,7 +72,6 @@ object MockLogicalPlan:
   /** ORDER BY clause. */
   case class Sort(
       order: Seq[SortOrder],
-      global: Boolean,
       child: MockLogicalPlan
   ) extends MockLogicalPlan:
     def output: Seq[AttributeReference] = child.output

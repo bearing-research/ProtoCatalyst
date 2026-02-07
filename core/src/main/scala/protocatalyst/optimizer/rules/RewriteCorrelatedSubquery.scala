@@ -223,7 +223,7 @@ object RewriteCorrelatedSubquery extends Rule:
           case _                                          => None
         }.toSet
       case ProtoLogicalPlan.Filter(_, child)        => collectProducedColumns(child)
-      case ProtoLogicalPlan.Sort(_, _, child)       => collectProducedColumns(child)
+      case ProtoLogicalPlan.Sort(_, child)          => collectProducedColumns(child)
       case ProtoLogicalPlan.Limit(_, child)         => collectProducedColumns(child)
       case ProtoLogicalPlan.Distinct(child)         => collectProducedColumns(child)
       case ProtoLogicalPlan.ResolvedHint(_, child)  => collectProducedColumns(child)
