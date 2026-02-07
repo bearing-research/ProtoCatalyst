@@ -22,6 +22,7 @@ import org.apache.spark.sql.catalyst.expressions.{
   Concat,
   EqualTo,
   EvalMode,
+  Explode,
   Expression,
   GreaterThan,
   GreaterThanOrEqual,
@@ -36,6 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.{
   Multiply,
   Not,
   Or,
+  PosExplode,
   Substring,
   Subtract,
   Upper
@@ -242,6 +244,33 @@ object ExpressionDecoder {
             child <- decode(childJson)
             name <- c.get[String]("name")
           } yield Alias(child, name)()
+
+        // === Generator expressions ===
+        case "protocatalyst.expr.ProtoExpr.Explode" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+          } yield Explode(child)
+
+        case "protocatalyst.expr.ProtoExpr.PosExplode" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+          } yield PosExplode(child)
+
+        case "protocatalyst.expr.ProtoExpr.Inline" =>
+          for {
+            childJson <- c.get[Json]("child")
+            child <- decode(childJson)
+          } yield org.apache.spark.sql.catalyst.expressions.Inline(child)
+
+        case "protocatalyst.expr.ProtoExpr.Stack" =>
+          for {
+            numRowsJson <- c.get[Json]("numRows")
+            numRows <- decode(numRowsJson)
+            childrenJson <- c.get[Vector[Json]]("children")
+            children <- decodeExprs(childrenJson)
+          } yield UnresolvedFunction(Seq("stack"), numRows +: children, false)
 
         // === Opaque function call ===
         case "protocatalyst.expr.ProtoExpr.OpaqueCall" =>

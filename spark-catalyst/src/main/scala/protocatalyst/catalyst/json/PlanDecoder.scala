@@ -1,7 +1,14 @@
 package protocatalyst.catalyst.json
 
 import io.circe.{DecodingFailure, HCursor, Json}
-import org.apache.spark.sql.catalyst.analysis.{UnresolvedInlineTable, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.FunctionIdentifier
+import org.apache.spark.sql.catalyst.analysis.{
+  UnresolvedAttribute,
+  UnresolvedFunction,
+  UnresolvedGenerator,
+  UnresolvedInlineTable,
+  UnresolvedRelation
+}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -177,19 +184,37 @@ object PlanDecoder {
           }
 
         // === Pivot/Unpivot ===
-        // Note: Pivot and Unpivot have complex Spark 4.0 signatures
-        // Stub implementation - returns child plan for now
         case "protocatalyst.plan.ProtoLogicalPlan.Pivot" =>
           for {
+            groupingJson <- c.get[Vector[Json]]("groupingExprs")
+            grouping <- ExpressionDecoder.decodeExprs(groupingJson)
+            pivotColJson <- c.get[Json]("pivotColumn")
+            pivotCol <- ExpressionDecoder.decode(pivotColJson)
+            pivotValsJson <- c.get[Vector[Json]]("pivotValues")
+            pivotVals <- ExpressionDecoder.decodeExprs(pivotValsJson)
+            aggJson <- c.get[Vector[Json]]("aggregates")
+            aggs <- ExpressionDecoder.decodeExprs(aggJson)
             childJson <- c.get[Json]("child")
             child <- decode(childJson)
-          } yield child // TODO: Implement full Pivot conversion
+          } yield {
+            val groupOpt = if (grouping.isEmpty) None else Some(grouping.map(asNamedExpression))
+            Pivot(groupOpt, pivotCol, pivotVals, aggs, child)
+          }
 
         case "protocatalyst.plan.ProtoLogicalPlan.Unpivot" =>
           for {
+            valueColName <- c.get[String]("valueColumnName")
+            varColName <- c.get[String]("variableColumnName")
+            columnsJson <- c.get[Vector[Json]]("columns")
+            columns <- decodeUnpivotColumns(columnsJson)
             childJson <- c.get[Json]("child")
             child <- decode(childJson)
-          } yield child // TODO: Implement full Unpivot conversion
+          } yield {
+            val (colExprs, aliases) = columns.unzip
+            val values = Some(colExprs.map(e => Seq(asNamedExpression(e))))
+            val aliasOpt = Some(aliases)
+            Unpivot(None, values, aliasOpt, varColName, Seq(valueColName), child)
+          }
 
         // === Lateral ===
         case "protocatalyst.plan.ProtoLogicalPlan.LateralJoin" =>
@@ -203,13 +228,19 @@ object PlanDecoder {
           } yield LateralJoin(left, LateralSubquery(lateral), Inner, condition)
 
         // === Generator (LATERAL VIEW) ===
-        // Note: Generate has complex Spark 4.0 signature
-        // Stub implementation - returns child plan for now
         case "protocatalyst.plan.ProtoLogicalPlan.Generate" =>
           for {
+            generatorJson <- c.get[Json]("generator")
+            generatorExpr <- ExpressionDecoder.decode(generatorJson)
+            generatorOutputNames <- c.get[Vector[String]]("generatorOutput")
+            outer <- c.get[Boolean]("outer")
             childJson <- c.get[Json]("child")
             child <- decode(childJson)
-          } yield child // TODO: Implement full Generate conversion
+          } yield {
+            val generator = toGenerator(generatorExpr)
+            val genOutput = generatorOutputNames.map(name => UnresolvedAttribute(Seq(name)))
+            Generate(generator, Seq.empty, outer, None, genOutput, child)
+          }
 
         // === Hints ===
         case "protocatalyst.plan.ProtoLogicalPlan.ResolvedHint" =>
@@ -376,6 +407,46 @@ object PlanDecoder {
         } yield (name, plan)
       case _ =>
         failure("Expected array of 2 elements for CTE relation", Nil)
+    }
+  }
+
+  /** Convert a decoded expression to a Spark Generator type. */
+  private def toGenerator(expr: Expression): Generator = expr match {
+    case g: Generator           => g
+    case uf: UnresolvedFunction =>
+      UnresolvedGenerator(FunctionIdentifier(uf.nameParts.mkString(".")), uf.arguments)
+    case other =>
+      UnresolvedGenerator(FunctionIdentifier(other.sql), Seq(other))
+  }
+
+  /** Decode unpivot columns — upickle serializes tuples as 2-element JSON arrays. */
+  private def decodeUnpivotColumns(
+      jsons: Vector[Json]
+  ): EitherResult[Seq[(Expression, Option[String])]] = {
+    var result: Vector[(Expression, Option[String])] = Vector.empty
+    var error: Option[DecodingFailure] = None
+    val iter = jsons.iterator
+    while (iter.hasNext && error.isEmpty) {
+      decodeUnpivotColumn(iter.next()) match {
+        case scala.Right(col) => result = result :+ col
+        case scala.Left(err)  => error = Some(err)
+      }
+    }
+    error match {
+      case Some(err) => scala.Left(err)
+      case None      => scala.Right(result)
+    }
+  }
+
+  private def decodeUnpivotColumn(json: Json): EitherResult[(Expression, Option[String])] = {
+    json.asArray match {
+      case Some(arr) if arr.length == 2 =>
+        for {
+          expr <- ExpressionDecoder.decode(arr(0))
+          alias <- arr(1).as[Option[String]].left.map(e => DecodingFailure(e.message, Nil))
+        } yield (expr, alias)
+      case _ =>
+        failure("Expected array of 2 elements for unpivot column tuple", Nil)
     }
   }
 

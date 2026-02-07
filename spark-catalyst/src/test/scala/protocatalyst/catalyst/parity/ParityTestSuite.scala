@@ -1711,13 +1711,20 @@ class ParityTestSuite extends FunSuite {
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
   }
 
-  test("PlanDecoder handles Pivot (stub)") {
+  test("PlanDecoder handles Pivot") {
     val json = """{
       "$type": "protocatalyst.plan.ProtoLogicalPlan.Pivot",
-      "groupByExprsOpt": [],
+      "groupingExprs": [
+        {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "name", "qualifier": null}
+      ],
       "pivotColumn": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "category", "qualifier": null},
-      "pivotValues": [],
-      "aggregates": [],
+      "pivotValues": [
+        {"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.StringValue", "value": "A"}},
+        {"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.StringValue", "value": "B"}}
+      ],
+      "aggregates": [
+        {"$type": "protocatalyst.expr.ProtoExpr.Sum", "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "amount", "qualifier": null}}
+      ],
       "child": {
         "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
         "name": "sales",
@@ -1727,15 +1734,23 @@ class ParityTestSuite extends FunSuite {
     }"""
     val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Pivot],
+      s"Expected Pivot but got ${plan.getClass.getSimpleName}"
+    )
   }
 
-  test("PlanDecoder handles Unpivot (stub)") {
+  test("PlanDecoder handles Unpivot") {
     val json = """{
       "$type": "protocatalyst.plan.ProtoLogicalPlan.Unpivot",
-      "ids": [],
-      "values": [],
-      "variableColumnName": "variable",
       "valueColumnName": "value",
+      "variableColumnName": "variable",
+      "columns": [
+        [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "q1", "qualifier": null}, null],
+        [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "q2", "qualifier": null}, null]
+      ],
+      "includeNulls": false,
       "child": {
         "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
         "name": "sales",
@@ -1745,16 +1760,22 @@ class ParityTestSuite extends FunSuite {
     }"""
     val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Unpivot],
+      s"Expected Unpivot but got ${plan.getClass.getSimpleName}"
+    )
   }
 
-  test("PlanDecoder handles Generate (stub)") {
+  test("PlanDecoder handles Generate") {
     val json = """{
       "$type": "protocatalyst.plan.ProtoLogicalPlan.Generate",
-      "generator": {"$type": "protocatalyst.expr.ProtoExpr.OpaqueCall", "functionName": "explode", "arguments": []},
-      "unrequiredChildIndex": [],
+      "generator": {
+        "$type": "protocatalyst.expr.ProtoExpr.Explode",
+        "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "arr", "qualifier": null}
+      },
+      "generatorOutput": ["col"],
       "outer": false,
-      "qualifier": null,
-      "generatorOutput": [],
       "child": {
         "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
         "name": "arrays",
@@ -1764,6 +1785,11 @@ class ParityTestSuite extends FunSuite {
     }"""
     val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Generate],
+      s"Expected Generate but got ${plan.getClass.getSimpleName}"
+    )
   }
 
   test("PlanDecoder handles ResolvedHint") {
@@ -2599,6 +2625,136 @@ class ParityTestSuite extends FunSuite {
     }"""
     val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+  }
+
+  test("PlanDecoder handles Generate with PosExplode") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.Generate",
+      "generator": {
+        "$type": "protocatalyst.expr.ProtoExpr.PosExplode",
+        "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "arr", "qualifier": null}
+      },
+      "generatorOutput": ["pos", "col"],
+      "outer": false,
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Generate],
+      s"Expected Generate but got ${plan.getClass.getSimpleName}"
+    )
+  }
+
+  test("PlanDecoder handles Generate with outer = true") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.Generate",
+      "generator": {
+        "$type": "protocatalyst.expr.ProtoExpr.Explode",
+        "child": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "arr", "qualifier": null}
+      },
+      "generatorOutput": ["elem"],
+      "outer": true,
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan =
+      result.toOption.get.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Generate]
+    assert(plan.outer, "Expected outer = true")
+  }
+
+  test("PlanDecoder handles Generate with OpaqueCall generator") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.Generate",
+      "generator": {
+        "$type": "protocatalyst.expr.ProtoExpr.OpaqueCall",
+        "functionName": "json_tuple",
+        "arguments": [
+          {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "data", "qualifier": null},
+          {"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.StringValue", "value": "name"}}
+        ]
+      },
+      "generatorOutput": ["c0"],
+      "outer": false,
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Generate],
+      s"Expected Generate but got ${plan.getClass.getSimpleName}"
+    )
+  }
+
+  test("PlanDecoder handles Pivot with empty grouping") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.Pivot",
+      "groupingExprs": [],
+      "pivotColumn": {"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "category", "qualifier": null},
+      "pivotValues": [
+        {"$type": "protocatalyst.expr.ProtoExpr.Literal", "value": {"$type": "protocatalyst.types.LiteralValue.StringValue", "value": "X"}}
+      ],
+      "aggregates": [
+        {"$type": "protocatalyst.expr.ProtoExpr.Count", "children": []}
+      ],
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Pivot],
+      s"Expected Pivot but got ${plan.getClass.getSimpleName}"
+    )
+  }
+
+  test("PlanDecoder handles Unpivot with aliases") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.Unpivot",
+      "valueColumnName": "val",
+      "variableColumnName": "var",
+      "columns": [
+        [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "q1", "qualifier": null}, "Quarter 1"],
+        [{"$type": "protocatalyst.expr.ProtoExpr.ColumnRef", "name": "q2", "qualifier": null}, "Quarter 2"]
+      ],
+      "includeNulls": true,
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    val plan = result.toOption.get
+    assert(
+      plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Unpivot],
+      s"Expected Unpivot but got ${plan.getClass.getSimpleName}"
+    )
   }
 
   test("PlanDecoder handles default sort direction") {
