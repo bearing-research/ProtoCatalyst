@@ -1,0 +1,5 @@
+{
+  "id": "dsl_filter_limit",
+  "description": "DSL: Table[QuoteUser](users).filter(_.salary >= 70000.0).limit(2)",
+  "source": "dsl"
+}

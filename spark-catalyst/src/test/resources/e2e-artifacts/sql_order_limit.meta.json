@@ -1,0 +1,5 @@
+{
+  "id": "sql_order_limit",
+  "description": "SQL: SELECT name, salary FROM users ORDER BY salary DESC LIMIT 3",
+  "source": "sql"
+}

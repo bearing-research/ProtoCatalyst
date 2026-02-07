@@ -1,0 +1,5 @@
+{
+  "id": "dsl_table_scan",
+  "description": "DSL: Table[QuoteUser](users) — full table scan",
+  "source": "dsl"
+}

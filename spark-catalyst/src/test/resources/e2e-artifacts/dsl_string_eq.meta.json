@@ -1,0 +1,5 @@
+{
+  "id": "dsl_string_eq",
+  "description": "DSL: Table[QuoteUser](users).filter(_.name === \"Alice\")",
+  "source": "dsl"
+}

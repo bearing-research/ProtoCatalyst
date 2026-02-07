@@ -1,0 +1,5 @@
+{
+  "id": "sql_select_where",
+  "description": "SQL: SELECT name, age FROM users WHERE age > 25",
+  "source": "sql"
+}

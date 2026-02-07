@@ -1,0 +1,5 @@
+{
+  "id": "dsl_filter_gt",
+  "description": "DSL: Table[QuoteUser](users).filter(_.age > 25)",
+  "source": "dsl"
+}

@@ -1,0 +1,5 @@
+{
+  "id": "dsl_distinct",
+  "description": "DSL: Table[QuoteUser](users).distinct",
+  "source": "dsl"
+}

@@ -1,0 +1,5 @@
+{
+  "id": "sql_arithmetic",
+  "description": "SQL: SELECT name, salary + 1000 FROM users WHERE age >= 28",
+  "source": "sql"
+}
