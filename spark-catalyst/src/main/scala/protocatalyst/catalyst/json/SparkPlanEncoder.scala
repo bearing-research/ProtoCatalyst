@@ -225,6 +225,13 @@ object SparkPlanEncoder {
           "condition" -> lj.condition.map(encodeExpr).getOrElse(Json.Null)
         )
 
+      case h: UnresolvedHint =>
+        Json.obj(
+          "$type" -> Json.fromString("ResolvedHint"),
+          "hints" -> Json.arr(encodeSparkHint(h.name, h.parameters)),
+          "child" -> encode(h.child)
+        )
+
       // UnresolvedHaving — Spark's unresolved HAVING clause, encode as Filter
       case uh if uh.getClass.getSimpleName == "UnresolvedHaving" =>
         val condition = uh.expressions.head
@@ -850,6 +857,42 @@ object SparkPlanEncoder {
       "left" -> encodeExpr(left),
       "right" -> encodeExpr(right)
     )
+
+  /** Encode a Spark hint to opaque PlanHint JSON format. Format: {"name": "HINT_NAME", "params":
+    * [{"$type": "...HintParam.StringVal/IntVal", "value": ...}]} Normalizes Spark hint name aliases
+    * (BROADCASTJOIN → BROADCAST, etc.)
+    */
+  private def encodeSparkHint(name: String, params: Seq[Expression]): Json = {
+    // Normalize Spark hint name aliases to canonical names
+    val canonicalName = name.toUpperCase match {
+      case "BROADCASTJOIN" | "MAPJOIN" => "BROADCAST"
+      case "MERGE" | "MERGEJOIN"       => "SHUFFLE_MERGE"
+      case other                       => other
+    }
+
+    val hintParams: Seq[Json] = params.map {
+      case UnresolvedAttribute(nameParts) =>
+        Json.obj(
+          "$type" -> Json.fromString("protocatalyst.plan.HintParam.StringVal"),
+          "value" -> Json.fromString(nameParts.mkString("."))
+        )
+      case Literal(n: Int, IntegerType) =>
+        Json.obj(
+          "$type" -> Json.fromString("protocatalyst.plan.HintParam.IntVal"),
+          "value" -> Json.fromInt(n)
+        )
+      case other =>
+        Json.obj(
+          "$type" -> Json.fromString("protocatalyst.plan.HintParam.StringVal"),
+          "value" -> Json.fromString(other.sql)
+        )
+    }
+
+    Json.obj(
+      "name" -> Json.fromString(canonicalName),
+      "params" -> Json.arr(hintParams: _*)
+    )
+  }
 
   private def encodeWindowFrame(frame: WindowFrame): Json = frame match {
     case SpecifiedWindowFrame(frameType, lower, upper) =>

@@ -1822,10 +1822,9 @@ class TransformSuite extends munit.FunSuite:
     val hint = findHint(result.toOption.get)
     assert(hint.isDefined, "Expected ResolvedHint in plan")
     assertEquals(hint.get.hints.size, 1)
-    hint.get.hints.head match
-      case protocatalyst.plan.PlanHint.Broadcast(tables) =>
-        assertEquals(tables, Vector("users"))
-      case other => fail(s"Expected Broadcast hint, got $other")
+    val h = hint.get.hints.head
+    assertEquals(h.name, "BROADCAST")
+    assertEquals(h.params, Vector(protocatalyst.plan.HintParam.StringVal("users")))
 
   test("transforms query with REPARTITION hint"):
     val stmt = asSelect(
@@ -1847,10 +1846,9 @@ class TransformSuite extends munit.FunSuite:
 
     val hint = findHint(result.toOption.get)
     assert(hint.isDefined, "Expected ResolvedHint in plan")
-    hint.get.hints.head match
-      case protocatalyst.plan.PlanHint.Repartition(partitions, _) =>
-        assertEquals(partitions, 4)
-      case other => fail(s"Expected Repartition hint, got $other")
+    val h = hint.get.hints.head
+    assertEquals(h.name, "REPARTITION")
+    assert(h.params.contains(protocatalyst.plan.HintParam.IntVal(4)))
 
   test("transforms query with multiple hints"):
     val stmt = asSelect(

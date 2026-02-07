@@ -22,10 +22,23 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark, sparkCatalyst)
+  .aggregate(proto, core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark, sparkCatalyst)
   .settings(
     name := "protocatalyst",
     publish / skip := true
+  )
+
+// Protobuf schema module (Java-only) — shared between Scala 3 and Scala 2.13 modules
+lazy val proto = project
+  .in(file("proto"))
+  .settings(
+    name := "protocatalyst-proto",
+    crossPaths := false,
+    autoScalaLibrary := false,
+    libraryDependencies += "com.google.protobuf" % "protobuf-java" % "4.29.3",
+    Compile / PB.targets := Seq(
+      PB.gens.java -> (Compile / sourceManaged).value
+    )
   )
 
 // Mock runtime module for testing without Spark dependency
@@ -40,6 +53,7 @@ lazy val mockRuntime = project
 // Core module: types, schema, IR
 lazy val core = project
   .in(file("core"))
+  .dependsOn(proto)
   .settings(
     name := "protocatalyst-core",
     commonSettings,
@@ -193,8 +207,10 @@ lazy val benchmarkSpark = project
 
 // Spark Catalyst integration module (Scala 2.13) - Convert ProtoLogicalPlan to Spark LogicalPlan
 // Note: This module is standalone (no dependency on Scala 3 modules) to avoid version conflicts
+// Depends on proto (Java-only) for protobuf deserialization
 lazy val sparkCatalyst = project
   .in(file("spark-catalyst"))
+  .dependsOn(proto)
   .settings(
     name := "protocatalyst-spark-catalyst",
     scalaVersion := "2.13.16",

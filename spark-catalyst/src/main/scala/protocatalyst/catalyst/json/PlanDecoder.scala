@@ -249,9 +249,13 @@ object PlanDecoder {
             childJson <- c.get[Json]("child")
             child <- decode(childJson)
           } yield {
-            // Spark uses UnresolvedHint for unresolved hints
-            // For now, just return the child since hints need catalog resolution
-            child
+            // Wrap child plan with UnresolvedHint for each hint
+            hintsJson.foldLeft(child) { (plan, hintJson) =>
+              decodeHint(hintJson) match {
+                case scala.Right((name, params)) => UnresolvedHint(name, params, plan)
+                case scala.Left(_)               => plan
+              }
+            }
           }
 
         case other =>
@@ -453,5 +457,32 @@ object PlanDecoder {
   private def optionSequence[A](opt: Option[EitherResult[A]]): EitherResult[Option[A]] = opt match {
     case None         => scala.Right(None)
     case Some(either) => either.map(Some(_))
+  }
+
+  /** Decode an opaque PlanHint JSON to a Spark hint name and parameters. Format: {"name":
+    * "BROADCAST", "params": [{"$type": "...", "value": ...}, ...]}
+    */
+  private def decodeHint(json: Json): EitherResult[(String, Seq[Expression])] = {
+    val c = json.hcursor
+    for {
+      name <- c.get[String]("name")
+      paramsJson <- c.get[Vector[Json]]("params")
+    } yield {
+      val sparkParams: Seq[Expression] = paramsJson.map { paramJson =>
+        val pc = paramJson.hcursor
+        pc.get[String]("$type").toOption match {
+          case Some("protocatalyst.plan.HintParam.StringVal") =>
+            val v = pc.get[String]("value").getOrElse("")
+            UnresolvedAttribute(Seq(v))
+          case Some("protocatalyst.plan.HintParam.IntVal") =>
+            val v = pc.get[Int]("value").getOrElse(0)
+            Literal(v)
+          case _ =>
+            // Fallback: try as string
+            Literal(paramJson.noSpaces)
+        }
+      }
+      (name, sparkParams)
+    }
   }
 }

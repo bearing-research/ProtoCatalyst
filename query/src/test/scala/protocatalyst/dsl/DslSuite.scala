@@ -886,3 +886,35 @@ class DslSuite extends munit.FunSuite:
             assertEquals(parts.size, 1)
           case other => fail(s"Expected WindowExpr(Count), got $other")
       case other => fail(s"Expected Project with WindowExpr(Count), got $other")
+
+  // === Hint Tests ===
+
+  test("hint produces ResolvedHint with opaque name"):
+    val query =
+      Table[User]("users").hint(PlanHint("BROADCAST", Vector(HintParam.StringVal("users"))))
+    query.plan match
+      case ProtoLogicalPlan.ResolvedHint(hints, ProtoLogicalPlan.RelationRef("users", _, _)) =>
+        assertEquals(hints.size, 1)
+        assertEquals(hints.head.name, "BROADCAST")
+      case other => fail(s"Expected ResolvedHint, got $other")
+
+  test("hint with int param"):
+    val query = Table[User]("users").hint(PlanHint("COALESCE", Vector(HintParam.IntVal(4))))
+    query.plan match
+      case ProtoLogicalPlan.ResolvedHint(
+            Vector(PlanHint("COALESCE", Vector(HintParam.IntVal(4)))),
+            ProtoLogicalPlan.RelationRef("users", _, _)
+          ) =>
+        () // ok
+      case other => fail(s"Expected ResolvedHint(COALESCE, 4), got $other")
+
+  test("hint on filtered query"):
+    val query =
+      Table[User]("users").filter(_.age > 18).hint(PlanHint("BROADCAST", Vector.empty))
+    query.plan match
+      case ProtoLogicalPlan.ResolvedHint(
+            Vector(PlanHint("BROADCAST", _)),
+            ProtoLogicalPlan.Filter(_, ProtoLogicalPlan.RelationRef("users", _, _))
+          ) =>
+        () // ok
+      case other => fail(s"Expected ResolvedHint(BROADCAST, Filter), got $other")

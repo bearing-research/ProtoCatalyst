@@ -1792,7 +1792,7 @@ class ParityTestSuite extends FunSuite {
     )
   }
 
-  test("PlanDecoder handles ResolvedHint") {
+  test("PlanDecoder handles ResolvedHint (empty hints)") {
     val json = """{
       "$type": "protocatalyst.plan.ProtoLogicalPlan.ResolvedHint",
       "hints": [],
@@ -1805,6 +1805,58 @@ class ParityTestSuite extends FunSuite {
     }"""
     val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
     assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+  }
+
+  test("PlanDecoder handles ResolvedHint with Broadcast (opaque format)") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.ResolvedHint",
+      "hints": [{
+        "name": "BROADCAST",
+        "params": [{"$type": "protocatalyst.plan.HintParam.StringVal", "value": "t1"}]
+      }],
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t1",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    result.foreach { plan =>
+      assert(
+        plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.UnresolvedHint],
+        s"Expected UnresolvedHint, got ${plan.getClass.getSimpleName}"
+      )
+      val hint = plan.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.UnresolvedHint]
+      assertEquals(hint.name, "BROADCAST")
+    }
+  }
+
+  test("PlanDecoder handles ResolvedHint with Coalesce (opaque format)") {
+    val json = """{
+      "$type": "protocatalyst.plan.ProtoLogicalPlan.ResolvedHint",
+      "hints": [{
+        "name": "COALESCE",
+        "params": [{"$type": "protocatalyst.plan.HintParam.IntVal", "value": 4}]
+      }],
+      "child": {
+        "$type": "protocatalyst.plan.ProtoLogicalPlan.RelationRef",
+        "name": "t1",
+        "alias": null,
+        "schemaContract": {"fields": [], "fingerprint": 0}
+      }
+    }"""
+    val result = ArtifactParser.parseRawPlan(parse(json).toOption.get)
+    assert(result.isRight, s"Failed to parse: ${result.left.getOrElse("")}")
+    result.foreach { plan =>
+      assert(
+        plan.isInstanceOf[org.apache.spark.sql.catalyst.plans.logical.UnresolvedHint],
+        s"Expected UnresolvedHint, got ${plan.getClass.getSimpleName}"
+      )
+      val hint = plan.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.UnresolvedHint]
+      assertEquals(hint.name, "COALESCE")
+    }
   }
 
   // === Additional Type Decoder Tests ===
@@ -2169,10 +2221,20 @@ class ParityTestSuite extends FunSuite {
   }
 
   test("ArtifactParser.parsePlan fails with unsupported format") {
-    val badFormat = Array[Byte]('P', 'C', 'A', 'T', 0x02) ++ "{}".getBytes("UTF-8")
+    val badFormat = Array[Byte]('P', 'C', 'A', 'T', 0x99.toByte) ++ "{}".getBytes("UTF-8")
     val result = ArtifactParser.parsePlan(badFormat)
     assert(result.isLeft)
     assert(result.left.getOrElse("").contains("Unsupported format"))
+  }
+
+  test("ArtifactParser.parsePlan handles protobuf format byte with invalid payload") {
+    val badProto = Array[Byte]('P', 'C', 'A', 'T', 0x02) ++ "{}".getBytes("UTF-8")
+    val result = ArtifactParser.parsePlan(badProto)
+    assert(result.isLeft, "Expected Left for invalid protobuf payload")
+    assert(
+      result.left.getOrElse("").contains("Protobuf"),
+      s"Expected protobuf error, got: ${result.left.getOrElse("")}"
+    )
   }
 
   test("ArtifactParser.parsePlanFromJsonString fails with invalid JSON") {

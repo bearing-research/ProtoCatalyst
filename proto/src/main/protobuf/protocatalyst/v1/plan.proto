@@ -1,0 +1,567 @@
+syntax = "proto3";
+package protocatalyst.v1;
+option java_package = "io.protocatalyst.proto.v1";
+option java_multiple_files = true;
+
+import "protocatalyst/v1/types.proto";
+import "protocatalyst/v1/schema.proto";
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum TrimTypeEnum {
+  TRIM_TYPE_BOTH = 0;
+  TRIM_TYPE_LEADING = 1;
+  TRIM_TYPE_TRAILING = 2;
+}
+
+enum DateTimeFieldEnum {
+  DATE_TIME_FIELD_YEAR = 0;
+  DATE_TIME_FIELD_MONTH = 1;
+  DATE_TIME_FIELD_DAY = 2;
+  DATE_TIME_FIELD_HOUR = 3;
+  DATE_TIME_FIELD_MINUTE = 4;
+  DATE_TIME_FIELD_SECOND = 5;
+  DATE_TIME_FIELD_QUARTER = 6;
+  DATE_TIME_FIELD_WEEK = 7;
+  DATE_TIME_FIELD_DAY_OF_WEEK = 8;
+  DATE_TIME_FIELD_DAY_OF_YEAR = 9;
+  DATE_TIME_FIELD_MICROSECOND = 10;
+  DATE_TIME_FIELD_MILLISECOND = 11;
+}
+
+enum SortDirectionEnum {
+  SORT_DIRECTION_ASCENDING = 0;
+  SORT_DIRECTION_DESCENDING = 1;
+}
+
+enum NullOrderingEnum {
+  NULL_ORDERING_NULLS_FIRST = 0;
+  NULL_ORDERING_NULLS_LAST = 1;
+}
+
+enum FrameTypeEnum {
+  FRAME_TYPE_ROWS = 0;
+  FRAME_TYPE_RANGE = 1;
+}
+
+enum JoinTypeEnum {
+  JOIN_TYPE_INNER = 0;
+  JOIN_TYPE_LEFT_OUTER = 1;
+  JOIN_TYPE_RIGHT_OUTER = 2;
+  JOIN_TYPE_FULL_OUTER = 3;
+  JOIN_TYPE_LEFT_SEMI = 4;
+  JOIN_TYPE_LEFT_ANTI = 5;
+  JOIN_TYPE_CROSS = 6;
+}
+
+// ============================================================================
+// Shared Messages
+// ============================================================================
+
+message SortOrderMsg {
+  ProtoExprMsg child = 1;
+  SortDirectionEnum direction = 2;
+  NullOrderingEnum null_ordering = 3;
+}
+
+message WindowFrameMsg {
+  FrameTypeEnum frame_type = 1;
+  FrameBoundMsg lower = 2;
+  FrameBoundMsg upper = 3;
+}
+
+message FrameBoundMsg {
+  oneof bound {
+    EmptyMsg unbounded_preceding = 1;
+    EmptyMsg unbounded_following = 2;
+    EmptyMsg current_row = 3;
+    int64 preceding = 4;
+    int64 following = 5;
+  }
+}
+
+message CaseWhenBranchMsg {
+  ProtoExprMsg condition = 1;
+  ProtoExprMsg value = 2;
+}
+
+message ExprWithAliasMsg {
+  ProtoExprMsg expr = 1;
+  optional string alias = 2;
+}
+
+message HintParamMsg {
+  oneof param {
+    string string_val = 1;
+    int32 int_val = 2;
+  }
+}
+
+message PlanHintMsg {
+  string name = 1;
+  repeated HintParamMsg params = 2;
+}
+
+message CTERelationMsg {
+  string name = 1;
+  ProtoLogicalPlanMsg plan = 2;
+}
+
+message ValuesRowMsg {
+  repeated ProtoExprMsg values = 1;
+}
+
+// ============================================================================
+// ProtoExprMsg — 93 expression variants
+// ============================================================================
+
+message ProtoExprMsg {
+  oneof expr {
+    // Leaf nodes (1-3)
+    LiteralExprMsg literal = 1;
+    ColumnRefExprMsg column_ref = 2;
+    BoundRefExprMsg bound_ref = 3;
+
+    // Comparison (11-16)
+    BinaryExprMsg eq = 11;
+    BinaryExprMsg not_eq = 12;
+    BinaryExprMsg lt = 13;
+    BinaryExprMsg lt_eq = 14;
+    BinaryExprMsg gt = 15;
+    BinaryExprMsg gt_eq = 16;
+
+    // Logical (17-19)
+    NaryExprMsg and = 17;
+    NaryExprMsg or = 18;
+    UnaryExprMsg not = 19;
+
+    // Null handling (21-24)
+    UnaryExprMsg is_null = 21;
+    UnaryExprMsg is_not_null = 22;
+    NaryExprMsg coalesce = 23;
+    BinaryExprMsg null_if = 24;
+
+    // Arithmetic (26-29)
+    BinaryExprMsg add = 26;
+    BinaryExprMsg subtract = 27;
+    BinaryExprMsg multiply = 28;
+    BinaryExprMsg divide = 29;
+
+    // Math functions (31-42)
+    UnaryExprMsg abs = 31;
+    UnaryExprMsg ceil = 32;
+    UnaryExprMsg floor = 33;
+    BinaryExprMsg round = 34;
+    BinaryExprMsg truncate = 35;
+    UnaryExprMsg sqrt = 36;
+    UnaryExprMsg cbrt = 37;
+    BinaryExprMsg pow = 38;
+    BinaryExprMsg pmod = 39;
+    UnaryExprMsg sign = 40;
+    LogExprMsg log = 41;
+    UnaryExprMsg exp = 42;
+
+    // String (44-56)
+    NaryExprMsg concat = 44;
+    SubstringExprMsg substring = 45;
+    UnaryExprMsg upper = 46;
+    UnaryExprMsg lower = 47;
+    TrimExprMsg trim = 48;
+    UnaryExprMsg length = 49;
+    TernaryExprMsg replace = 50;
+    StringLocateExprMsg string_locate = 51;
+    TernaryExprMsg lpad = 52;
+    TernaryExprMsg rpad = 53;
+    StringSplitExprMsg string_split = 54;
+    UnaryExprMsg reverse = 55;
+    BinaryExprMsg string_repeat = 56;
+
+    // Aggregates (58-62)
+    CountExprMsg count = 58;
+    UnaryExprMsg sum = 59;
+    UnaryExprMsg avg = 60;
+    UnaryExprMsg min_expr = 61;
+    UnaryExprMsg max_expr = 62;
+
+    // Control flow (64-66)
+    CaseWhenExprMsg case_when = 64;
+    IfExprMsg if_expr = 65;
+    InExprMsg in_expr = 66;
+
+    // Pattern matching (68)
+    LikeExprMsg like = 68;
+
+    // Cast and alias (70-71)
+    CastExprMsg cast = 70;
+    AliasExprMsg alias = 71;
+
+    // Subquery expressions (73-75)
+    ScalarSubqueryExprMsg scalar_subquery = 73;
+    ExistsExprMsg exists = 74;
+    InSubqueryExprMsg in_subquery = 75;
+
+    // Window functions (77-85)
+    EmptyMsg row_number = 77;
+    EmptyMsg rank = 78;
+    EmptyMsg dense_rank = 79;
+    UnaryExprMsg ntile = 80;
+    LeadLagExprMsg lead = 81;
+    LeadLagExprMsg lag = 82;
+    FirstLastValueExprMsg first_value = 83;
+    FirstLastValueExprMsg last_value = 84;
+    BinaryExprMsg nth_value = 85;
+
+    // Window specification wrapper (87)
+    WindowExprMsg window_expr = 87;
+
+    // Date/Time functions (89-103)
+    EmptyMsg current_date = 89;
+    EmptyMsg current_timestamp = 90;
+    BinaryExprMsg date_add = 91;
+    BinaryExprMsg date_sub = 92;
+    BinaryExprMsg date_diff = 93;
+    ExtractExprMsg extract = 94;
+    DateTruncExprMsg date_trunc = 95;
+    OptionalFormatExprMsg to_date = 96;
+    OptionalFormatExprMsg to_timestamp = 97;
+    UnaryExprMsg year = 98;
+    UnaryExprMsg month = 99;
+    UnaryExprMsg day_of_month = 100;
+    UnaryExprMsg hour = 101;
+    UnaryExprMsg minute = 102;
+    UnaryExprMsg second = 103;
+
+    // Grouping function (105)
+    NaryExprMsg grouping = 105;
+
+    // Generator functions (107-110)
+    UnaryExprMsg explode = 107;
+    UnaryExprMsg pos_explode = 108;
+    UnaryExprMsg inline_expr = 109;
+    StackExprMsg stack = 110;
+
+    // Opaque function call (112)
+    OpaqueCallExprMsg opaque_call = 112;
+  }
+}
+
+// ============================================================================
+// Structural expression messages (reusable)
+// ============================================================================
+
+message UnaryExprMsg {
+  ProtoExprMsg child = 1;
+}
+
+message BinaryExprMsg {
+  ProtoExprMsg left = 1;
+  ProtoExprMsg right = 2;
+}
+
+message TernaryExprMsg {
+  ProtoExprMsg first = 1;
+  ProtoExprMsg second = 2;
+  ProtoExprMsg third = 3;
+}
+
+message NaryExprMsg {
+  repeated ProtoExprMsg children = 1;
+}
+
+// ============================================================================
+// Specific expression messages
+// ============================================================================
+
+message LiteralExprMsg {
+  LiteralValueMsg value = 1;
+}
+
+message ColumnRefExprMsg {
+  string name = 1;
+  optional string qualifier = 2;
+  ProtoTypeMsg resolved_type = 3;
+  bool nullable = 4;
+}
+
+message BoundRefExprMsg {
+  int32 index = 1;
+  ProtoTypeMsg data_type = 2;
+  bool nullable = 3;
+}
+
+message LogExprMsg {
+  ProtoExprMsg child = 1;
+  optional ProtoExprMsg base = 2;
+}
+
+message SubstringExprMsg {
+  ProtoExprMsg str = 1;
+  ProtoExprMsg pos = 2;
+  ProtoExprMsg len = 3;
+}
+
+message TrimExprMsg {
+  ProtoExprMsg child = 1;
+  optional ProtoExprMsg trim_str = 2;
+  TrimTypeEnum trim_type = 3;
+}
+
+message StringLocateExprMsg {
+  ProtoExprMsg substr = 1;
+  ProtoExprMsg str = 2;
+  optional ProtoExprMsg start = 3;
+}
+
+message StringSplitExprMsg {
+  ProtoExprMsg str = 1;
+  ProtoExprMsg delimiter = 2;
+  optional ProtoExprMsg limit = 3;
+}
+
+message CountExprMsg {
+  ProtoExprMsg child = 1;
+  bool distinct = 2;
+}
+
+message CaseWhenExprMsg {
+  repeated CaseWhenBranchMsg branches = 1;
+  optional ProtoExprMsg else_value = 2;
+}
+
+message IfExprMsg {
+  ProtoExprMsg predicate = 1;
+  ProtoExprMsg true_value = 2;
+  ProtoExprMsg false_value = 3;
+}
+
+message InExprMsg {
+  ProtoExprMsg value = 1;
+  repeated ProtoExprMsg list = 2;
+}
+
+message LikeExprMsg {
+  ProtoExprMsg value = 1;
+  ProtoExprMsg pattern = 2;
+  optional ProtoExprMsg escape = 3;
+}
+
+message CastExprMsg {
+  ProtoExprMsg child = 1;
+  ProtoTypeMsg target_type = 2;
+}
+
+message AliasExprMsg {
+  ProtoExprMsg child = 1;
+  string name = 2;
+}
+
+message ScalarSubqueryExprMsg {
+  ProtoLogicalPlanMsg plan = 1;
+}
+
+message ExistsExprMsg {
+  ProtoLogicalPlanMsg plan = 1;
+}
+
+message InSubqueryExprMsg {
+  ProtoExprMsg value = 1;
+  ProtoLogicalPlanMsg plan = 2;
+}
+
+message LeadLagExprMsg {
+  ProtoExprMsg input = 1;
+  ProtoExprMsg offset = 2;
+  optional ProtoExprMsg default_value = 3;
+}
+
+message FirstLastValueExprMsg {
+  ProtoExprMsg input = 1;
+  bool ignore_nulls = 2;
+}
+
+message WindowExprMsg {
+  ProtoExprMsg function = 1;
+  repeated ProtoExprMsg partition_spec = 2;
+  repeated SortOrderMsg order_spec = 3;
+  optional WindowFrameMsg frame_spec = 4;
+}
+
+message ExtractExprMsg {
+  DateTimeFieldEnum field = 1;
+  ProtoExprMsg source = 2;
+}
+
+message DateTruncExprMsg {
+  DateTimeFieldEnum field = 1;
+  ProtoExprMsg timestamp = 2;
+}
+
+message OptionalFormatExprMsg {
+  ProtoExprMsg str = 1;
+  optional ProtoExprMsg format = 2;
+}
+
+message StackExprMsg {
+  ProtoExprMsg num_rows = 1;
+  repeated ProtoExprMsg children = 2;
+}
+
+message OpaqueCallExprMsg {
+  string function_name = 1;
+  repeated ProtoExprMsg arguments = 2;
+  optional ProtoTypeMsg return_type = 3;
+  bool deterministic = 4;
+}
+
+// ============================================================================
+// ProtoLogicalPlanMsg — 20 plan variants
+// ============================================================================
+
+message ProtoLogicalPlanMsg {
+  oneof plan {
+    RelationRefMsg relation_ref = 1;
+    ValuesMsg values = 2;
+    ProjectMsg project = 3;
+    FilterMsg filter = 4;
+    AggregateMsg aggregate = 5;
+    SortMsg sort = 6;
+    LimitMsg limit = 7;
+    DistinctMsg distinct = 8;
+    SubqueryAliasMsg subquery_alias = 9;
+    JoinMsg join = 10;
+    UnionMsg union = 11;
+    IntersectMsg intersect = 12;
+    ExceptMsg except = 13;
+    WindowMsg window = 14;
+    WithMsg with_plan = 15;
+    PivotMsg pivot = 16;
+    UnpivotMsg unpivot = 17;
+    LateralJoinMsg lateral_join = 18;
+    GenerateMsg generate = 19;
+    ResolvedHintMsg resolved_hint = 20;
+  }
+}
+
+// ============================================================================
+// Plan node messages
+// ============================================================================
+
+message RelationRefMsg {
+  string name = 1;
+  optional string alias = 2;
+  SchemaContractMsg schema_contract = 3;
+}
+
+message ValuesMsg {
+  repeated ValuesRowMsg rows = 1;
+  ProtoSchemaMsg schema = 2;
+}
+
+message ProjectMsg {
+  repeated ProtoExprMsg project_list = 1;
+  ProtoLogicalPlanMsg child = 2;
+}
+
+message FilterMsg {
+  ProtoExprMsg condition = 1;
+  ProtoLogicalPlanMsg child = 2;
+}
+
+message AggregateMsg {
+  repeated ProtoExprMsg grouping_exprs = 1;
+  repeated ProtoExprMsg aggregate_exprs = 2;
+  ProtoLogicalPlanMsg child = 3;
+}
+
+message SortMsg {
+  repeated SortOrderMsg order = 1;
+  ProtoLogicalPlanMsg child = 2;
+}
+
+message LimitMsg {
+  int32 limit = 1;
+  ProtoLogicalPlanMsg child = 2;
+}
+
+message DistinctMsg {
+  ProtoLogicalPlanMsg child = 1;
+}
+
+message SubqueryAliasMsg {
+  string alias = 1;
+  ProtoLogicalPlanMsg child = 2;
+}
+
+message JoinMsg {
+  ProtoLogicalPlanMsg left = 1;
+  ProtoLogicalPlanMsg right = 2;
+  JoinTypeEnum join_type = 3;
+  optional ProtoExprMsg condition = 4;
+}
+
+message UnionMsg {
+  repeated ProtoLogicalPlanMsg children = 1;
+  bool by_name = 2;
+  bool allow_missing_columns = 3;
+}
+
+message IntersectMsg {
+  ProtoLogicalPlanMsg left = 1;
+  ProtoLogicalPlanMsg right = 2;
+  bool is_all = 3;
+}
+
+message ExceptMsg {
+  ProtoLogicalPlanMsg left = 1;
+  ProtoLogicalPlanMsg right = 2;
+  bool is_all = 3;
+}
+
+message WindowMsg {
+  repeated ProtoExprMsg window_exprs = 1;
+  repeated ProtoExprMsg partition_spec = 2;
+  repeated SortOrderMsg order_spec = 3;
+  ProtoLogicalPlanMsg child = 4;
+}
+
+message WithMsg {
+  repeated CTERelationMsg cte_relations = 1;
+  bool recursive = 2;
+  ProtoLogicalPlanMsg child = 3;
+}
+
+message PivotMsg {
+  repeated ProtoExprMsg grouping_exprs = 1;
+  ProtoExprMsg pivot_column = 2;
+  repeated ProtoExprMsg pivot_values = 3;
+  repeated ProtoExprMsg aggregates = 4;
+  ProtoLogicalPlanMsg child = 5;
+}
+
+message UnpivotMsg {
+  string value_column_name = 1;
+  string variable_column_name = 2;
+  repeated ExprWithAliasMsg columns = 3;
+  bool include_nulls = 4;
+  ProtoLogicalPlanMsg child = 5;
+}
+
+message LateralJoinMsg {
+  ProtoLogicalPlanMsg left = 1;
+  ProtoLogicalPlanMsg lateral = 2;
+  optional ProtoExprMsg condition = 3;
+}
+
+message GenerateMsg {
+  ProtoExprMsg generator = 1;
+  repeated string generator_output = 2;
+  bool outer = 3;
+  ProtoLogicalPlanMsg child = 4;
+}
+
+message ResolvedHintMsg {
+  repeated PlanHintMsg hints = 1;
+  ProtoLogicalPlanMsg child = 2;
+}

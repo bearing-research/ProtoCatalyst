@@ -62,13 +62,16 @@ class ArtifactCodecSuite extends munit.FunSuite:
       "Expected unknown format error"
     )
 
-  test("deserialize protobuf format byte returns not implemented"):
+  test("deserialize protobuf format byte with invalid payload returns error"):
     val magic = "PCAT".getBytes("UTF-8")
     val bytes = magic ++ Array[Byte](0x02.toByte) ++ "{}".getBytes("UTF-8")
     val result = CodecImpl.deserializeWithHeader(bytes)
 
-    assert(result.isLeft, "Expected Left")
-    assertEquals[String, String](result.left.getOrElse(""), "Protobuf codec not yet implemented")
+    assert(result.isLeft, "Expected Left for invalid protobuf payload")
+    assert(
+      result.left.getOrElse("").contains("Protobuf deserialization failed"),
+      s"Expected protobuf error, got: ${result.left.getOrElse("")}"
+    )
 
   test("deserialize corrupted payload returns error"):
     val magic = "PCAT".getBytes("UTF-8")

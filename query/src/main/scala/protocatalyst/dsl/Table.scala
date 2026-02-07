@@ -130,6 +130,9 @@ final class Table[A] private (
   /** Alias this table */
   def as(alias: String): Query[A] = baseQuery.as(alias)
 
+  /** Add optimizer hints */
+  def hint(hints: PlanHint*): Query[A] = baseQuery.hint(hints*)
+
   /** Group by with lambda-style field access: table.groupBy(_.age) */
   def groupBy[K](f: FieldSelector[A] => Expr[K]): GroupedQuery[A, K] = baseQuery.groupBy(f)
 

@@ -159,25 +159,12 @@ enum SortDirection extends Serializable:
 enum NullOrdering extends Serializable:
   case NullsFirst, NullsLast
 
-/** Optimizer hints for query plans. */
-enum PlanHint extends Serializable:
-  /** Broadcast hint - suggests broadcast join for the specified tables */
-  case Broadcast(tables: Vector[String])
+/** Opaque optimizer hint — core carries name + params without interpreting them. Runtime modules
+  * (e.g. spark-catalyst) map names to engine-specific directives.
+  */
+case class PlanHint(name: String, params: Vector[HintParam]) extends Serializable
 
-  /** Merge hint - suggests merge/sort-merge join for the specified tables */
-  case Merge(tables: Vector[String])
-
-  /** Shuffle hash hint - suggests shuffle hash join */
-  case ShuffleHash(tables: Vector[String])
-
-  /** Shuffle replicate nested loop hint */
-  case ShuffleReplicateNL(tables: Vector[String])
-
-  /** Coalesce hint - reduce partitions */
-  case Coalesce(partitions: Int)
-
-  /** Repartition hint - repartition with optional columns */
-  case Repartition(partitions: Int, columns: Vector[String])
-
-  /** Repartition by range hint */
-  case RepartitionByRange(partitions: Int, columns: Vector[String])
+/** Hint parameter value — either a string (table/column name) or an integer (partition count). */
+enum HintParam extends Serializable:
+  case StringVal(value: String)
+  case IntVal(value: Int)

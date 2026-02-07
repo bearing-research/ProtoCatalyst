@@ -125,15 +125,12 @@ object JsonArtifactCodec extends ArtifactCodec:
 
   given ReadWriter[SortOrder] = macroRW
 
-  given ReadWriter[PlanHint] = ReadWriter.merge(
-    macroRW[PlanHint.Broadcast],
-    macroRW[PlanHint.Merge],
-    macroRW[PlanHint.ShuffleHash],
-    macroRW[PlanHint.ShuffleReplicateNL],
-    macroRW[PlanHint.Coalesce],
-    macroRW[PlanHint.Repartition],
-    macroRW[PlanHint.RepartitionByRange]
+  given ReadWriter[HintParam] = ReadWriter.merge(
+    macroRW[HintParam.StringVal],
+    macroRW[HintParam.IntVal]
   )
+
+  given ReadWriter[PlanHint] = macroRW
 
   given ReadWriter[ProtoLogicalPlan] = ReadWriter.merge(
     macroRW[ProtoLogicalPlan.RelationRef],

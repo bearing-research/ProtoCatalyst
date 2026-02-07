@@ -1039,17 +1039,26 @@ object AstToProtoTransform:
       case "MILLISECOND"       => Some(DateTimeField.Millisecond)
       case _                   => None
 
-  /** Transform a SQL QueryHint to a PlanHint. */
+  /** Transform a SQL QueryHint to an opaque PlanHint. */
   private def transformHint(hint: QueryHint): PlanHint =
     hint match
-      case QueryHint.Broadcast(tables)                => PlanHint.Broadcast(tables)
-      case QueryHint.Merge(tables)                    => PlanHint.Merge(tables)
-      case QueryHint.ShuffleHash(tables)              => PlanHint.ShuffleHash(tables)
-      case QueryHint.ShuffleReplicateNL(tables)       => PlanHint.ShuffleReplicateNL(tables)
-      case QueryHint.Coalesce(partitions)             => PlanHint.Coalesce(partitions)
-      case QueryHint.Repartition(partitions, columns) => PlanHint.Repartition(partitions, columns)
+      case QueryHint.Broadcast(tables) =>
+        PlanHint("BROADCAST", tables.map(HintParam.StringVal(_)))
+      case QueryHint.Merge(tables) =>
+        PlanHint("MERGE", tables.map(HintParam.StringVal(_)))
+      case QueryHint.ShuffleHash(tables) =>
+        PlanHint("SHUFFLE_HASH", tables.map(HintParam.StringVal(_)))
+      case QueryHint.ShuffleReplicateNL(tables) =>
+        PlanHint("SHUFFLE_REPLICATE_NL", tables.map(HintParam.StringVal(_)))
+      case QueryHint.Coalesce(partitions) =>
+        PlanHint("COALESCE", Vector(HintParam.IntVal(partitions)))
+      case QueryHint.Repartition(partitions, columns) =>
+        PlanHint("REPARTITION", HintParam.IntVal(partitions) +: columns.map(HintParam.StringVal(_)))
       case QueryHint.RepartitionByRange(partitions, columns) =>
-        PlanHint.RepartitionByRange(partitions, columns)
+        PlanHint(
+          "REPARTITION_BY_RANGE",
+          HintParam.IntVal(partitions) +: columns.map(HintParam.StringVal(_))
+        )
 
 /** Context for transformation. */
 case class TransformContext(

@@ -1,0 +1,24 @@
+syntax = "proto3";
+package protocatalyst.v1;
+option java_package = "io.protocatalyst.proto.v1";
+option java_multiple_files = true;
+
+import "protocatalyst/v1/types.proto";
+
+message ProtoSchemaMsg {
+  repeated ProtoStructFieldMsg fields = 1;
+  int64 fingerprint = 2;
+}
+
+message SchemaContractMsg {
+  string relation_name = 1;
+  repeated FieldContractMsg required_fields = 2;
+  int64 fingerprint = 3;
+}
+
+message FieldContractMsg {
+  string name = 1;
+  ProtoTypeMsg expected_type = 2;
+  bool expected_nullable = 3;
+  int32 position = 4;
+}

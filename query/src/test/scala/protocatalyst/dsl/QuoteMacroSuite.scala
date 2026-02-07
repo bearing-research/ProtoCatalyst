@@ -1392,3 +1392,7 @@ class QuoteMacroSuite extends munit.FunSuite:
         () // ok - two window expressions in same select
       case other =>
         fail(s"Expected Project with 3 exprs including 2 WindowExprs, got: $other")
+
+  // Hint tests removed — hints are opaque and runtime-specific.
+  // The quote { } macro does not support .hint() inline construction.
+  // Hints work via the runtime DSL path (outside quote).

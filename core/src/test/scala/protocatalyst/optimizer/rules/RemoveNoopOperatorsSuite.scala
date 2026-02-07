@@ -76,7 +76,7 @@ class RemoveNoopOperatorsSuite extends munit.FunSuite with RuleTestBase:
   test("RemoveNoopOperators: keep non-empty Hint"):
     // ResolvedHint(hints, child) should remain
     val plan = ProtoLogicalPlan.ResolvedHint(
-      Vector(PlanHint.Broadcast(Vector("t"))),
+      Vector(PlanHint("BROADCAST", Vector(HintParam.StringVal("t")))),
       relation("t")
     )
 

@@ -348,4 +348,22 @@ class EncoderDecoderRoundTripSuite extends FunSuite {
         |LEFT JOIN employees m ON e.manager_id = m.id""".stripMargin
     )
   }
+
+  // === Hints ===
+
+  test("round-trip: BROADCAST hint") {
+    assertRoundTrip("SELECT /*+ BROADCAST(t) */ * FROM t JOIN t2 ON t.id = t2.id")
+  }
+
+  test("round-trip: SHUFFLE_MERGE hint") {
+    assertRoundTrip("SELECT /*+ SHUFFLE_MERGE(t) */ * FROM t JOIN t2 ON t.id = t2.id")
+  }
+
+  test("round-trip: COALESCE hint") {
+    assertRoundTrip("SELECT /*+ COALESCE(4) */ * FROM t")
+  }
+
+  test("round-trip: REPARTITION hint") {
+    assertRoundTrip("SELECT /*+ REPARTITION(8) */ * FROM t")
+  }
 }

@@ -1,0 +1,17 @@
+package protocatalyst.codec
+
+import protocatalyst.artifact.CompiledArtifact
+
+import io.protocatalyst.proto.v1 as pb
+
+/** Protobuf serialization codec using generated Java classes from the proto module. */
+object ProtobufArtifactCodec extends ArtifactCodec:
+
+  def format: String = "protobuf"
+
+  def serialize(artifact: CompiledArtifact): Array[Byte] =
+    ProtoConverter.toProto(artifact).toByteArray
+
+  def deserialize(bytes: Array[Byte]): Either[String, CompiledArtifact] =
+    try Right(ProtoConverter.fromProto(pb.CompiledArtifactMsg.parseFrom(bytes)))
+    catch case e: Exception => Left(s"Protobuf deserialization failed: ${e.getMessage}")

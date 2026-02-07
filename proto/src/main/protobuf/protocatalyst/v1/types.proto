@@ -1,0 +1,125 @@
+syntax = "proto3";
+package protocatalyst.v1;
+option java_package = "io.protocatalyst.proto.v1";
+option java_multiple_files = true;
+
+// Sentinel for parameterless oneof branches
+message EmptyMsg {}
+
+// === ProtoType ===
+
+message ProtoTypeMsg {
+  oneof type {
+    // Primitive types
+    EmptyMsg boolean_type = 1;
+    EmptyMsg byte_type = 2;
+    EmptyMsg short_type = 3;
+    EmptyMsg integer_type = 4;
+    EmptyMsg long_type = 5;
+    EmptyMsg float_type = 6;
+    EmptyMsg double_type = 7;
+    EmptyMsg string_type = 8;
+    EmptyMsg binary_type = 9;
+
+    // Temporal types
+    EmptyMsg date_type = 10;
+    EmptyMsg timestamp_type = 11;
+    EmptyMsg timestamp_ntz_type = 12;
+    TimeTypeMsg time_type = 13;
+    EmptyMsg day_time_interval_type = 14;
+    EmptyMsg year_month_interval_type = 15;
+    EmptyMsg calendar_interval_type = 16;
+
+    // String variants
+    CharTypeMsg char_type = 17;
+    VarcharTypeMsg varchar_type = 18;
+
+    // Numeric
+    DecimalTypeMsg decimal_type = 19;
+
+    // Complex types
+    ArrayTypeMsg array_type = 20;
+    MapTypeMsg map_type = 21;
+    StructTypeMsg struct_type = 22;
+    UDTTypeMsg udt_type = 23;
+
+    // Special types
+    EmptyMsg variant_type = 24;
+    EmptyMsg null_type = 25;
+    SumTypeMsg sum_type = 26;
+    UnresolvedTypeMsg unresolved_type = 27;
+  }
+}
+
+message TimeTypeMsg { int32 precision = 1; }
+message CharTypeMsg { int32 length = 1; }
+message VarcharTypeMsg { int32 length = 1; }
+message DecimalTypeMsg { int32 precision = 1; int32 scale = 2; }
+
+message ArrayTypeMsg {
+  ProtoTypeMsg element_type = 1;
+  bool contains_null = 2;
+}
+
+message MapTypeMsg {
+  ProtoTypeMsg key_type = 1;
+  ProtoTypeMsg value_type = 2;
+  bool value_contains_null = 3;
+}
+
+message StructTypeMsg {
+  repeated ProtoStructFieldMsg fields = 1;
+}
+
+message UDTTypeMsg {
+  string udt_class_name = 1;
+  ProtoTypeMsg sql_type = 2;
+}
+
+message UnresolvedTypeMsg { string hint = 1; }
+
+message SumTypeMsg {
+  string discriminator_field = 1;
+  repeated SumVariantMsg variants = 2;
+}
+
+message SumVariantMsg {
+  string name = 1;
+  int32 ordinal = 2;
+  optional ProtoTypeMsg data_type = 3;
+}
+
+message ProtoStructFieldMsg {
+  string name = 1;
+  ProtoTypeMsg data_type = 2;
+  bool nullable = 3;
+  map<string, string> metadata = 4;
+}
+
+// === LiteralValue ===
+
+message LiteralValueMsg {
+  oneof value {
+    bool boolean_value = 1;
+    int32 byte_value = 2;
+    int32 short_value = 3;
+    int32 int_value = 4;
+    int64 long_value = 5;
+    float float_value = 6;
+    double double_value = 7;
+    string string_value = 8;
+    bytes binary_value = 9;
+    string decimal_value = 10;  // String to preserve arbitrary precision
+    int32 date_value = 11;      // Epoch days
+    int64 timestamp_value = 12; // Epoch microseconds
+    int64 time_value = 13;      // Microseconds since midnight
+    CalendarIntervalValueMsg calendar_interval_value = 14;
+    ProtoTypeMsg null_value = 15; // Null with type info
+  }
+}
+
+message CalendarIntervalValueMsg {
+  int32 months = 1;
+  int32 days = 2;
+  int64 microseconds = 3;
+}

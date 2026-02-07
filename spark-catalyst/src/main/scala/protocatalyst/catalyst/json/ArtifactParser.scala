@@ -3,16 +3,19 @@ package protocatalyst.catalyst.json
 import io.circe.Json
 import io.circe.parser.parse
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import protocatalyst.catalyst.protobuf.ProtobufPlanDecoder
 
 /** Entry point for parsing ProtoCatalyst CompiledArtifact JSON.
   *
-  * Handles the PCAT header format and extracts the plan for conversion.
+  * Handles the PCAT header format and extracts the plan for conversion. Supports both JSON (format
+  * byte 0x01) and Protobuf (format byte 0x02) payloads.
   */
 object ArtifactParser {
 
   /** Magic header bytes for ProtoCatalyst artifacts: "PCAT" */
   private val MagicHeader = Array('P'.toByte, 'C'.toByte, 'A'.toByte, 'T'.toByte)
   private val JsonFormat: Byte = 0x01
+  private val ProtobufFormat: Byte = 0x02
 
   /** Parse a CompiledArtifact from bytes and extract the LogicalPlan.
     *
@@ -22,10 +25,32 @@ object ArtifactParser {
     *   Either an error message or the parsed Spark LogicalPlan
     */
   def parsePlan(bytes: Array[Byte]): Either[String, LogicalPlan] = {
-    for {
-      json <- extractJson(bytes)
-      plan <- parsePlanFromJson(json)
-    } yield plan
+    if (bytes.length < 5) {
+      return Left("Artifact too short: expected at least 5 bytes for header")
+    }
+    if (!bytes.slice(0, 4).sameElements(MagicHeader)) {
+      return Left("Invalid magic header: expected PCAT")
+    }
+
+    val payload = bytes.slice(5, bytes.length)
+
+    bytes(4) match {
+      case JsonFormat =>
+        for {
+          json <- parse(new String(payload, "UTF-8")).left.map(e =>
+            s"JSON parse error: ${e.getMessage}"
+          )
+          plan <- parsePlanFromJson(json)
+        } yield plan
+
+      case ProtobufFormat =>
+        ProtobufPlanDecoder.parsePlanFromBytes(payload)
+
+      case other =>
+        Left(
+          s"Unsupported format: expected JSON (0x01) or Protobuf (0x02), got 0x${String.format("%02x", Byte.box(other))}"
+        )
+    }
   }
 
   /** Parse a plan directly from JSON string (without header). */

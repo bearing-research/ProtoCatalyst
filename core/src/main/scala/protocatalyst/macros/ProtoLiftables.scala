@@ -401,22 +401,16 @@ object ProtoLiftables:
     def apply(s: SortOrder)(using Quotes): Expr[SortOrder] =
       '{ SortOrder(${ Expr(s.child) }, ${ Expr(s.direction) }, ${ Expr(s.nullOrdering) }) }
 
+  given ToExpr[HintParam] with
+    def apply(p: HintParam)(using Quotes): Expr[HintParam] = p match
+      case HintParam.StringVal(value) =>
+        '{ HintParam.StringVal(${ Expr(value) }) }
+      case HintParam.IntVal(value) =>
+        '{ HintParam.IntVal(${ Expr(value) }) }
+
   given ToExpr[PlanHint] with
-    def apply(h: PlanHint)(using Quotes): Expr[PlanHint] = h match
-      case PlanHint.Broadcast(tables) =>
-        '{ PlanHint.Broadcast(${ Expr(tables) }) }
-      case PlanHint.Merge(tables) =>
-        '{ PlanHint.Merge(${ Expr(tables) }) }
-      case PlanHint.ShuffleHash(tables) =>
-        '{ PlanHint.ShuffleHash(${ Expr(tables) }) }
-      case PlanHint.ShuffleReplicateNL(tables) =>
-        '{ PlanHint.ShuffleReplicateNL(${ Expr(tables) }) }
-      case PlanHint.Coalesce(partitions) =>
-        '{ PlanHint.Coalesce(${ Expr(partitions) }) }
-      case PlanHint.Repartition(partitions, columns) =>
-        '{ PlanHint.Repartition(${ Expr(partitions) }, ${ Expr(columns) }) }
-      case PlanHint.RepartitionByRange(partitions, columns) =>
-        '{ PlanHint.RepartitionByRange(${ Expr(partitions) }, ${ Expr(columns) }) }
+    def apply(h: PlanHint)(using Quotes): Expr[PlanHint] =
+      '{ PlanHint(${ Expr(h.name) }, ${ Expr(h.params) }) }
 
   // ============================================================
   // Schema types

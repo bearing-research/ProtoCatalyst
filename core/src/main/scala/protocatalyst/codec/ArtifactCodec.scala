@@ -47,5 +47,5 @@ object ArtifactCodec:
 
       formatByte match
         case FormatJson     => JsonArtifactCodec.deserialize(payload)
-        case FormatProtobuf => Left("Protobuf codec not yet implemented")
+        case FormatProtobuf => ProtobufArtifactCodec.deserialize(payload)
         case other          => Left(s"Unknown format byte: $other")

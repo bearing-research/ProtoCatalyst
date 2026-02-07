@@ -186,6 +186,16 @@ class Query[A] private[dsl] (
       schemaContracts
     )
 
+  /** Add optimizer hints to this query. Hints are opaque — core doesn't interpret them; runtime
+    * modules map hint names to engine-specific directives.
+    */
+  def hint(hints: PlanHint*): Query[A] =
+    new Query(
+      ProtoLogicalPlan.ResolvedHint(hints.toVector, plan),
+      outputEncoder,
+      schemaContracts
+    )
+
   /** Group by with lambda-style field access: query.groupBy(_.age) */
   def groupBy[K](f: FieldSelector[A] => Expr[K]): GroupedQuery[A, K] =
     groupBy(f(FieldSelector[A](using outputEncoder)))
