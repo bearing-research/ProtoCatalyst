@@ -46,11 +46,6 @@ case class SumVariant(
     dataType: Option[ProtoType] // None for case objects (no data)
 ) extends Serializable
 
-enum Nullability extends Serializable:
-  case NonNull
-  case Nullable
-  case Unknown
-
 /** Type-safe literal values for ProtoExpr.Literal */
 enum LiteralValue extends Serializable:
   case BooleanValue(value: Boolean)

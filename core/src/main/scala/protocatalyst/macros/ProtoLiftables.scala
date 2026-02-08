@@ -49,12 +49,6 @@ object ProtoLiftables:
     def apply(v: SumVariant)(using Quotes): Expr[SumVariant] =
       '{ SumVariant(${ Expr(v.name) }, ${ Expr(v.ordinal) }, ${ Expr(v.dataType) }) }
 
-  given ToExpr[Nullability] with
-    def apply(n: Nullability)(using Quotes): Expr[Nullability] = n match
-      case Nullability.NonNull  => '{ Nullability.NonNull }
-      case Nullability.Nullable => '{ Nullability.Nullable }
-      case Nullability.Unknown  => '{ Nullability.Unknown }
-
   given ToExpr[ProtoType] with
     def apply(t: ProtoType)(using Quotes): Expr[ProtoType] = t match
       case ProtoType.BooleanType           => '{ ProtoType.BooleanType }
