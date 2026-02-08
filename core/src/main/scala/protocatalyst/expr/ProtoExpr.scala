@@ -18,6 +18,29 @@ enum ProtoExpr extends Serializable:
   /** A resolved column reference. The type and nullability are always populated from the schema at
     * construction time (SQL parser or macro DSL). The name/qualifier are retained for plan
     * readability and serialization, not for late binding.
+    *
+    * ==Expression identity==
+    *
+    * Unlike Spark Catalyst, which assigns a unique `ExprId` to every resolved attribute, this IR
+    * identifies columns by `(name, qualifier)` alone. This is sufficient today because:
+    *
+    *   - Resolution is one-shot: columns are resolved against the schema at construction time (SQL
+    *     parser or macro DSL), with no separate analysis pass that could introduce duplicates.
+    *   - Qualifiers disambiguate self-joins: `AstToProtoTransform` preserves table aliases, and
+    *     raises `AmbiguousColumn` when two unqualified columns with the same name are in scope.
+    *   - Optimizer rules are structural: constant folding, predicate pushdown, and cast
+    *     simplification match on expression shape, not on identity.
+    *
+    * An `ExprId` (or equivalent) would become necessary if any of the following are added:
+    *
+    *   - '''Common sub-expression elimination (CSE)''': needs to distinguish structurally identical
+    *     expressions that should share evaluation from those that should not.
+    *   - '''Column pruning''': needs to track which upstream attribute a downstream reference
+    *     corresponds to, even across projections that rename or reorder columns.
+    *   - '''Subquery decorrelation''': needs to identify outer references unambiguously when the
+    *     same column name appears at multiple nesting levels.
+    *   - '''Multi-pass analysis''': any pass that transforms the plan and then needs to correlate
+    *     pre-transform and post-transform attributes requires stable identity beyond names.
     */
   case ColumnRef(
       name: String,
