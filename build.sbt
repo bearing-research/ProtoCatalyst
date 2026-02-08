@@ -22,7 +22,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(proto, core, encoder, arrow, query, sqlParser, mockRuntime, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
+  .aggregate(proto, core, encoder, arrow, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -39,15 +39,6 @@ lazy val proto = project
     Compile / PB.targets := Seq(
       PB.gens.java -> (Compile / sourceManaged).value
     )
-  )
-
-// Mock runtime module for testing without Spark dependency
-lazy val mockRuntime = project
-  .in(file("mock-runtime"))
-  .dependsOn(core, encoder, query)
-  .settings(
-    name := "protocatalyst-mock-runtime",
-    commonSettings
   )
 
 // Core module: types, schema, IR
@@ -142,7 +133,7 @@ lazy val query = project
 // Benchmarks module (Scala 3) - JMH benchmarks for ProtoCatalyst encoders
 lazy val benchmarks = project
   .in(file("benchmarks"))
-  .dependsOn(core, encoder, arrow, mockRuntime)
+  .dependsOn(core, encoder, arrow)
   .enablePlugins(JmhPlugin)
   .settings(
     name := "protocatalyst-benchmarks",
