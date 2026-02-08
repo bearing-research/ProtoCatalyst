@@ -8,8 +8,9 @@ case class ProtoSchema(
     fields: Vector[ProtoStructField],
     fingerprint: SchemaFingerprint
 ) extends Serializable:
-  def fieldNames: Set[String] = fields.map(_.name).toSet
-  def apply(name: String): Option[ProtoStructField] = fields.find(_.name == name)
+  @transient lazy val byName: Map[String, ProtoStructField] = fields.map(f => f.name -> f).toMap
+  @transient lazy val fieldNames: Set[String] = byName.keySet
+  def apply(name: String): Option[ProtoStructField] = byName.get(name)
 
 object ProtoSchema:
   def apply(fields: Vector[ProtoStructField]): ProtoSchema =
@@ -18,6 +19,13 @@ object ProtoSchema:
 opaque type SchemaFingerprint = Long
 
 object SchemaFingerprint:
+
+  /** Compute a full fingerprint over field name, type, nullability, and metadata.
+    *
+    * Fields are sorted by name before hashing so field order does not affect the result. Metadata is
+    * included (sorted by key) because it may carry behavioral semantics such as encoding hints or
+    * provenance tags. Two schemas that differ only in metadata will produce different fingerprints.
+    */
   def compute(fields: Vector[ProtoStructField]): SchemaFingerprint =
     val canonical = fields.sortBy(_.name).map(canonicalize)
     val hi = scala.util.hashing.MurmurHash3.orderedHash(canonical, 0x9e3779b1)
