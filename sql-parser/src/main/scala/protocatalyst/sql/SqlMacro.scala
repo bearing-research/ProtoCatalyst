@@ -84,8 +84,8 @@ object SqlMacro:
                 // Step 6: Build schema contract at compile time
                 val contract = SchemaContract(
                   tableName,
-                  schema.fields.zipWithIndex.map { case (f, i) =>
-                    FieldContract(f.name, f.dataType, f.nullable, i)
+                  schema.fields.map { f =>
+                    FieldContract(f.name, f.dataType, f.nullable)
                   },
                   schema.fingerprint
                 )
@@ -146,8 +146,8 @@ object SqlMacro:
                 val outputSchema = SqlMacro.deriveOutputSchemaStmt(${ sqlStmtToExpr(stmt) }, schema)
                 val contract = SchemaContract(
                   table,
-                  schema.fields.zipWithIndex.map { (f, i) =>
-                    FieldContract(f.name, f.dataType, f.nullable, i)
+                  schema.fields.map { f =>
+                    FieldContract(f.name, f.dataType, f.nullable)
                   },
                   schema.fingerprint
                 )

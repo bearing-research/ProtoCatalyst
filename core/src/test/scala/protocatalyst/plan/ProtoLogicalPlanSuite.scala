@@ -468,7 +468,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
   private def makeContract(name: String): SchemaContract =
     SchemaContract(
       name,
-      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0)),
+      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false)),
       SchemaFingerprint.fromLong(name.hashCode.toLong)
     )
 
@@ -477,7 +477,7 @@ class ProtoLogicalPlanSuite extends munit.FunSuite:
     None,
     SchemaContract(
       "test_table",
-      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0)),
+      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false)),
       SchemaFingerprint.fromLong(99999L)
     )
   )

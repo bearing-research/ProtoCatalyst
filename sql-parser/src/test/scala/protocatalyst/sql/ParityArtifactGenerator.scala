@@ -354,8 +354,8 @@ object ParityArtifactGenerator:
       schemaContracts = Vector(
         SchemaContract(
           testCase.tableName,
-          testCase.schema.fields.zipWithIndex.map { case (f, i) =>
-            FieldContract(f.name, f.dataType, f.nullable, i)
+          testCase.schema.fields.map { f =>
+            FieldContract(f.name, f.dataType, f.nullable)
           },
           SchemaFingerprint.compute(testCase.schema.fields)
         )

@@ -104,15 +104,13 @@ object ProtoConverter:
       .setName(fc.name)
       .setExpectedType(toProtoType(fc.expectedType))
       .setExpectedNullable(fc.expectedNullable)
-      .setPosition(fc.position)
       .build()
 
   private def fromProtoFieldContract(msg: pb.FieldContractMsg): FieldContract =
     FieldContract(
       msg.getName,
       fromProtoType(msg.getExpectedType),
-      msg.getExpectedNullable,
-      msg.getPosition
+      msg.getExpectedNullable
     )
 
   // ============================================================================

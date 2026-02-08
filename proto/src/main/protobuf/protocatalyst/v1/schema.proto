@@ -20,5 +20,4 @@ message FieldContractMsg {
   string name = 1;
   ProtoTypeMsg expected_type = 2;
   bool expected_nullable = 3;
-  int32 position = 4;
 }

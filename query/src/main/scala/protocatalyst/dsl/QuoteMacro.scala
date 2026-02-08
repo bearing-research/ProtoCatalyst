@@ -69,8 +69,8 @@ object QuoteMacro:
             // Build schema contract
             val contract = SchemaContract(
               tableName,
-              schema.fields.zipWithIndex.map { case (f, i) =>
-                FieldContract(f.name, f.dataType, f.nullable, i)
+              schema.fields.map { f =>
+                FieldContract(f.name, f.dataType, f.nullable)
               },
               schema.fingerprint
             )
@@ -109,8 +109,8 @@ object QuoteMacro:
           case Right(tableName) =>
             val contract = SchemaContract(
               tableName,
-              schema.fields.zipWithIndex.map { case (f, i) =>
-                FieldContract(f.name, f.dataType, f.nullable, i)
+              schema.fields.map { f =>
+                FieldContract(f.name, f.dataType, f.nullable)
               },
               schema.fingerprint
             )
@@ -1218,8 +1218,8 @@ object QuoteMacro:
   private def buildSchemaContract(tableName: String, schema: ProtoSchema): SchemaContract =
     SchemaContract(
       tableName,
-      schema.fields.zipWithIndex.map { case (f, i) =>
-        FieldContract(f.name, f.dataType, f.nullable, i)
+      schema.fields.map { f =>
+        FieldContract(f.name, f.dataType, f.nullable)
       },
       schema.fingerprint
     )

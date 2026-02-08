@@ -315,8 +315,8 @@ object AstToProtoTransform:
   ): ProtoLogicalPlan =
     val contract = SchemaContract(
       relationName = tableName,
-      requiredFields = schema.fields.zipWithIndex.map { case (f, i) =>
-        FieldContract(f.name, f.dataType, f.nullable, i)
+      requiredFields = schema.fields.map { f =>
+        FieldContract(f.name, f.dataType, f.nullable)
       },
       fingerprint = schema.fingerprint
     )

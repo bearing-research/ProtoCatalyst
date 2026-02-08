@@ -421,8 +421,7 @@ object ProtoLiftables:
         FieldContract(
           ${ Expr(f.name) },
           ${ Expr(f.expectedType) },
-          ${ Expr(f.expectedNullable) },
-          ${ Expr(f.position) }
+          ${ Expr(f.expectedNullable) }
         )
       }
 

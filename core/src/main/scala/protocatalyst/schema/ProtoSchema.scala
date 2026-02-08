@@ -20,7 +20,9 @@ opaque type SchemaFingerprint = Long
 object SchemaFingerprint:
   def compute(fields: Vector[ProtoStructField]): SchemaFingerprint =
     val canonical = fields.sortBy(_.name).map(canonicalize)
-    scala.util.hashing.MurmurHash3.orderedHash(canonical)
+    val hi = scala.util.hashing.MurmurHash3.orderedHash(canonical, 0x9e3779b1)
+    val lo = scala.util.hashing.MurmurHash3.orderedHash(canonical, 0x517cc1b7)
+    (hi.toLong << 32) | (lo.toLong & 0xffffffffL)
 
   def fromLong(value: Long): SchemaFingerprint = value
 
@@ -29,8 +31,8 @@ object SchemaFingerprint:
 
   private def typeString(t: ProtoType): String = t match
     case ProtoType.StructType(fs)    => s"struct<${fs.map(canonicalize).mkString(",")}>"
-    case ProtoType.ArrayType(e, n)   => s"array<${typeString(e)},$n>"
-    case ProtoType.MapType(k, v, n)  => s"map<${typeString(k)},${typeString(v)},$n>"
+    case ProtoType.ArrayType(e, n)   => s"array<elem=${typeString(e)},containsNull=$n>"
+    case ProtoType.MapType(k, v, n)  => s"map<key=${typeString(k)},value=${typeString(v)},valueContainsNull=$n>"
     case ProtoType.DecimalType(p, s) => s"decimal($p,$s)"
     case other                       => other.toString.toLowerCase
 
@@ -47,6 +49,5 @@ case class SchemaContract(
 case class FieldContract(
     name: String,
     expectedType: ProtoType,
-    expectedNullable: Boolean,
-    position: Int
+    expectedNullable: Boolean
 ) extends Serializable

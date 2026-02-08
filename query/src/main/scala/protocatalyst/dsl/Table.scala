@@ -195,8 +195,8 @@ object Table:
   def apply[A](tableName: String)(using enc: ProtoEncoder[A]): Table[A] =
     val fields = enc.schema.fields
     val fingerprint = SchemaFingerprint.compute(fields)
-    val fieldContracts = fields.zipWithIndex.map { case (f, idx) =>
-      FieldContract(f.name, f.dataType, f.nullable, idx)
+    val fieldContracts = fields.map { f =>
+      FieldContract(f.name, f.dataType, f.nullable)
     }
     val contract = SchemaContract(tableName, fieldContracts, fingerprint)
     new Table[A](tableName, enc, contract)

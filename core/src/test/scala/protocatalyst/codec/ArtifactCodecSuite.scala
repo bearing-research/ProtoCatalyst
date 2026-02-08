@@ -143,7 +143,7 @@ class ArtifactCodecSuite extends munit.FunSuite:
       schemaContracts = Vector(
         SchemaContract(
           "table1",
-          Vector(FieldContract("col", ProtoType.StringType, true, 0)),
+          Vector(FieldContract("col", ProtoType.StringType, true)),
           SchemaFingerprint.fromLong(123456L)
         )
       ),
@@ -182,7 +182,7 @@ class ArtifactCodecSuite extends munit.FunSuite:
     None,
     SchemaContract(
       "test_table",
-      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0)),
+      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false)),
       SchemaFingerprint.fromLong(99999L)
     )
   )
@@ -208,8 +208,8 @@ class ArtifactCodecSuite extends munit.FunSuite:
       SchemaContract(
         "users",
         Vector(
-          FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0),
-          FieldContract("name", ProtoType.StringType, expectedNullable = true, position = 1)
+          FieldContract("id", ProtoType.LongType, expectedNullable = false),
+          FieldContract("name", ProtoType.StringType, expectedNullable = true)
         ),
         SchemaFingerprint.fromLong(11111L)
       )

@@ -316,7 +316,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
   test("roundtrip RelationRef"):
     val contract = SchemaContract(
       "users",
-      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0)),
+      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false)),
       SchemaFingerprint.fromLong(12345L)
     )
     val plan = ProtoLogicalPlan.RelationRef("users", Some("u"), contract)
@@ -513,16 +513,16 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
       SchemaContract(
         "users",
         Vector(
-          FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0),
-          FieldContract("name", ProtoType.StringType, expectedNullable = true, position = 1)
+          FieldContract("id", ProtoType.LongType, expectedNullable = false),
+          FieldContract("name", ProtoType.StringType, expectedNullable = true)
         ),
         SchemaFingerprint.fromLong(11111L)
       ),
       SchemaContract(
         "orders",
         Vector(
-          FieldContract("order_id", ProtoType.LongType, expectedNullable = false, position = 0),
-          FieldContract("user_id", ProtoType.LongType, expectedNullable = false, position = 1)
+          FieldContract("order_id", ProtoType.LongType, expectedNullable = false),
+          FieldContract("user_id", ProtoType.LongType, expectedNullable = false)
         ),
         SchemaFingerprint.fromLong(22222L)
       )
@@ -570,7 +570,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
     None,
     SchemaContract(
       "test_table",
-      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false, position = 0)),
+      Vector(FieldContract("id", ProtoType.LongType, expectedNullable = false)),
       SchemaFingerprint.fromLong(99999L)
     )
   )
