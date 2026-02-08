@@ -141,10 +141,12 @@ object ShapeInference:
       TensorType(TensorDType.Bool, shape)
 
     // ── Where ───────────────────────────────────────────────────────────────
-    case TensorExpr.Where(_, x, y) =>
+    case TensorExpr.Where(condition, x, y) =>
+      val ct = resolve(condition)
       val xt = resolve(x)
       val yt = resolve(y)
-      TensorType(xt.dtype, broadcastShapes(xt.shape, yt.shape))
+      val xyShape = broadcastShapes(xt.shape, yt.shape)
+      TensorType(xt.dtype, broadcastShapes(ct.shape, xyShape))
 
     // ── MatMul ──────────────────────────────────────────────────────────────
     case TensorExpr.MatMul(left, right, transA, transB) =>
