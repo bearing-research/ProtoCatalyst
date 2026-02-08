@@ -4,16 +4,32 @@ import java.io.Serializable
 
 import protocatalyst.types._
 
-/** Compile-time expression representation. */
+/** Compile-time expression representation.
+  *
+  * All expressions in this IR are fully resolved — column references carry their resolved type and
+  * nullability. Resolution happens at construction time: the SQL parser resolves columns against
+  * the schema during `AstToProtoTransform`, and the typed DSL resolves at compile time via macros.
+  * There is no separate "unresolved → resolved" pass.
+  */
 enum ProtoExpr extends Serializable:
   // Leaf nodes
   case Literal(value: LiteralValue)
+
+  /** A resolved column reference. The type and nullability are always populated from the schema at
+    * construction time (SQL parser or macro DSL). The name/qualifier are retained for plan
+    * readability and serialization, not for late binding.
+    */
   case ColumnRef(
       name: String,
       qualifier: Option[String],
       resolvedType: ProtoType,
       nullable: Boolean
   )
+
+  /** A positional column reference used for Spark Catalyst interop. Unlike ColumnRef which uses
+    * name-based resolution, BoundRef addresses columns by ordinal index within the child operator's
+    * output schema.
+    */
   case BoundRef(index: Int, dataType: ProtoType, nullable: Boolean)
 
   // Comparison
