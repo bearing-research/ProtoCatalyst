@@ -22,7 +22,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(proto, core, encoder, arrow, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
+  .aggregate(proto, core, encoder, arrow, executor, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -88,6 +88,20 @@ lazy val arrow = project
       "org.apache.arrow" % "arrow-vector" % "18.1.0"
     ),
     // Arrow needs access to internal JVM modules for off-heap memory
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    ),
+    Test / fork := true
+  )
+
+// Executor module: standalone query execution engine (Arrow-based, no Spark dependency)
+lazy val executor = project
+  .in(file("executor"))
+  .dependsOn(core, arrow)
+  .settings(
+    name := "protocatalyst-executor",
+    commonSettings,
     Test / javaOptions ++= Seq(
       "--add-opens=java.base/java.nio=ALL-UNNAMED",
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
