@@ -2,8 +2,9 @@ package protocatalyst.catalyst
 
 import io.circe.Json
 import io.circe.parser.parse
-import org.apache.spark.sql.{DataFrame, ProtoCatalystBridge, SparkSession}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.{DataFrame, ProtoCatalystBridge, SparkSession}
+
 import protocatalyst.catalyst.json.ArtifactParser
 
 /** Executes ProtoCatalyst compiled artifacts as Spark DataFrames.

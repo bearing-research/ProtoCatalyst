@@ -1,8 +1,8 @@
 package protocatalyst.codec
 
-import protocatalyst.artifact.CompiledArtifact
+import io.protocatalyst.proto.{v1 => pb}
 
-import io.protocatalyst.proto.v1 as pb
+import protocatalyst.artifact.CompiledArtifact
 
 /** Protobuf serialization codec using generated Java classes from the proto module. */
 object ProtobufArtifactCodec extends ArtifactCodec:

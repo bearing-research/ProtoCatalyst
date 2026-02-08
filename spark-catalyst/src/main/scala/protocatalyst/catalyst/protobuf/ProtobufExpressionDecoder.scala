@@ -1,13 +1,13 @@
 package protocatalyst.catalyst.protobuf
 
+import scala.collection.JavaConverters._
+
 import io.protocatalyst.proto.{v1 => pb}
 import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedFunction}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
-
-import scala.collection.JavaConverters._
 
 /** Decodes protobuf ProtoExprMsg to Spark Expression.
   *

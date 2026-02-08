@@ -2,16 +2,13 @@ package protocatalyst.catalyst.protobuf
 
 import io.protocatalyst.proto.{v1 => pb}
 import munit.FunSuite
-import org.apache.spark.sql.catalyst.analysis.{
-  UnresolvedAttribute,
-  UnresolvedFunction,
-  UnresolvedRelation
-}
+import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.plans._
+import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.types._
+
 import protocatalyst.catalyst.json.ArtifactParser
 
 /** Tests for protobuf-to-Spark decoders (ProtobufTypeDecoder, ProtobufExpressionDecoder,

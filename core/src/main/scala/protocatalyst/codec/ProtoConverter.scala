@@ -1,14 +1,13 @@
 package protocatalyst.codec
 
 import com.google.protobuf.ByteString
+import io.protocatalyst.proto.{v1 => pb}
 
 import protocatalyst.artifact._
 import protocatalyst.expr._
 import protocatalyst.plan._
 import protocatalyst.schema._
 import protocatalyst.types._
-
-import io.protocatalyst.proto.v1 as pb
 
 /** Bidirectional conversion between Scala IR types and generated Java protobuf types. */
 object ProtoConverter:

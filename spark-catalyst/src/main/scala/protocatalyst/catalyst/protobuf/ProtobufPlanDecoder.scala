@@ -1,5 +1,7 @@
 package protocatalyst.catalyst.protobuf
 
+import scala.collection.JavaConverters._
+
 import io.protocatalyst.proto.{v1 => pb}
 import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.analysis.{
@@ -12,8 +14,6 @@ import org.apache.spark.sql.catalyst.analysis.{
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
-
-import scala.collection.JavaConverters._
 
 /** Decodes protobuf ProtoLogicalPlanMsg to Spark LogicalPlan.
   *

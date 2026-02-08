@@ -202,7 +202,11 @@ lazy val mlCore = project
   .dependsOn(proto)
   .settings(
     name := "protocatalyst-ml-core",
-    commonSettings
+    commonSettings,
+    libraryDependencies += "com.jyuzawa" % "onnxruntime-cpu" % "1.23.2" % Test,
+    Test / fork := true,
+    Test / javaHome := Some(file("/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home")),
+    Test / javaOptions += "--enable-native-access=ALL-UNNAMED"
   )
 
 // ML Query module: typed tensor DSL and shape checking

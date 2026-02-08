@@ -3,6 +3,7 @@ package protocatalyst.dsl
 import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.expr._
 import protocatalyst.plan._
+
 import functions.FunctionExpr
 
 /** Window function constructors and specification builders for the DSL. */

@@ -3,6 +3,7 @@ package protocatalyst.catalyst.json
 import io.circe.Json
 import io.circe.parser.parse
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+
 import protocatalyst.catalyst.protobuf.ProtobufPlanDecoder
 
 /** Entry point for parsing ProtoCatalyst CompiledArtifact JSON.

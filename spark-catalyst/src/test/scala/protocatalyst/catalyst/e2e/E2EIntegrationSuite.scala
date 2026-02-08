@@ -3,6 +3,7 @@ package protocatalyst.catalyst.e2e
 import java.nio.file.{Files, Paths}
 
 import org.apache.spark.sql.SparkSession
+
 import protocatalyst.catalyst.SparkQueryRunner
 
 /** End-to-end integration tests for the full ProtoCatalyst pipeline.
