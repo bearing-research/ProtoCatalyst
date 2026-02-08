@@ -108,26 +108,74 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 
 ---
 
+## Vision: A Query Compiler, Not Another Engine
+
+ProtoCatalyst started as a Spark optimization layer. It is evolving into something more general: **a query compiler** — an engine-independent system that validates, optimizes, and serializes query plans at compile time, then lowers them to any execution backend.
+
+The analogy is LLVM: LLVM doesn't compete with x86, ARM, or RISC-V — it targets all of them. ProtoCatalyst doesn't compete with Spark, DataFusion, or Velox — it sits above them. The crowded space is runtimes. The compiler layer above them is nearly empty.
+
+### What makes this unique
+
+No other system combines these properties:
+
+1. **Compile-time query validation** — schema mismatches, type errors, and malformed queries caught before deployment. Every other engine validates at runtime.
+2. **Engine-independent IR** — `ProtoLogicalPlan` and `ProtoExpr` are self-contained, serializable via protobuf, and not coupled to any runtime.
+3. **Unified SQL + ML** — `ProtoLogicalPlan` (relational) and `ComputeGraph` (tensor/ML) live in the same IR with shared types. The path to native ML-in-SQL operators is short.
+4. **Built-in optimizer** — 48 rules that run at compile time, before any runtime engine sees the plan.
+
+### Why not Substrait?
+
+We evaluated Substrait as an interchange format and decided to stay independent (see [ADR-002](docs/decisions/ADR-002-independent-ir.md)). Key reasons:
+
+- **Substrait export would be lossy.** Pivot, Unpivot, Generate, LateralJoin, CTEs, schema contracts, and ML compute graphs have no Substrait equivalent.
+- **Fundamental model clash.** Substrait uses extension-based functions (URI + YAML registry). ProtoCatalyst uses explicit enum variants. Converting between them adds complexity for zero benefit.
+- **Substrait is an exchange format, not a compiler IR.** It has no optimizer, no compile-time validation, no schema contracts. Our IR is richer and purpose-built.
+
+Instead, we treat our protobuf schema as the canonical format and build **direct backend lowerings** per engine — the same way LLVM has separate backends for x86 and ARM rather than converting to an intermediate ISA.
+
+---
+
 ## Future Work
 
-### Spark Dataset[T] API (pending Spark 4.0 Scala 3 support)
+### Phase 9: Physical Plan Layer
 
-When Spark publishes Scala 3 artifacts:
-- [ ] `toAgnosticEncoder[T]`: ProtoEncoder → AgnosticEncoder bridge
+Add `ProtoPhysicalPlan` below the logical plan, introducing execution strategy choices:
+
+- [ ] Physical plan enum: `HashJoin`, `SortMergeJoin`, `BroadcastHashJoin`, `HashAggregate`, `SortAggregate`, `Exchange`
+- [ ] Physical planner: pattern-match `ProtoLogicalPlan` → `ProtoPhysicalPlan` based on statistics/heuristics
+- [ ] Statistics propagation: row counts, column cardinality, size in bytes — bottom-up through the plan
+- [ ] Cost model: estimate CPU/IO/network cost per physical operator
+
+### Phase 10: Backend Lowerings
+
+Build direct lowerings from `ProtoLogicalPlan` to target runtimes. Each backend handles what it supports and raises clear errors for what it doesn't:
+
+- [ ] **Spark backend** (exists today) — `ProtoLogicalPlan` → Spark `LogicalPlan` via `SparkQueryRunner`
+- [ ] **DataFusion backend** — `ProtoLogicalPlan` → DataFusion `LogicalPlan` directly (Rust FFI or Arrow Flight SQL)
+- [ ] **Velox backend** — `ProtoPhysicalPlan` → Velox `PlanNode` (C++ FFI)
+- [ ] **Local executor** — single-node Arrow-columnar pipeline for development/testing
+
+### Phase 11: ML as a Plan Operator
+
+Bridge `ProtoLogicalPlan` and `ComputeGraph` into a unified execution model:
+
+- [ ] `ProtoLogicalPlan.Predict(model: ComputeGraph, input: ProtoLogicalPlan)` — native ML inference in query plans
+- [ ] Batch inference optimization: vectorized model evaluation over Arrow `RecordBatch`
+- [ ] Model versioning and schema validation at compile time
+- [ ] ONNX Runtime integration for model execution
+
+### Ongoing: Spark Integration
+
+- [ ] `toAgnosticEncoder[T]`: ProtoEncoder → AgnosticEncoder bridge (pending Spark 4.0 Scala 3 support)
 - [ ] `protocatalyst.spark.implicits` for implicit encoder derivation
-- [ ] Integration tests for Dataset operations (map, filter, groupBy, join)
+- [ ] Runtime statistics collection for cost-based optimization
+- [ ] Delta Lake / Iceberg integration via Spark backend
 
-### Catalog-Aware Optimization
+### Ongoing: Ecosystem
 
-- [ ] Runtime statistics collection via SparkQueryRunner
-- [ ] Cost-based join reordering (complement compile-time rule-based optimization)
-
-### Ecosystem Integration
-
-- [ ] Parquet reader/writer using ProtoCatalyst schemas
-- [ ] Delta Lake / Iceberg integration
-- [ ] Structured Streaming support
-- [ ] Arrow IPC for language interop (Python, Rust)
+- [ ] Arrow IPC for language interop (Python, Rust clients)
+- [ ] Parquet reader/writer using ProtoCatalyst schemas (enables non-Spark execution)
+- [ ] CLI tool for plan inspection, optimization, and format conversion
 
 ---
 
@@ -141,13 +189,12 @@ When Spark publishes Scala 3 artifacts:
 - 48 optimizer rules execute during compilation, not at query time
 - Compatible with GraalVM native-image
 
-### Why separate from Spark?
+### Why engine-independent?
 
-- Test without Spark dependency (mock-runtime, 279 tests)
-- Scala 3 and 2.13 modules coexist cleanly
-- Support Arrow independently
-- Cleaner module boundaries
-- Easier to maintain across Spark versions
+- The IR is not coupled to any runtime — test without Spark (mock-runtime, 279 tests)
+- Backend lowerings can target any engine, not just Spark
+- Protobuf serialization makes the IR language-neutral
+- Cleaner module boundaries; easier to add new backends
 
 ### Why dual serialization (JSON + Protobuf)?
 
