@@ -85,15 +85,18 @@ object SimplifyCasts extends Rule:
   /** Get the type of a literal value.
     */
   private def getLiteralType(v: LiteralValue): ProtoType = v match
-    case LiteralValue.BooleanValue(_)                => ProtoType.BooleanType
-    case LiteralValue.ByteValue(_)                   => ProtoType.ByteType
-    case LiteralValue.ShortValue(_)                  => ProtoType.ShortType
-    case LiteralValue.IntValue(_)                    => ProtoType.IntegerType
-    case LiteralValue.LongValue(_)                   => ProtoType.LongType
-    case LiteralValue.FloatValue(_)                  => ProtoType.FloatType
-    case LiteralValue.DoubleValue(_)                 => ProtoType.DoubleType
-    case LiteralValue.StringValue(_)                 => ProtoType.StringType
-    case LiteralValue.DecimalValue(_)                => ProtoType.DecimalType(38, 18)
+    case LiteralValue.BooleanValue(_)     => ProtoType.BooleanType
+    case LiteralValue.ByteValue(_)        => ProtoType.ByteType
+    case LiteralValue.ShortValue(_)       => ProtoType.ShortType
+    case LiteralValue.IntValue(_)         => ProtoType.IntegerType
+    case LiteralValue.LongValue(_)        => ProtoType.LongType
+    case LiteralValue.FloatValue(_)       => ProtoType.FloatType
+    case LiteralValue.DoubleValue(_)      => ProtoType.DoubleType
+    case LiteralValue.StringValue(_)      => ProtoType.StringType
+    case LiteralValue.DecimalValue(value) =>
+      val s = value.scale.max(0)
+      val p = value.precision.max(s + 1)
+      ProtoType.DecimalType(p, s)
     case LiteralValue.DateValue(_)                   => ProtoType.DateType
     case LiteralValue.TimestampValue(_)              => ProtoType.TimestampType
     case LiteralValue.TimeValue(_)                   => ProtoType.TimeType(6)

@@ -1,5 +1,7 @@
 package protocatalyst.types
 
+import scala.collection.immutable
+
 class LiteralValueSuite extends munit.FunSuite:
 
   // === LiteralValue.typeOf Tests ===
@@ -37,15 +39,32 @@ class LiteralValueSuite extends munit.FunSuite:
     assertEquals(LiteralValue.typeOf(lit), ProtoType.StringType)
 
   test("typeOf BinaryValue returns BinaryType"):
-    val lit = LiteralValue.BinaryValue(Array[Byte](1, 2, 3))
+    val lit = LiteralValue.BinaryValue(immutable.ArraySeq[Byte](1, 2, 3))
     assertEquals(LiteralValue.typeOf(lit), ProtoType.BinaryType)
 
-  test("typeOf DecimalValue returns DecimalType(38, 18)"):
+  test("typeOf DecimalValue infers precision and scale from value"):
+    // 123.456 has precision=6, scale=3
     val lit = LiteralValue.DecimalValue(BigDecimal("123.456"))
     LiteralValue.typeOf(lit) match
       case ProtoType.DecimalType(p, s) =>
-        assertEquals(p, 38)
-        assertEquals(s, 18)
+        assertEquals(p, 6)
+        assertEquals(s, 3)
+      case other => fail(s"Expected DecimalType, got $other")
+
+    // 0.001 has precision=1, scale=3 → clamped to p=max(1,3+1)=4
+    val small = LiteralValue.DecimalValue(BigDecimal("0.001"))
+    LiteralValue.typeOf(small) match
+      case ProtoType.DecimalType(p, s) =>
+        assertEquals(p, 4)
+        assertEquals(s, 3)
+      case other => fail(s"Expected DecimalType, got $other")
+
+    // Integer decimal: 42 has precision=2, scale=0
+    val integer = LiteralValue.DecimalValue(BigDecimal("42"))
+    LiteralValue.typeOf(integer) match
+      case ProtoType.DecimalType(p, s) =>
+        assertEquals(p, 2)
+        assertEquals(s, 0)
       case other => fail(s"Expected DecimalType, got $other")
 
   test("typeOf DateValue returns DateType"):
@@ -177,9 +196,9 @@ class LiteralValueSuite extends munit.FunSuite:
       case _                           => fail("Expected StringValue")
 
   test("BinaryValue with various content"):
-    val empty = LiteralValue.BinaryValue(Array.emptyByteArray)
-    val single = LiteralValue.BinaryValue(Array[Byte](42))
-    val full = LiteralValue.BinaryValue((0 until 256).map(_.toByte).toArray)
+    val empty = LiteralValue.BinaryValue(immutable.ArraySeq.empty[Byte])
+    val single = LiteralValue.BinaryValue(immutable.ArraySeq[Byte](42))
+    val full = LiteralValue.BinaryValue(immutable.ArraySeq.from((0 until 256).map(_.toByte)))
 
     empty match
       case LiteralValue.BinaryValue(v) => assertEquals(v.length, 0)
@@ -286,7 +305,7 @@ class LiteralValueSuite extends munit.FunSuite:
       LiteralValue.FloatValue(1.0f),
       LiteralValue.DoubleValue(1.0),
       LiteralValue.StringValue("1"),
-      LiteralValue.BinaryValue(Array[Byte](1)),
+      LiteralValue.BinaryValue(immutable.ArraySeq[Byte](1)),
       LiteralValue.DecimalValue(BigDecimal("1")),
       LiteralValue.DateValue(1),
       LiteralValue.TimestampValue(1),

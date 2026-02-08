@@ -3,6 +3,8 @@ package protocatalyst.codec
 import com.google.protobuf.ByteString
 import io.protocatalyst.proto.{v1 => pb}
 
+import scala.collection.immutable
+
 import protocatalyst.artifact._
 import protocatalyst.expr._
 import protocatalyst.plan._
@@ -261,19 +263,19 @@ object ProtoConverter:
   private def toProtoLiteral(lit: LiteralValue): pb.LiteralValueMsg =
     val b = pb.LiteralValueMsg.newBuilder()
     lit match
-      case LiteralValue.BooleanValue(v)                 => b.setBooleanValue(v)
-      case LiteralValue.ByteValue(v)                    => b.setByteValue(v.toInt)
-      case LiteralValue.ShortValue(v)                   => b.setShortValue(v.toInt)
-      case LiteralValue.IntValue(v)                     => b.setIntValue(v)
-      case LiteralValue.LongValue(v)                    => b.setLongValue(v)
-      case LiteralValue.FloatValue(v)                   => b.setFloatValue(v)
-      case LiteralValue.DoubleValue(v)                  => b.setDoubleValue(v)
-      case LiteralValue.StringValue(v)                  => b.setStringValue(v)
-      case LiteralValue.BinaryValue(v)                  => b.setBinaryValue(ByteString.copyFrom(v))
-      case LiteralValue.DecimalValue(v)                 => b.setDecimalValue(v.toString)
-      case LiteralValue.DateValue(v)                    => b.setDateValue(v)
-      case LiteralValue.TimestampValue(v)               => b.setTimestampValue(v)
-      case LiteralValue.TimeValue(v)                    => b.setTimeValue(v)
+      case LiteralValue.BooleanValue(v)   => b.setBooleanValue(v)
+      case LiteralValue.ByteValue(v)      => b.setByteValue(v.toInt)
+      case LiteralValue.ShortValue(v)     => b.setShortValue(v.toInt)
+      case LiteralValue.IntValue(v)       => b.setIntValue(v)
+      case LiteralValue.LongValue(v)      => b.setLongValue(v)
+      case LiteralValue.FloatValue(v)     => b.setFloatValue(v)
+      case LiteralValue.DoubleValue(v)    => b.setDoubleValue(v)
+      case LiteralValue.StringValue(v)    => b.setStringValue(v)
+      case LiteralValue.BinaryValue(v)    => b.setBinaryValue(ByteString.copyFrom(v.toArray))
+      case LiteralValue.DecimalValue(v)   => b.setDecimalValue(v.toString)
+      case LiteralValue.DateValue(v)      => b.setDateValue(v)
+      case LiteralValue.TimestampValue(v) => b.setTimestampValue(v)
+      case LiteralValue.TimeValue(v)      => b.setTimeValue(v)
       case LiteralValue.CalendarIntervalValue(m, d, us) =>
         b.setCalendarIntervalValue(
           pb.CalendarIntervalValueMsg
@@ -289,15 +291,16 @@ object ProtoConverter:
   private def fromProtoLiteral(msg: pb.LiteralValueMsg): LiteralValue =
     import pb.LiteralValueMsg.ValueCase._
     msg.getValueCase match
-      case BOOLEAN_VALUE           => LiteralValue.BooleanValue(msg.getBooleanValue)
-      case BYTE_VALUE              => LiteralValue.ByteValue(msg.getByteValue.toByte)
-      case SHORT_VALUE             => LiteralValue.ShortValue(msg.getShortValue.toShort)
-      case INT_VALUE               => LiteralValue.IntValue(msg.getIntValue)
-      case LONG_VALUE              => LiteralValue.LongValue(msg.getLongValue)
-      case FLOAT_VALUE             => LiteralValue.FloatValue(msg.getFloatValue)
-      case DOUBLE_VALUE            => LiteralValue.DoubleValue(msg.getDoubleValue)
-      case STRING_VALUE            => LiteralValue.StringValue(msg.getStringValue)
-      case BINARY_VALUE            => LiteralValue.BinaryValue(msg.getBinaryValue.toByteArray)
+      case BOOLEAN_VALUE => LiteralValue.BooleanValue(msg.getBooleanValue)
+      case BYTE_VALUE    => LiteralValue.ByteValue(msg.getByteValue.toByte)
+      case SHORT_VALUE   => LiteralValue.ShortValue(msg.getShortValue.toShort)
+      case INT_VALUE     => LiteralValue.IntValue(msg.getIntValue)
+      case LONG_VALUE    => LiteralValue.LongValue(msg.getLongValue)
+      case FLOAT_VALUE   => LiteralValue.FloatValue(msg.getFloatValue)
+      case DOUBLE_VALUE  => LiteralValue.DoubleValue(msg.getDoubleValue)
+      case STRING_VALUE  => LiteralValue.StringValue(msg.getStringValue)
+      case BINARY_VALUE  =>
+        LiteralValue.BinaryValue(immutable.ArraySeq.unsafeWrapArray(msg.getBinaryValue.toByteArray))
       case DECIMAL_VALUE           => LiteralValue.DecimalValue(BigDecimal(msg.getDecimalValue))
       case DATE_VALUE              => LiteralValue.DateValue(msg.getDateValue)
       case TIMESTAMP_VALUE         => LiteralValue.TimestampValue(msg.getTimestampValue)

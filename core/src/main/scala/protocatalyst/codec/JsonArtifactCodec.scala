@@ -2,6 +2,8 @@ package protocatalyst.codec
 
 import upickle.default._
 
+import scala.collection.immutable
+
 import protocatalyst.artifact._
 import protocatalyst.expr._
 import protocatalyst.plan._
@@ -49,6 +51,11 @@ object JsonArtifactCodec extends ArtifactCodec:
   given ReadWriter[ProtoStructField] = macroRW
 
   // === Literal Value ReadWriters ===
+
+  given ReadWriter[immutable.ArraySeq[Byte]] = readwriter[Array[Byte]].bimap(
+    _.toArray,
+    arr => immutable.ArraySeq.unsafeWrapArray(arr)
+  )
 
   given ReadWriter[LiteralValue] = ReadWriter.merge(
     macroRW[LiteralValue.BooleanValue],

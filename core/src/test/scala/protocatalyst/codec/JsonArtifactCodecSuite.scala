@@ -1,5 +1,7 @@
 package protocatalyst.codec
 
+import scala.collection.immutable
+
 import protocatalyst.artifact._
 import protocatalyst.expr._
 import protocatalyst.plan._
@@ -143,7 +145,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
     assertExprRoundtrip(artifact, expr)
 
   test("roundtrip LiteralValue.BinaryValue"):
-    val expr = ProtoExpr.Literal(LiteralValue.BinaryValue(Array[Byte](1, 2, 3, 4, 5)))
+    val expr = ProtoExpr.Literal(LiteralValue.BinaryValue(immutable.ArraySeq[Byte](1, 2, 3, 4, 5)))
     val artifact = makeArtifact(expr, simpleSchema)
     val bytes = JsonArtifactCodec.serialize(artifact)
     val result = JsonArtifactCodec.deserialize(bytes)
@@ -151,7 +153,7 @@ class JsonArtifactCodecSuite extends munit.FunSuite:
     val resultExpr = extractFirstExpr(result.toOption.get)
     resultExpr match
       case ProtoExpr.Literal(LiteralValue.BinaryValue(arr)) =>
-        assert(arr.sameElements(Array[Byte](1, 2, 3, 4, 5)))
+        assertEquals(arr, immutable.ArraySeq[Byte](1, 2, 3, 4, 5))
       case _ => fail(s"Expected BinaryValue, got $resultExpr")
 
   test("roundtrip LiteralValue.DecimalValue"):

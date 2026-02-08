@@ -114,7 +114,8 @@ object ProtoLiftables:
       case LiteralValue.StringValue(value) =>
         '{ LiteralValue.StringValue(${ Expr(value) }) }
       case LiteralValue.BinaryValue(value) =>
-        '{ LiteralValue.BinaryValue(${ Expr(value) }) }
+        val arr = Expr(value.toArray)
+        '{ LiteralValue.BinaryValue(scala.collection.immutable.ArraySeq.unsafeWrapArray($arr)) }
       case LiteralValue.DecimalValue(value) =>
         '{ LiteralValue.DecimalValue(${ Expr(value) }) }
       case LiteralValue.DateValue(epochDays) =>

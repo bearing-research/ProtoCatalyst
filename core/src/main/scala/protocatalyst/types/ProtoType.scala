@@ -1,6 +1,7 @@
 package protocatalyst.types
 
 import java.io.Serializable
+import scala.collection.immutable
 
 /** Compile-time representation of Spark DataTypes. */
 enum ProtoType extends Serializable:
@@ -56,7 +57,7 @@ enum LiteralValue extends Serializable:
   case FloatValue(value: Float)
   case DoubleValue(value: Double)
   case StringValue(value: String)
-  case BinaryValue(value: Array[Byte])
+  case BinaryValue(value: immutable.ArraySeq[Byte])
   case DecimalValue(value: BigDecimal)
   case DateValue(epochDays: Int)
   case TimestampValue(epochMicros: Long)
@@ -66,16 +67,19 @@ enum LiteralValue extends Serializable:
 
 object LiteralValue:
   def typeOf(lit: LiteralValue): ProtoType = lit match
-    case BooleanValue(_)                => ProtoType.BooleanType
-    case ByteValue(_)                   => ProtoType.ByteType
-    case ShortValue(_)                  => ProtoType.ShortType
-    case IntValue(_)                    => ProtoType.IntegerType
-    case LongValue(_)                   => ProtoType.LongType
-    case FloatValue(_)                  => ProtoType.FloatType
-    case DoubleValue(_)                 => ProtoType.DoubleType
-    case StringValue(_)                 => ProtoType.StringType
-    case BinaryValue(_)                 => ProtoType.BinaryType
-    case DecimalValue(_)                => ProtoType.DecimalType(38, 18)
+    case BooleanValue(_)     => ProtoType.BooleanType
+    case ByteValue(_)        => ProtoType.ByteType
+    case ShortValue(_)       => ProtoType.ShortType
+    case IntValue(_)         => ProtoType.IntegerType
+    case LongValue(_)        => ProtoType.LongType
+    case FloatValue(_)       => ProtoType.FloatType
+    case DoubleValue(_)      => ProtoType.DoubleType
+    case StringValue(_)      => ProtoType.StringType
+    case BinaryValue(_)      => ProtoType.BinaryType
+    case DecimalValue(value) =>
+      val s = value.scale.max(0)
+      val p = value.precision.max(s + 1) // ensure p >= s + 1 for integer part
+      ProtoType.DecimalType(p, s)
     case DateValue(_)                   => ProtoType.DateType
     case TimestampValue(_)              => ProtoType.TimestampType
     case TimeValue(_)                   => ProtoType.TimeType(6) // Default microsecond precision
