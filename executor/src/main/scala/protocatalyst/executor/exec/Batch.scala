@@ -111,7 +111,7 @@ object Batch:
         setNull(vec, row)
 
   /** Set a null value in any vector type. */
-  private[exec] def setNull(vec: FieldVector, row: Int): Unit =
+  private[executor] def setNull(vec: FieldVector, row: Int): Unit =
     vec match
       case v: BitVector              => v.setNull(row)
       case v: TinyIntVector          => v.setNull(row)

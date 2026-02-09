@@ -4,6 +4,7 @@ option java_package = "io.protocatalyst.proto.v1";
 option java_multiple_files = true;
 
 import "protocatalyst/v1/plan.proto";
+import "protocatalyst/v1/physical_plan.proto";
 import "protocatalyst/v1/schema.proto";
 
 message CompiledArtifactMsg {
@@ -15,6 +16,7 @@ message CompiledArtifactMsg {
   ProtoLogicalPlanMsg plan = 6;
   ProtoSchemaMsg output_schema = 7;
   optional SourceInfoMsg source_info = 8;
+  optional ProtoPhysicalPlanMsg physical_plan = 9;
 }
 
 message ArtifactVersionMsg {

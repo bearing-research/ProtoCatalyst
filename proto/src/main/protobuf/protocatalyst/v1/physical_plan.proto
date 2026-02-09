@@ -1,0 +1,282 @@
+syntax = "proto3";
+package protocatalyst.v1;
+option java_package = "io.protocatalyst.proto.v1";
+option java_multiple_files = true;
+
+import "protocatalyst/v1/plan.proto";
+import "protocatalyst/v1/schema.proto";
+import "protocatalyst/v1/types.proto";
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum BuildSideEnum {
+  BUILD_SIDE_LEFT = 0;
+  BUILD_SIDE_RIGHT = 1;
+}
+
+// ============================================================================
+// Statistics
+// ============================================================================
+
+message ColumnStatisticsMsg {
+  optional int64 distinct_count = 1;
+  optional int64 null_count = 2;
+  optional int64 avg_len = 3;
+  optional int64 max_len = 4;
+}
+
+message StatisticsMsg {
+  int64 row_count = 1;
+  int64 size_in_bytes = 2;
+  map<string, ColumnStatisticsMsg> column_stats = 3;
+}
+
+// ============================================================================
+// Cost
+// ============================================================================
+
+message CostMsg {
+  double cpu = 1;
+  double io = 2;
+  double memory = 3;
+}
+
+// ============================================================================
+// Partitioning
+// ============================================================================
+
+message HashPartitioningMsg {
+  repeated ProtoExprMsg keys = 1;
+  int32 num_partitions = 2;
+}
+
+message RoundRobinPartitioningMsg {
+  int32 num_partitions = 1;
+}
+
+message PartitioningMsg {
+  oneof partitioning {
+    HashPartitioningMsg hash = 1;
+    EmptyMsg single = 2;
+    RoundRobinPartitioningMsg round_robin = 3;
+  }
+}
+
+// ============================================================================
+// Physical CTE relation (mirrors CTERelationMsg but with physical plan)
+// ============================================================================
+
+message PhysicalCTERelationMsg {
+  string name = 1;
+  ProtoPhysicalPlanMsg plan = 2;
+}
+
+// ============================================================================
+// ProtoPhysicalPlanMsg — 23 plan variants
+// ============================================================================
+
+message ProtoPhysicalPlanMsg {
+  oneof plan {
+    // Leaf nodes
+    TableScanMsg table_scan = 1;
+    PhysicalValuesMsg physical_values = 2;
+
+    // Unary (1:1 with logical)
+    PhysicalProjectMsg physical_project = 3;
+    PhysicalFilterMsg physical_filter = 4;
+    PhysicalSortMsg physical_sort = 5;
+    PhysicalLimitMsg physical_limit = 6;
+    PhysicalDistinctMsg physical_distinct = 7;
+
+    // Join strategies
+    PhysicalHashJoinMsg hash_join = 8;
+    PhysicalSortMergeJoinMsg sort_merge_join = 9;
+    PhysicalBroadcastHashJoinMsg broadcast_hash_join = 10;
+    PhysicalNestedLoopJoinMsg nested_loop_join = 11;
+
+    // Aggregate strategies
+    PhysicalHashAggregateMsg hash_aggregate = 12;
+    PhysicalSortAggregateMsg sort_aggregate = 13;
+
+    // Data redistribution
+    PhysicalExchangeMsg exchange = 14;
+
+    // Pass-through (same structure as logical)
+    PhysicalWindowMsg physical_window = 15;
+    PhysicalUnionMsg physical_union = 16;
+    PhysicalIntersectMsg physical_intersect = 17;
+    PhysicalExceptMsg physical_except = 18;
+    PhysicalWithMsg physical_with = 19;
+    PhysicalPivotMsg physical_pivot = 20;
+    PhysicalUnpivotMsg physical_unpivot = 21;
+    PhysicalLateralJoinMsg physical_lateral_join = 22;
+    PhysicalGenerateMsg physical_generate = 23;
+  }
+}
+
+// ============================================================================
+// Plan node messages
+// ============================================================================
+
+// ── Leaf nodes ──
+
+message TableScanMsg {
+  string name = 1;
+  optional string alias = 2;
+  ProtoSchemaMsg schema = 3;
+  StatisticsMsg stats = 4;
+}
+
+message PhysicalValuesMsg {
+  repeated ValuesRowMsg rows = 1;
+  ProtoSchemaMsg schema = 2;
+}
+
+// ── Unary ──
+
+message PhysicalProjectMsg {
+  repeated ProtoExprMsg project_list = 1;
+  ProtoPhysicalPlanMsg child = 2;
+}
+
+message PhysicalFilterMsg {
+  ProtoExprMsg condition = 1;
+  ProtoPhysicalPlanMsg child = 2;
+}
+
+message PhysicalSortMsg {
+  repeated SortOrderMsg order = 1;
+  ProtoPhysicalPlanMsg child = 2;
+}
+
+message PhysicalLimitMsg {
+  int32 limit = 1;
+  ProtoPhysicalPlanMsg child = 2;
+}
+
+message PhysicalDistinctMsg {
+  ProtoPhysicalPlanMsg child = 1;
+}
+
+// ── Join strategies ──
+
+message PhysicalHashJoinMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg right = 2;
+  JoinTypeEnum join_type = 3;
+  repeated ProtoExprMsg left_keys = 4;
+  repeated ProtoExprMsg right_keys = 5;
+  optional ProtoExprMsg condition = 6;
+  BuildSideEnum build_side = 7;
+}
+
+message PhysicalSortMergeJoinMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg right = 2;
+  JoinTypeEnum join_type = 3;
+  repeated ProtoExprMsg left_keys = 4;
+  repeated ProtoExprMsg right_keys = 5;
+  optional ProtoExprMsg condition = 6;
+}
+
+message PhysicalBroadcastHashJoinMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg right = 2;
+  JoinTypeEnum join_type = 3;
+  repeated ProtoExprMsg left_keys = 4;
+  repeated ProtoExprMsg right_keys = 5;
+  optional ProtoExprMsg condition = 6;
+  BuildSideEnum build_side = 7;
+}
+
+message PhysicalNestedLoopJoinMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg right = 2;
+  JoinTypeEnum join_type = 3;
+  optional ProtoExprMsg condition = 4;
+}
+
+// ── Aggregate strategies ──
+
+message PhysicalHashAggregateMsg {
+  repeated ProtoExprMsg grouping_exprs = 1;
+  repeated ProtoExprMsg aggregate_exprs = 2;
+  ProtoPhysicalPlanMsg child = 3;
+}
+
+message PhysicalSortAggregateMsg {
+  repeated ProtoExprMsg grouping_exprs = 1;
+  repeated ProtoExprMsg aggregate_exprs = 2;
+  ProtoPhysicalPlanMsg child = 3;
+}
+
+// ── Exchange ──
+
+message PhysicalExchangeMsg {
+  PartitioningMsg partitioning = 1;
+  ProtoPhysicalPlanMsg child = 2;
+}
+
+// ── Pass-through ──
+
+message PhysicalWindowMsg {
+  repeated ProtoExprMsg window_exprs = 1;
+  repeated ProtoExprMsg partition_spec = 2;
+  repeated SortOrderMsg order_spec = 3;
+  ProtoPhysicalPlanMsg child = 4;
+}
+
+message PhysicalUnionMsg {
+  repeated ProtoPhysicalPlanMsg children = 1;
+  bool by_name = 2;
+  bool allow_missing_columns = 3;
+}
+
+message PhysicalIntersectMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg right = 2;
+  bool is_all = 3;
+}
+
+message PhysicalExceptMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg right = 2;
+  bool is_all = 3;
+}
+
+message PhysicalWithMsg {
+  repeated PhysicalCTERelationMsg cte_relations = 1;
+  bool recursive = 2;
+  ProtoPhysicalPlanMsg child = 3;
+}
+
+message PhysicalPivotMsg {
+  repeated ProtoExprMsg grouping_exprs = 1;
+  ProtoExprMsg pivot_column = 2;
+  repeated ProtoExprMsg pivot_values = 3;
+  repeated ProtoExprMsg aggregates = 4;
+  ProtoPhysicalPlanMsg child = 5;
+}
+
+message PhysicalUnpivotMsg {
+  string value_column_name = 1;
+  string variable_column_name = 2;
+  repeated ExprWithAliasMsg columns = 3;
+  bool include_nulls = 4;
+  ProtoPhysicalPlanMsg child = 5;
+}
+
+message PhysicalLateralJoinMsg {
+  ProtoPhysicalPlanMsg left = 1;
+  ProtoPhysicalPlanMsg lateral = 2;
+  optional ProtoExprMsg condition = 3;
+}
+
+message PhysicalGenerateMsg {
+  ProtoExprMsg generator = 1;
+  repeated string generator_output = 2;
+  bool outer = 3;
+  ProtoPhysicalPlanMsg child = 4;
+}

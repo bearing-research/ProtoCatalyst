@@ -139,7 +139,7 @@ object JoinOp:
     Batch.fromRoot(root, left.schema)
 
   /** Build a single-row combined batch for condition evaluation. */
-  private[operators] def combineSingleRow(
+  private[executor] def combineSingleRow(
       left: Batch,
       leftRow: Int,
       right: Batch,

@@ -12,7 +12,8 @@ case class CompiledArtifact(
     schemaContracts: Vector[SchemaContract],
     plan: ProtoLogicalPlan,
     outputSchema: ProtoSchema,
-    sourceInfo: Option[SourceInfo]
+    sourceInfo: Option[SourceInfo],
+    physicalPlan: Option[ProtoPhysicalPlan] = None
 )
 
 case class ArtifactVersion(major: Int, minor: Int, patch: Int):

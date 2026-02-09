@@ -28,6 +28,7 @@ object ProtoConverter:
     builder.setPlan(toProtoPlan(artifact.plan))
     builder.setOutputSchema(toProtoSchema(artifact.outputSchema))
     artifact.sourceInfo.foreach(si => builder.setSourceInfo(toProtoSourceInfo(si)))
+    artifact.physicalPlan.foreach(pp => builder.setPhysicalPlan(toProtoPhysicalPlan(pp)))
     builder.build()
 
   def fromProto(msg: pb.CompiledArtifactMsg): CompiledArtifact =
@@ -42,7 +43,9 @@ object ProtoConverter:
       schemaContracts = contracts,
       plan = fromProtoPlan(msg.getPlan),
       outputSchema = fromProtoSchema(msg.getOutputSchema),
-      sourceInfo = if msg.hasSourceInfo then Some(fromProtoSourceInfo(msg.getSourceInfo)) else None
+      sourceInfo = if msg.hasSourceInfo then Some(fromProtoSourceInfo(msg.getSourceInfo)) else None,
+      physicalPlan =
+        if msg.hasPhysicalPlan then Some(fromProtoPhysicalPlan(msg.getPhysicalPlan)) else None
     )
 
   // ============================================================================
@@ -1361,3 +1364,569 @@ object ProtoConverter:
 
   private def fromNary(msg: pb.NaryExprMsg): Vector[ProtoExpr] =
     (0 until msg.getChildrenCount).map(i => fromProtoExpr(msg.getChildren(i))).toVector
+
+  // ============================================================================
+  // Statistics
+  // ============================================================================
+
+  private[codec] def toProtoStatistics(s: Statistics): pb.StatisticsMsg =
+    val b = pb.StatisticsMsg.newBuilder()
+    b.setRowCount(s.rowCount)
+    b.setSizeInBytes(s.sizeInBytes)
+    s.columnStats.foreach { (name, cs) =>
+      b.putColumnStats(name, toProtoColumnStatistics(cs))
+    }
+    b.build()
+
+  private[codec] def fromProtoStatistics(msg: pb.StatisticsMsg): Statistics =
+    val colStats = scala.collection.mutable.Map[String, ColumnStatistics]()
+    msg.getColumnStatsMap.forEach { (name, csMsg) =>
+      colStats(name) = fromProtoColumnStatistics(csMsg)
+    }
+    Statistics(
+      rowCount = msg.getRowCount,
+      sizeInBytes = msg.getSizeInBytes,
+      columnStats = colStats.toMap
+    )
+
+  private def toProtoColumnStatistics(cs: ColumnStatistics): pb.ColumnStatisticsMsg =
+    val b = pb.ColumnStatisticsMsg.newBuilder()
+    cs.distinctCount.foreach(b.setDistinctCount)
+    cs.nullCount.foreach(b.setNullCount)
+    cs.avgLen.foreach(b.setAvgLen)
+    cs.maxLen.foreach(b.setMaxLen)
+    b.build()
+
+  private def fromProtoColumnStatistics(msg: pb.ColumnStatisticsMsg): ColumnStatistics =
+    ColumnStatistics(
+      distinctCount = if msg.hasDistinctCount then Some(msg.getDistinctCount) else None,
+      nullCount = if msg.hasNullCount then Some(msg.getNullCount) else None,
+      avgLen = if msg.hasAvgLen then Some(msg.getAvgLen) else None,
+      maxLen = if msg.hasMaxLen then Some(msg.getMaxLen) else None
+    )
+
+  // ============================================================================
+  // BuildSide / Partitioning
+  // ============================================================================
+
+  private def toProtoBuildSide(bs: BuildSide): pb.BuildSideEnum = bs match
+    case BuildSide.BuildLeft  => pb.BuildSideEnum.BUILD_SIDE_LEFT
+    case BuildSide.BuildRight => pb.BuildSideEnum.BUILD_SIDE_RIGHT
+
+  private def fromProtoBuildSide(bs: pb.BuildSideEnum): BuildSide = bs match
+    case pb.BuildSideEnum.BUILD_SIDE_LEFT  => BuildSide.BuildLeft
+    case pb.BuildSideEnum.BUILD_SIDE_RIGHT => BuildSide.BuildRight
+    case _                                 => BuildSide.BuildLeft
+
+  private def toProtoPartitioning(p: Partitioning): pb.PartitioningMsg =
+    val b = pb.PartitioningMsg.newBuilder()
+    p match
+      case Partitioning.HashPartitioning(keys, numPartitions) =>
+        val hb = pb.HashPartitioningMsg.newBuilder()
+        keys.foreach(k => hb.addKeys(toProtoExpr(k)))
+        hb.setNumPartitions(numPartitions)
+        b.setHash(hb.build())
+      case Partitioning.SinglePartition =>
+        b.setSingle(pb.EmptyMsg.newBuilder().build())
+      case Partitioning.RoundRobinPartitioning(numPartitions) =>
+        b.setRoundRobin(
+          pb.RoundRobinPartitioningMsg.newBuilder().setNumPartitions(numPartitions).build()
+        )
+    b.build()
+
+  private def fromProtoPartitioning(msg: pb.PartitioningMsg): Partitioning =
+    import pb.PartitioningMsg.PartitioningCase._
+    msg.getPartitioningCase match
+      case HASH =>
+        val h = msg.getHash
+        Partitioning.HashPartitioning(
+          keys = (0 until h.getKeysCount).map(i => fromProtoExpr(h.getKeys(i))).toVector,
+          numPartitions = h.getNumPartitions
+        )
+      case SINGLE =>
+        Partitioning.SinglePartition
+      case ROUND_ROBIN =>
+        Partitioning.RoundRobinPartitioning(msg.getRoundRobin.getNumPartitions)
+      case _ =>
+        Partitioning.SinglePartition
+
+  // ============================================================================
+  // ProtoPhysicalPlan
+  // ============================================================================
+
+  def toProtoPhysicalPlan(p: ProtoPhysicalPlan): pb.ProtoPhysicalPlanMsg =
+    val b = pb.ProtoPhysicalPlanMsg.newBuilder()
+    p match
+      case ProtoPhysicalPlan.TableScan(name, alias, schema, stats) =>
+        val tb = pb.TableScanMsg
+          .newBuilder()
+          .setName(name)
+          .setSchema(toProtoSchema(schema))
+          .setStats(toProtoStatistics(stats))
+        alias.foreach(tb.setAlias)
+        b.setTableScan(tb.build())
+
+      case ProtoPhysicalPlan.PhysicalValues(rows, schema) =>
+        val vb = pb.PhysicalValuesMsg
+          .newBuilder()
+          .setSchema(toProtoSchema(schema))
+        rows.foreach { row =>
+          val rb = pb.ValuesRowMsg.newBuilder()
+          row.foreach(e => rb.addValues(toProtoExpr(e)))
+          vb.addRows(rb.build())
+        }
+        b.setPhysicalValues(vb.build())
+
+      case ProtoPhysicalPlan.PhysicalProject(projectList, child) =>
+        val pb2 = pb.PhysicalProjectMsg.newBuilder().setChild(toProtoPhysicalPlan(child))
+        projectList.foreach(e => pb2.addProjectList(toProtoExpr(e)))
+        b.setPhysicalProject(pb2.build())
+
+      case ProtoPhysicalPlan.PhysicalFilter(condition, child) =>
+        b.setPhysicalFilter(
+          pb.PhysicalFilterMsg
+            .newBuilder()
+            .setCondition(toProtoExpr(condition))
+            .setChild(toProtoPhysicalPlan(child))
+            .build()
+        )
+
+      case ProtoPhysicalPlan.PhysicalSort(order, child) =>
+        val sb = pb.PhysicalSortMsg.newBuilder().setChild(toProtoPhysicalPlan(child))
+        order.foreach(o => sb.addOrder(toProtoSortOrder(o)))
+        b.setPhysicalSort(sb.build())
+
+      case ProtoPhysicalPlan.PhysicalLimit(limit, child) =>
+        b.setPhysicalLimit(
+          pb.PhysicalLimitMsg
+            .newBuilder()
+            .setLimit(limit)
+            .setChild(toProtoPhysicalPlan(child))
+            .build()
+        )
+
+      case ProtoPhysicalPlan.PhysicalDistinct(child) =>
+        b.setPhysicalDistinct(
+          pb.PhysicalDistinctMsg.newBuilder().setChild(toProtoPhysicalPlan(child)).build()
+        )
+
+      case ProtoPhysicalPlan.HashJoin(
+            left,
+            right,
+            joinType,
+            leftKeys,
+            rightKeys,
+            condition,
+            buildSide
+          ) =>
+        val jb = pb.PhysicalHashJoinMsg
+          .newBuilder()
+          .setLeft(toProtoPhysicalPlan(left))
+          .setRight(toProtoPhysicalPlan(right))
+          .setJoinType(toProtoJoinType(joinType))
+          .setBuildSide(toProtoBuildSide(buildSide))
+        leftKeys.foreach(k => jb.addLeftKeys(toProtoExpr(k)))
+        rightKeys.foreach(k => jb.addRightKeys(toProtoExpr(k)))
+        condition.foreach(c => jb.setCondition(toProtoExpr(c)))
+        b.setHashJoin(jb.build())
+
+      case ProtoPhysicalPlan.SortMergeJoin(left, right, joinType, leftKeys, rightKeys, condition) =>
+        val jb = pb.PhysicalSortMergeJoinMsg
+          .newBuilder()
+          .setLeft(toProtoPhysicalPlan(left))
+          .setRight(toProtoPhysicalPlan(right))
+          .setJoinType(toProtoJoinType(joinType))
+        leftKeys.foreach(k => jb.addLeftKeys(toProtoExpr(k)))
+        rightKeys.foreach(k => jb.addRightKeys(toProtoExpr(k)))
+        condition.foreach(c => jb.setCondition(toProtoExpr(c)))
+        b.setSortMergeJoin(jb.build())
+
+      case ProtoPhysicalPlan.BroadcastHashJoin(
+            left,
+            right,
+            joinType,
+            leftKeys,
+            rightKeys,
+            condition,
+            buildSide
+          ) =>
+        val jb = pb.PhysicalBroadcastHashJoinMsg
+          .newBuilder()
+          .setLeft(toProtoPhysicalPlan(left))
+          .setRight(toProtoPhysicalPlan(right))
+          .setJoinType(toProtoJoinType(joinType))
+          .setBuildSide(toProtoBuildSide(buildSide))
+        leftKeys.foreach(k => jb.addLeftKeys(toProtoExpr(k)))
+        rightKeys.foreach(k => jb.addRightKeys(toProtoExpr(k)))
+        condition.foreach(c => jb.setCondition(toProtoExpr(c)))
+        b.setBroadcastHashJoin(jb.build())
+
+      case ProtoPhysicalPlan.NestedLoopJoin(left, right, joinType, condition) =>
+        val jb = pb.PhysicalNestedLoopJoinMsg
+          .newBuilder()
+          .setLeft(toProtoPhysicalPlan(left))
+          .setRight(toProtoPhysicalPlan(right))
+          .setJoinType(toProtoJoinType(joinType))
+        condition.foreach(c => jb.setCondition(toProtoExpr(c)))
+        b.setNestedLoopJoin(jb.build())
+
+      case ProtoPhysicalPlan.HashAggregate(groupingExprs, aggregateExprs, child) =>
+        val ab = pb.PhysicalHashAggregateMsg.newBuilder().setChild(toProtoPhysicalPlan(child))
+        groupingExprs.foreach(e => ab.addGroupingExprs(toProtoExpr(e)))
+        aggregateExprs.foreach(e => ab.addAggregateExprs(toProtoExpr(e)))
+        b.setHashAggregate(ab.build())
+
+      case ProtoPhysicalPlan.SortAggregate(groupingExprs, aggregateExprs, child) =>
+        val ab = pb.PhysicalSortAggregateMsg.newBuilder().setChild(toProtoPhysicalPlan(child))
+        groupingExprs.foreach(e => ab.addGroupingExprs(toProtoExpr(e)))
+        aggregateExprs.foreach(e => ab.addAggregateExprs(toProtoExpr(e)))
+        b.setSortAggregate(ab.build())
+
+      case ProtoPhysicalPlan.Exchange(partitioning, child) =>
+        b.setExchange(
+          pb.PhysicalExchangeMsg
+            .newBuilder()
+            .setPartitioning(toProtoPartitioning(partitioning))
+            .setChild(toProtoPhysicalPlan(child))
+            .build()
+        )
+
+      case ProtoPhysicalPlan.PhysicalWindow(windowExprs, partitionSpec, orderSpec, child) =>
+        val wb = pb.PhysicalWindowMsg.newBuilder().setChild(toProtoPhysicalPlan(child))
+        windowExprs.foreach(e => wb.addWindowExprs(toProtoExpr(e)))
+        partitionSpec.foreach(e => wb.addPartitionSpec(toProtoExpr(e)))
+        orderSpec.foreach(o => wb.addOrderSpec(toProtoSortOrder(o)))
+        b.setPhysicalWindow(wb.build())
+
+      case ProtoPhysicalPlan.PhysicalUnion(children, byName, allowMissingColumns) =>
+        val ub = pb.PhysicalUnionMsg
+          .newBuilder()
+          .setByName(byName)
+          .setAllowMissingColumns(allowMissingColumns)
+        children.foreach(c => ub.addChildren(toProtoPhysicalPlan(c)))
+        b.setPhysicalUnion(ub.build())
+
+      case ProtoPhysicalPlan.PhysicalIntersect(left, right, isAll) =>
+        b.setPhysicalIntersect(
+          pb.PhysicalIntersectMsg
+            .newBuilder()
+            .setLeft(toProtoPhysicalPlan(left))
+            .setRight(toProtoPhysicalPlan(right))
+            .setIsAll(isAll)
+            .build()
+        )
+
+      case ProtoPhysicalPlan.PhysicalExcept(left, right, isAll) =>
+        b.setPhysicalExcept(
+          pb.PhysicalExceptMsg
+            .newBuilder()
+            .setLeft(toProtoPhysicalPlan(left))
+            .setRight(toProtoPhysicalPlan(right))
+            .setIsAll(isAll)
+            .build()
+        )
+
+      case ProtoPhysicalPlan.PhysicalWith(cteRelations, recursive, child) =>
+        val wb = pb.PhysicalWithMsg
+          .newBuilder()
+          .setRecursive(recursive)
+          .setChild(toProtoPhysicalPlan(child))
+        cteRelations.foreach { (name, plan) =>
+          wb.addCteRelations(
+            pb.PhysicalCTERelationMsg
+              .newBuilder()
+              .setName(name)
+              .setPlan(toProtoPhysicalPlan(plan))
+              .build()
+          )
+        }
+        b.setPhysicalWith(wb.build())
+
+      case ProtoPhysicalPlan.PhysicalPivot(
+            groupingExprs,
+            pivotColumn,
+            pivotValues,
+            aggregates,
+            child
+          ) =>
+        val pvb = pb.PhysicalPivotMsg
+          .newBuilder()
+          .setPivotColumn(toProtoExpr(pivotColumn))
+          .setChild(toProtoPhysicalPlan(child))
+        groupingExprs.foreach(e => pvb.addGroupingExprs(toProtoExpr(e)))
+        pivotValues.foreach(e => pvb.addPivotValues(toProtoExpr(e)))
+        aggregates.foreach(e => pvb.addAggregates(toProtoExpr(e)))
+        b.setPhysicalPivot(pvb.build())
+
+      case ProtoPhysicalPlan.PhysicalUnpivot(
+            valueColumnName,
+            variableColumnName,
+            columns,
+            includeNulls,
+            child
+          ) =>
+        val ub = pb.PhysicalUnpivotMsg
+          .newBuilder()
+          .setValueColumnName(valueColumnName)
+          .setVariableColumnName(variableColumnName)
+          .setIncludeNulls(includeNulls)
+          .setChild(toProtoPhysicalPlan(child))
+        columns.foreach { (expr, aliasOpt) =>
+          val ewb = pb.ExprWithAliasMsg.newBuilder().setExpr(toProtoExpr(expr))
+          aliasOpt.foreach(ewb.setAlias)
+          ub.addColumns(ewb.build())
+        }
+        b.setPhysicalUnpivot(ub.build())
+
+      case ProtoPhysicalPlan.PhysicalLateralJoin(left, lateral, condition) =>
+        val lb = pb.PhysicalLateralJoinMsg
+          .newBuilder()
+          .setLeft(toProtoPhysicalPlan(left))
+          .setLateral(toProtoPhysicalPlan(lateral))
+        condition.foreach(c => lb.setCondition(toProtoExpr(c)))
+        b.setPhysicalLateralJoin(lb.build())
+
+      case ProtoPhysicalPlan.PhysicalGenerate(generator, generatorOutput, outer, child) =>
+        val gb = pb.PhysicalGenerateMsg
+          .newBuilder()
+          .setGenerator(toProtoExpr(generator))
+          .setOuter(outer)
+          .setChild(toProtoPhysicalPlan(child))
+        generatorOutput.foreach(gb.addGeneratorOutput)
+        b.setPhysicalGenerate(gb.build())
+
+    b.build()
+
+  def fromProtoPhysicalPlan(msg: pb.ProtoPhysicalPlanMsg): ProtoPhysicalPlan =
+    import pb.ProtoPhysicalPlanMsg.PlanCase._
+    msg.getPlanCase match
+      case TABLE_SCAN =>
+        val ts = msg.getTableScan
+        ProtoPhysicalPlan.TableScan(
+          name = ts.getName,
+          alias = if ts.hasAlias then Some(ts.getAlias) else None,
+          schema = fromProtoSchema(ts.getSchema),
+          stats = fromProtoStatistics(ts.getStats)
+        )
+
+      case PHYSICAL_VALUES =>
+        val pv = msg.getPhysicalValues
+        ProtoPhysicalPlan.PhysicalValues(
+          rows = (0 until pv.getRowsCount).map { i =>
+            val row = pv.getRows(i)
+            (0 until row.getValuesCount).map(j => fromProtoExpr(row.getValues(j))).toVector
+          }.toVector,
+          schema = fromProtoSchema(pv.getSchema)
+        )
+
+      case PHYSICAL_PROJECT =>
+        val pr = msg.getPhysicalProject
+        ProtoPhysicalPlan.PhysicalProject(
+          projectList =
+            (0 until pr.getProjectListCount).map(i => fromProtoExpr(pr.getProjectList(i))).toVector,
+          child = fromProtoPhysicalPlan(pr.getChild)
+        )
+
+      case PHYSICAL_FILTER =>
+        val f = msg.getPhysicalFilter
+        ProtoPhysicalPlan.PhysicalFilter(
+          condition = fromProtoExpr(f.getCondition),
+          child = fromProtoPhysicalPlan(f.getChild)
+        )
+
+      case PHYSICAL_SORT =>
+        val s = msg.getPhysicalSort
+        ProtoPhysicalPlan.PhysicalSort(
+          order = (0 until s.getOrderCount).map(i => fromProtoSortOrder(s.getOrder(i))).toVector,
+          child = fromProtoPhysicalPlan(s.getChild)
+        )
+
+      case PHYSICAL_LIMIT =>
+        val l = msg.getPhysicalLimit
+        ProtoPhysicalPlan.PhysicalLimit(
+          limit = l.getLimit,
+          child = fromProtoPhysicalPlan(l.getChild)
+        )
+
+      case PHYSICAL_DISTINCT =>
+        ProtoPhysicalPlan.PhysicalDistinct(
+          child = fromProtoPhysicalPlan(msg.getPhysicalDistinct.getChild)
+        )
+
+      case HASH_JOIN =>
+        val j = msg.getHashJoin
+        ProtoPhysicalPlan.HashJoin(
+          left = fromProtoPhysicalPlan(j.getLeft),
+          right = fromProtoPhysicalPlan(j.getRight),
+          joinType = fromProtoJoinType(j.getJoinType),
+          leftKeys =
+            (0 until j.getLeftKeysCount).map(i => fromProtoExpr(j.getLeftKeys(i))).toVector,
+          rightKeys =
+            (0 until j.getRightKeysCount).map(i => fromProtoExpr(j.getRightKeys(i))).toVector,
+          condition = if j.hasCondition then Some(fromProtoExpr(j.getCondition)) else None,
+          buildSide = fromProtoBuildSide(j.getBuildSide)
+        )
+
+      case SORT_MERGE_JOIN =>
+        val j = msg.getSortMergeJoin
+        ProtoPhysicalPlan.SortMergeJoin(
+          left = fromProtoPhysicalPlan(j.getLeft),
+          right = fromProtoPhysicalPlan(j.getRight),
+          joinType = fromProtoJoinType(j.getJoinType),
+          leftKeys =
+            (0 until j.getLeftKeysCount).map(i => fromProtoExpr(j.getLeftKeys(i))).toVector,
+          rightKeys =
+            (0 until j.getRightKeysCount).map(i => fromProtoExpr(j.getRightKeys(i))).toVector,
+          condition = if j.hasCondition then Some(fromProtoExpr(j.getCondition)) else None
+        )
+
+      case BROADCAST_HASH_JOIN =>
+        val j = msg.getBroadcastHashJoin
+        ProtoPhysicalPlan.BroadcastHashJoin(
+          left = fromProtoPhysicalPlan(j.getLeft),
+          right = fromProtoPhysicalPlan(j.getRight),
+          joinType = fromProtoJoinType(j.getJoinType),
+          leftKeys =
+            (0 until j.getLeftKeysCount).map(i => fromProtoExpr(j.getLeftKeys(i))).toVector,
+          rightKeys =
+            (0 until j.getRightKeysCount).map(i => fromProtoExpr(j.getRightKeys(i))).toVector,
+          condition = if j.hasCondition then Some(fromProtoExpr(j.getCondition)) else None,
+          buildSide = fromProtoBuildSide(j.getBuildSide)
+        )
+
+      case NESTED_LOOP_JOIN =>
+        val j = msg.getNestedLoopJoin
+        ProtoPhysicalPlan.NestedLoopJoin(
+          left = fromProtoPhysicalPlan(j.getLeft),
+          right = fromProtoPhysicalPlan(j.getRight),
+          joinType = fromProtoJoinType(j.getJoinType),
+          condition = if j.hasCondition then Some(fromProtoExpr(j.getCondition)) else None
+        )
+
+      case HASH_AGGREGATE =>
+        val a = msg.getHashAggregate
+        ProtoPhysicalPlan.HashAggregate(
+          groupingExprs = (0 until a.getGroupingExprsCount)
+            .map(i => fromProtoExpr(a.getGroupingExprs(i)))
+            .toVector,
+          aggregateExprs = (0 until a.getAggregateExprsCount)
+            .map(i => fromProtoExpr(a.getAggregateExprs(i)))
+            .toVector,
+          child = fromProtoPhysicalPlan(a.getChild)
+        )
+
+      case SORT_AGGREGATE =>
+        val a = msg.getSortAggregate
+        ProtoPhysicalPlan.SortAggregate(
+          groupingExprs = (0 until a.getGroupingExprsCount)
+            .map(i => fromProtoExpr(a.getGroupingExprs(i)))
+            .toVector,
+          aggregateExprs = (0 until a.getAggregateExprsCount)
+            .map(i => fromProtoExpr(a.getAggregateExprs(i)))
+            .toVector,
+          child = fromProtoPhysicalPlan(a.getChild)
+        )
+
+      case EXCHANGE =>
+        val e = msg.getExchange
+        ProtoPhysicalPlan.Exchange(
+          partitioning = fromProtoPartitioning(e.getPartitioning),
+          child = fromProtoPhysicalPlan(e.getChild)
+        )
+
+      case PHYSICAL_WINDOW =>
+        val w = msg.getPhysicalWindow
+        ProtoPhysicalPlan.PhysicalWindow(
+          windowExprs =
+            (0 until w.getWindowExprsCount).map(i => fromProtoExpr(w.getWindowExprs(i))).toVector,
+          partitionSpec = (0 until w.getPartitionSpecCount)
+            .map(i => fromProtoExpr(w.getPartitionSpec(i)))
+            .toVector,
+          orderSpec =
+            (0 until w.getOrderSpecCount).map(i => fromProtoSortOrder(w.getOrderSpec(i))).toVector,
+          child = fromProtoPhysicalPlan(w.getChild)
+        )
+
+      case PHYSICAL_UNION =>
+        val u = msg.getPhysicalUnion
+        ProtoPhysicalPlan.PhysicalUnion(
+          children =
+            (0 until u.getChildrenCount).map(i => fromProtoPhysicalPlan(u.getChildren(i))).toVector,
+          byName = u.getByName,
+          allowMissingColumns = u.getAllowMissingColumns
+        )
+
+      case PHYSICAL_INTERSECT =>
+        val x = msg.getPhysicalIntersect
+        ProtoPhysicalPlan.PhysicalIntersect(
+          left = fromProtoPhysicalPlan(x.getLeft),
+          right = fromProtoPhysicalPlan(x.getRight),
+          isAll = x.getIsAll
+        )
+
+      case PHYSICAL_EXCEPT =>
+        val x = msg.getPhysicalExcept
+        ProtoPhysicalPlan.PhysicalExcept(
+          left = fromProtoPhysicalPlan(x.getLeft),
+          right = fromProtoPhysicalPlan(x.getRight),
+          isAll = x.getIsAll
+        )
+
+      case PHYSICAL_WITH =>
+        val w = msg.getPhysicalWith
+        ProtoPhysicalPlan.PhysicalWith(
+          cteRelations = (0 until w.getCteRelationsCount).map { i =>
+            val cte = w.getCteRelations(i)
+            (cte.getName, fromProtoPhysicalPlan(cte.getPlan))
+          }.toVector,
+          recursive = w.getRecursive,
+          child = fromProtoPhysicalPlan(w.getChild)
+        )
+
+      case PHYSICAL_PIVOT =>
+        val pv = msg.getPhysicalPivot
+        ProtoPhysicalPlan.PhysicalPivot(
+          groupingExprs = (0 until pv.getGroupingExprsCount)
+            .map(i => fromProtoExpr(pv.getGroupingExprs(i)))
+            .toVector,
+          pivotColumn = fromProtoExpr(pv.getPivotColumn),
+          pivotValues =
+            (0 until pv.getPivotValuesCount).map(i => fromProtoExpr(pv.getPivotValues(i))).toVector,
+          aggregates =
+            (0 until pv.getAggregatesCount).map(i => fromProtoExpr(pv.getAggregates(i))).toVector,
+          child = fromProtoPhysicalPlan(pv.getChild)
+        )
+
+      case PHYSICAL_UNPIVOT =>
+        val up = msg.getPhysicalUnpivot
+        ProtoPhysicalPlan.PhysicalUnpivot(
+          valueColumnName = up.getValueColumnName,
+          variableColumnName = up.getVariableColumnName,
+          columns = (0 until up.getColumnsCount).map { i =>
+            val ewa = up.getColumns(i)
+            (fromProtoExpr(ewa.getExpr), if ewa.hasAlias then Some(ewa.getAlias) else None)
+          }.toVector,
+          includeNulls = up.getIncludeNulls,
+          child = fromProtoPhysicalPlan(up.getChild)
+        )
+
+      case PHYSICAL_LATERAL_JOIN =>
+        val lj = msg.getPhysicalLateralJoin
+        ProtoPhysicalPlan.PhysicalLateralJoin(
+          left = fromProtoPhysicalPlan(lj.getLeft),
+          lateral = fromProtoPhysicalPlan(lj.getLateral),
+          condition = if lj.hasCondition then Some(fromProtoExpr(lj.getCondition)) else None
+        )
+
+      case PHYSICAL_GENERATE =>
+        val g = msg.getPhysicalGenerate
+        ProtoPhysicalPlan.PhysicalGenerate(
+          generator = fromProtoExpr(g.getGenerator),
+          generatorOutput =
+            (0 until g.getGeneratorOutputCount).map(i => g.getGeneratorOutput(i)).toVector,
+          outer = g.getOuter,
+          child = fromProtoPhysicalPlan(g.getChild)
+        )
+
+      case PLAN_NOT_SET | null =>
+        throw IllegalArgumentException(s"Unknown physical plan case: ${msg.getPlanCase}")

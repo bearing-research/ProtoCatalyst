@@ -4,11 +4,17 @@ import protocatalyst.arrow.ArrowAllocator
 import protocatalyst.artifact.CompiledArtifact
 import protocatalyst.codec.ArtifactCodec
 import protocatalyst.executor.exec._
+import protocatalyst.executor.physical.PhysicalPlanExecutor
+import protocatalyst.plan._
 
 /** Executes ProtoCatalyst compiled artifacts against in-memory Arrow batches.
   *
   * This is the standalone execution engine — no Spark, no external dependencies. Mirrors the
   * SparkQueryRunner API but returns Arrow-columnar Batch results instead of DataFrames.
+  *
+  * All execution goes through the physical plan pipeline: logical plan → PhysicalPlanner →
+  * PhysicalPlanExecutor. If the artifact already contains a pre-planned physical plan, it is used
+  * directly.
   *
   * {{{
   * val catalog = Catalog()
@@ -23,7 +29,8 @@ object QueryRunner:
   case class ExecutionConfig(
       validateSchema: Boolean = false,
       memoryLimit: Long = ArrowAllocator.DefaultLimit,
-      batchSize: Int = 65536
+      batchSize: Int = 65536,
+      plannerConfig: PlannerConfig = PlannerConfig()
   )
 
   val DefaultConfig: ExecutionConfig = ExecutionConfig()
@@ -60,10 +67,16 @@ object QueryRunner:
     // Validate schema contracts if enabled
     if config.validateSchema then validateSchemaContracts(artifact, catalog)
 
-    // Create scoped allocator for execution
     val allocator = ArrowAllocator.createRoot(config.memoryLimit)
-    val executor = PlanExecutor(catalog, allocator)
-    executor.execute(artifact.plan)
+
+    // Use pre-planned physical plan from artifact if available, otherwise plan on the fly
+    val physicalPlan = artifact.physicalPlan.getOrElse {
+      val planner = PhysicalPlanner(catalog.statsProvider, config.plannerConfig)
+      planner.plan(artifact.plan)
+    }
+
+    val executor = PhysicalPlanExecutor(catalog, allocator)
+    executor.execute(physicalPlan)
 
   /** Validate schema contracts against the catalog. */
   private def validateSchemaContracts(artifact: CompiledArtifact, catalog: Catalog): Unit =

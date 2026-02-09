@@ -162,6 +162,48 @@ object JsonArtifactCodec extends ArtifactCodec:
     macroRW[ProtoLogicalPlan.ResolvedHint]
   )
 
+  // === Physical Plan ReadWriters ===
+
+  given ReadWriter[BuildSide] = readwriter[String].bimap(
+    _.toString,
+    s => BuildSide.valueOf(s)
+  )
+
+  given ReadWriter[ColumnStatistics] = macroRW
+  given ReadWriter[Statistics] = macroRW
+
+  given ReadWriter[Partitioning] = ReadWriter.merge(
+    macroRW[Partitioning.HashPartitioning],
+    macroRW[Partitioning.SinglePartition.type],
+    macroRW[Partitioning.RoundRobinPartitioning]
+  )
+
+  given ReadWriter[ProtoPhysicalPlan] = ReadWriter.merge(
+    macroRW[ProtoPhysicalPlan.TableScan],
+    macroRW[ProtoPhysicalPlan.PhysicalValues],
+    macroRW[ProtoPhysicalPlan.PhysicalProject],
+    macroRW[ProtoPhysicalPlan.PhysicalFilter],
+    macroRW[ProtoPhysicalPlan.PhysicalSort],
+    macroRW[ProtoPhysicalPlan.PhysicalLimit],
+    macroRW[ProtoPhysicalPlan.PhysicalDistinct],
+    macroRW[ProtoPhysicalPlan.HashJoin],
+    macroRW[ProtoPhysicalPlan.SortMergeJoin],
+    macroRW[ProtoPhysicalPlan.BroadcastHashJoin],
+    macroRW[ProtoPhysicalPlan.NestedLoopJoin],
+    macroRW[ProtoPhysicalPlan.HashAggregate],
+    macroRW[ProtoPhysicalPlan.SortAggregate],
+    macroRW[ProtoPhysicalPlan.Exchange],
+    macroRW[ProtoPhysicalPlan.PhysicalWindow],
+    macroRW[ProtoPhysicalPlan.PhysicalUnion],
+    macroRW[ProtoPhysicalPlan.PhysicalIntersect],
+    macroRW[ProtoPhysicalPlan.PhysicalExcept],
+    macroRW[ProtoPhysicalPlan.PhysicalWith],
+    macroRW[ProtoPhysicalPlan.PhysicalPivot],
+    macroRW[ProtoPhysicalPlan.PhysicalUnpivot],
+    macroRW[ProtoPhysicalPlan.PhysicalLateralJoin],
+    macroRW[ProtoPhysicalPlan.PhysicalGenerate]
+  )
+
   // === Schema ReadWriters ===
 
   // SchemaFingerprint is opaque type = Long

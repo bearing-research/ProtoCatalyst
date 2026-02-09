@@ -50,7 +50,7 @@ object SortOp:
     root.setRowCount(input.rowCount)
     Batch.fromRoot(root, input.schema)
 
-  private[operators] def compareRows(
+  private[executor] def compareRows(
       a: Int,
       b: Int,
       sortKeys: Vector[(FieldVector, SortDirection, NullOrdering)]
@@ -83,7 +83,7 @@ object SortOp:
         if directed != 0 then break(directed)
       0
 
-  private[operators] def compareValues(a: Any, b: Any): Int = (a, b) match
+  private[executor] def compareValues(a: Any, b: Any): Int = (a, b) match
     case (a: Boolean, b: Boolean)                           => java.lang.Boolean.compare(a, b)
     case (a: Byte, b: Byte)                                 => java.lang.Byte.compare(a, b)
     case (a: Short, b: Short)                               => java.lang.Short.compare(a, b)

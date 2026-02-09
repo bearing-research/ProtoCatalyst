@@ -17,7 +17,8 @@ import protocatalyst.types._
 class ExprEvaluator(allocator: BufferAllocator):
 
   /** Optional callback for evaluating subquery plans. Set by PlanExecutor. */
-  private[exec] var subqueryEvaluator: Option[protocatalyst.plan.ProtoLogicalPlan => Batch] = None
+  private[executor] var subqueryEvaluator: Option[protocatalyst.plan.ProtoLogicalPlan => Batch] =
+    None
 
   /** Evaluate an expression against a batch, returning a column vector. */
   def eval(expr: ProtoExpr, batch: Batch): FieldVector = expr match
@@ -1161,7 +1162,12 @@ class ExprEvaluator(allocator: BufferAllocator):
     case _                        => throw ExecutionException(s"Cannot convert $v to Double")
 
   /** Copy a value from one vector to another at the given row indices. */
-  private[exec] def copyValue(src: FieldVector, srcRow: Int, dst: FieldVector, dstRow: Int): Unit =
+  private[executor] def copyValue(
+      src: FieldVector,
+      srcRow: Int,
+      dst: FieldVector,
+      dstRow: Int
+  ): Unit =
     if src.isNull(srcRow) then Batch.setNull(dst, dstRow)
     else
       (src, dst) match
