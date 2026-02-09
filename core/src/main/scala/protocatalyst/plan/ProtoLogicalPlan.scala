@@ -3,6 +3,7 @@ package protocatalyst.plan
 import java.io.Serializable
 
 import protocatalyst.expr._
+import protocatalyst.ml.graph.ComputeGraph
 import protocatalyst.schema._
 
 /** Minimal logical plan nodes for compiled queries. */
@@ -141,6 +142,29 @@ enum ProtoLogicalPlan extends Serializable:
   /** Hint: wraps a plan with optimizer hints */
   case ResolvedHint(
       hints: Vector[PlanHint],
+      child: ProtoLogicalPlan
+  )
+
+  /** ML Predict: invoke a trained model for inference on tabular data.
+    *
+    * Output schema: child schema fields + model output fields (one column per `GraphIO` in
+    * `model.outputs`).
+    */
+  case Predict(
+      model: ComputeGraph,
+      inputMapping: Vector[(String, ProtoExpr)],
+      child: ProtoLogicalPlan
+  )
+
+  /** ML Fit: train a model on tabular data using gradient descent.
+    *
+    * Output schema: `(epoch: INT, loss: DOUBLE)` — one row per training epoch.
+    */
+  case Fit(
+      model: ComputeGraph,
+      inputMapping: Vector[(String, ProtoExpr)],
+      labelMapping: Vector[(String, ProtoExpr)],
+      trainConfig: TrainConfig,
       child: ProtoLogicalPlan
   )
 

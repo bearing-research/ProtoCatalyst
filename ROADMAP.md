@@ -2,21 +2,22 @@
 
 ## Current State
 
-ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime to compile time. The project is feature-complete for its core mission — compile-time encoder derivation, query optimization, and Spark execution of pre-optimized plans.
+ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime to compile time. The project is feature-complete for its core mission — compile-time encoder derivation, query optimization, and Spark execution of pre-optimized plans. Beyond the core, it now includes a standalone Arrow-based execution engine with physical plan strategy selection, an ML compute graph IR with autograd and ONNX interop, native ML-in-SQL operators for training and inference, and Parquet file I/O for the standalone executor.
 
 ### By the Numbers
 
 | Metric | Count |
 |--------|------:|
-| Source lines | ~33,000 |
-| Test lines | ~30,000 |
-| Test cases | ~1,948 |
-| Modules | 10 |
-| Optimizer rules | 48 |
+| Source lines | ~46,500 |
+| Test lines | ~40,000 |
+| Test cases | ~2,493 |
+| Modules | 12 |
+| Optimizer rules | 56 (48 SQL + 8 ML) |
 | IR expression types | 93 |
-| IR plan node types | 20 |
-| Protobuf definitions | 4 files (176 generated Java classes) |
-| Commits | 101 |
+| IR logical plan node types | 22 |
+| IR physical plan node types | 25 |
+| Protobuf definitions | 8 files |
+| Execution backends | 3 (Spark, Local, DataFusion) |
 
 ---
 
@@ -106,6 +107,75 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 - E2EIntegrationSuite — full compile → serialize → deserialize → Spark execute pipeline
 - SparkQueryRunner tests with real query execution against test data
 
+### Phase 9: Physical Plan Layer ✅
+
+- `ProtoPhysicalPlan` enum (25 variants) — physical plan IR with execution strategy choices
+- `PhysicalPlanner` — converts `ProtoLogicalPlan` → `ProtoPhysicalPlan` based on statistics, heuristics, and hints
+- Join strategies: `HashJoin`, `SortMergeJoin`, `BroadcastHashJoin`, `NestedLoopJoin` with automatic selection
+- Aggregate strategies: `HashAggregate`, `SortAggregate`
+- `Exchange` operator for data redistribution; `BuildSide`, `Partitioning` enums
+- `Statistics` + `ColumnStatistics` propagation — row counts, sizes, cardinality estimates
+- `Cost` + `CostEstimator` — CPU/IO/memory cost per physical operator
+- `HashJoinOp` — build/probe hash join with all 7 join types, null key exclusion, residual conditions
+- `SortMergeJoinOp` — sort-merge join with duplicate key runs, all 7 join types
+- `PhysicalPlanExecutor` — replaces `PlanExecutor` as sole execution entry point
+- `CompiledArtifact.physicalPlan: Option[ProtoPhysicalPlan]` — optional pre-planned physical plan
+- Protobuf serialization for all physical plan types (`physical_plan.proto`)
+- `QueryRunner` now uses physical pipeline: logical → physical → execute
+- 93 executor tests, 44 planner tests
+
+### Phase 9.5: ML Compute Graph IR ✅
+
+- `TensorExpr` enum (50+ tensor operations) — MatMul, Conv, Relu, BatchNorm, Dropout, etc.
+- `TensorType` with static shape inference and broadcasting rules
+- `ComputeGraph` — DAG-based computation graph (analogous to `ProtoLogicalPlan`)
+- 8 ML optimizer rules: algebraic simplification, batch norm elimination, CSE, dead node elimination, dropout elimination, identity elimination, matmul-add fusion, transpose fusion
+- Symbolic reverse-mode autograd (VJP rules)
+- ONNX export/import for model interop
+- Typed tensor DSL with compile-time shape checking (`ml-query` module)
+- 200+ ML tests across 13 test files
+
+### Phase 10: ML as Plan Operators (Predict + Fit) ✅
+
+- `ProtoLogicalPlan.Predict` — native ML inference in query plans, maps model inputs to SQL expressions
+- `ProtoLogicalPlan.Fit` — native ML training in query plans with configurable optimizer and loss
+- `ProtoPhysicalPlan.PhysicalPredict` / `PhysicalFit` — physical plan nodes (1:1 lowering)
+- `TrainConfig` + `OptimizerType` (SGD, Adam) — training configuration types
+- `GraphEvaluator` — forward-pass tensor evaluator for `ComputeGraph` on `Array[Float]`, ~30 supported ops
+- `PredictOp` — Arrow ↔ tensor bridge for inference: evaluates input expressions → runs forward pass → appends output columns
+- `FitOp` — training loop: extracts features/labels → builds gradient graph via `Autograd.backward()` → trains with SGD or Adam → returns `(epoch, loss)` metrics
+- Protobuf serialization for Predict/Fit plan nodes (`plan.proto`, `physical_plan.proto`)
+- `PhysicalPlanner` support — `Predict` → `PhysicalPredict`, `Fit` → `PhysicalFit`
+- 22 ML executor tests (GraphEvaluator, PredictOp, FitOp)
+
+### Phase 11a: Parquet Reader/Writer ✅
+
+- `ParquetSchemaConverter` — bidirectional `ProtoSchema` ↔ Parquet `MessageType` conversion with full type mapping
+- `ParquetIO` — read/write Parquet files as Arrow `VectorSchemaRoot` with configurable compression (Snappy, Gzip, Zstd, Uncompressed)
+- `ParquetIO.readSchema` / `readRowCount` / `readStatistics` — metadata-only operations from Parquet footer
+- `ParquetSupport.readBatch` / `writeBatch` — `Batch`-aware wrappers for Parquet I/O
+- `Catalog.registerParquetTable` extension — one-liner to register Parquet files with auto-inferred schema and statistics
+- Supports all primitive types, decimals (INT32/INT64/FIXED_LEN), temporal types, arrays, maps, structs
+- 40 Parquet tests (schema conversion, read/write roundtrip, catalog integration)
+
+### Phase 11b: SQL Transpiler + DataFusion Backend ✅
+
+- **SQL Transpiler** — converts ProtoCatalyst IR to executable SQL (ANSI SQL / DataFusion compatible)
+  - `SqlGenerator` — `ProtoLogicalPlan` → SQL query strings (22 supported plan node types)
+  - `ExprSqlGenerator` — `ProtoExpr` → SQL expression fragments (93 expression variants)
+  - `TypeSqlGenerator` — `ProtoType` → SQL type names
+  - Supports SELECT, WHERE, JOIN (all 7 types), GROUP BY, ORDER BY, LIMIT, DISTINCT, UNION, INTERSECT, EXCEPT, CTEs, subqueries, window functions
+  - Defensive design: throws clear exceptions for unsupported features (Pivot, Unpivot, Generate, LateralJoin, ML nodes)
+  - 138 transpiler tests (33 TypeSqlGenerator + 77 ExprSqlGenerator + 28 SqlGenerator)
+- **DataFusion Backend** — third execution backend via ADBC Flight SQL driver
+  - `DataFusionBackend` — executes `ProtoLogicalPlan` by transpiling to SQL and sending to DataFusion Flight SQL server via ADBC
+  - `FlightSqlConfig` — connection configuration (host, port, TLS, authentication)
+  - Arrow-native data transfer (zero-copy RecordBatches → `VectorSchemaRoot` → `Batch`)
+  - ADBC dependencies: `adbc-core`, `adbc-driver-manager`, `adbc-driver-flight-sql` (0.15.0)
+  - 17 integration tests (gracefully skip when server unavailable — no CI failures)
+- **Why SQL Transpilation?** — Engine-independent approach works for any SQL-compatible backend (DataFusion, DuckDB, PostgreSQL, Trino, Snowflake)
+- **Why ADBC?** — Arrow-native API, 33% faster than JDBC, stable specification (v1.1.0), pure JVM (no native code management)
+
 ---
 
 ## Vision: A Query Compiler, Not Another Engine
@@ -120,8 +190,8 @@ No other system combines these properties:
 
 1. **Compile-time query validation** — schema mismatches, type errors, and malformed queries caught before deployment. Every other engine validates at runtime.
 2. **Engine-independent IR** — `ProtoLogicalPlan` and `ProtoExpr` are self-contained, serializable via protobuf, and not coupled to any runtime.
-3. **Unified SQL + ML** — `ProtoLogicalPlan` (relational) and `ComputeGraph` (tensor/ML) live in the same IR with shared types. The path to native ML-in-SQL operators is short.
-4. **Built-in optimizer** — 48 rules that run at compile time, before any runtime engine sees the plan.
+3. **Unified SQL + ML** — `ProtoLogicalPlan` (relational) and `ComputeGraph` (tensor/ML) live in the same IR with shared types. Native `Predict` and `Fit` operators bridge SQL query plans with ML model inference and training.
+4. **Built-in optimizer** — 56 rules (48 SQL + 8 ML) that run at compile time, before any runtime engine sees the plan.
 
 ### Why not Substrait?
 
@@ -137,32 +207,14 @@ Instead, we treat our protobuf schema as the canonical format and build **direct
 
 ## Future Work
 
-### Phase 9: Physical Plan Layer
+### Phase 11: Backend Lowerings
 
-Add `ProtoPhysicalPlan` below the logical plan, introducing execution strategy choices:
+Build direct lowerings from `ProtoLogicalPlan` / `ProtoPhysicalPlan` to target runtimes:
 
-- [ ] Physical plan enum: `HashJoin`, `SortMergeJoin`, `BroadcastHashJoin`, `HashAggregate`, `SortAggregate`, `Exchange`
-- [ ] Physical planner: pattern-match `ProtoLogicalPlan` → `ProtoPhysicalPlan` based on statistics/heuristics
-- [ ] Statistics propagation: row counts, column cardinality, size in bytes — bottom-up through the plan
-- [ ] Cost model: estimate CPU/IO/network cost per physical operator
-
-### Phase 10: Backend Lowerings
-
-Build direct lowerings from `ProtoLogicalPlan` to target runtimes. Each backend handles what it supports and raises clear errors for what it doesn't:
-
-- [ ] **Spark backend** (exists today) — `ProtoLogicalPlan` → Spark `LogicalPlan` via `SparkQueryRunner`
-- [ ] **DataFusion backend** — `ProtoLogicalPlan` → DataFusion `LogicalPlan` directly (Rust FFI or Arrow Flight SQL)
+- [x] **Spark backend** — `ProtoLogicalPlan` → Spark `LogicalPlan` via `SparkQueryRunner`
+- [x] **Local executor** — single-node Arrow-columnar pipeline via `PhysicalPlanExecutor`
+- [x] **DataFusion backend** — `ProtoLogicalPlan` → SQL transpiler → ADBC Flight SQL → DataFusion server
 - [ ] **Velox backend** — `ProtoPhysicalPlan` → Velox `PlanNode` (C++ FFI)
-- [ ] **Local executor** — single-node Arrow-columnar pipeline for development/testing
-
-### Phase 11: ML as a Plan Operator
-
-Bridge `ProtoLogicalPlan` and `ComputeGraph` into a unified execution model:
-
-- [ ] `ProtoLogicalPlan.Predict(model: ComputeGraph, input: ProtoLogicalPlan)` — native ML inference in query plans
-- [ ] Batch inference optimization: vectorized model evaluation over Arrow `RecordBatch`
-- [ ] Model versioning and schema validation at compile time
-- [ ] ONNX Runtime integration for model execution
 
 ### Ongoing: Spark Integration
 
@@ -174,7 +226,7 @@ Bridge `ProtoLogicalPlan` and `ComputeGraph` into a unified execution model:
 ### Ongoing: Ecosystem
 
 - [ ] Arrow IPC for language interop (Python, Rust clients)
-- [ ] Parquet reader/writer using ProtoCatalyst schemas (enables non-Spark execution)
+- [x] Parquet reader/writer using ProtoCatalyst schemas (enables non-Spark execution)
 - [ ] CLI tool for plan inspection, optimization, and format conversion
 
 ---
@@ -186,7 +238,7 @@ Bridge `ProtoLogicalPlan` and `ComputeGraph` into a unified execution model:
 - Zero runtime reflection overhead
 - Type errors caught at compile time
 - Inline expansion for primitive types (3–27x faster serialization)
-- 48 optimizer rules execute during compilation, not at query time
+- 56 optimizer rules execute during compilation, not at query time
 - Compatible with GraalVM native-image
 
 ### Why engine-independent?

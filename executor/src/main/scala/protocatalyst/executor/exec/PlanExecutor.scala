@@ -104,6 +104,12 @@ class PlanExecutor(
     case ProtoLogicalPlan.Generate(gen, output, outer, child) =>
       AdvancedOps.generate(execute(child), gen, output, outer, evaluator, allocator)
 
+    // === ML operators (not supported in logical executor — use physical executor) ===
+    case _: ProtoLogicalPlan.Predict =>
+      throw ExecutionException("Predict requires the physical plan executor")
+    case _: ProtoLogicalPlan.Fit =>
+      throw ExecutionException("Fit requires the physical plan executor")
+
   /** Limit: take only the first n rows from a batch. */
   private def limitBatch(batch: Batch, n: Int): Batch =
     if n >= batch.rowCount then batch

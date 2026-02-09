@@ -1,8 +1,8 @@
 package protocatalyst.codec
 
-import upickle.default._
-
 import scala.collection.immutable
+
+import upickle.default._
 
 import protocatalyst.artifact._
 import protocatalyst.expr._

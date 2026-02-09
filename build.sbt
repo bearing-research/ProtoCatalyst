@@ -44,7 +44,7 @@ lazy val proto = project
 // Core module: types, schema, IR
 lazy val core = project
   .in(file("core"))
-  .dependsOn(proto)
+  .dependsOn(proto, mlCore)
   .settings(
     name := "protocatalyst-core",
     commonSettings,
@@ -85,7 +85,23 @@ lazy val arrow = project
     libraryDependencies ++= Seq(
       "org.apache.arrow" % "arrow-memory-core" % "18.1.0",
       "org.apache.arrow" % "arrow-memory-unsafe" % "18.1.0",
-      "org.apache.arrow" % "arrow-vector" % "18.1.0"
+      "org.apache.arrow" % "arrow-vector" % "18.1.0",
+      // Parquet I/O (uses LocalInputFile/LocalOutputFile + PlainParquetConfiguration, no Hadoop in our code)
+      "org.apache.parquet" % "parquet-hadoop" % "1.17.0",
+      // Hadoop runtime deps required internally by parquet-hadoop's CodecFactory
+      "org.apache.hadoop" % "hadoop-common" % "3.4.1" excludeAll (
+        ExclusionRule(organization = "org.eclipse.jetty"),
+        ExclusionRule(organization = "org.apache.curator"),
+        ExclusionRule(organization = "org.apache.zookeeper"),
+        ExclusionRule(organization = "com.sun.jersey"),
+        ExclusionRule(organization = "javax.servlet"),
+        ExclusionRule(organization = "io.netty")
+      ),
+      "org.apache.hadoop" % "hadoop-mapreduce-client-core" % "3.4.1" excludeAll (
+        ExclusionRule(organization = "org.eclipse.jetty"),
+        ExclusionRule(organization = "org.apache.curator"),
+        ExclusionRule(organization = "io.netty")
+      )
     ),
     // Arrow needs access to internal JVM modules for off-heap memory
     Test / javaOptions ++= Seq(
@@ -102,6 +118,14 @@ lazy val executor = project
   .settings(
     name := "protocatalyst-executor",
     commonSettings,
+    libraryDependencies ++= Seq(
+      // ADBC Core API
+      "org.apache.arrow.adbc" % "adbc-core" % "0.15.0",
+      // ADBC Driver Manager
+      "org.apache.arrow.adbc" % "adbc-driver-manager" % "0.15.0",
+      // ADBC Flight SQL Driver (connects to DataFusion Flight SQL server)
+      "org.apache.arrow.adbc" % "adbc-driver-flight-sql" % "0.15.0"
+    ),
     Test / javaOptions ++= Seq(
       "--add-opens=java.base/java.nio=ALL-UNNAMED",
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"

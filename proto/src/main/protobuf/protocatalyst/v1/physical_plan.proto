@@ -6,6 +6,7 @@ option java_multiple_files = true;
 import "protocatalyst/v1/plan.proto";
 import "protocatalyst/v1/schema.proto";
 import "protocatalyst/v1/types.proto";
+import "protocatalyst/v1/ml_graph.proto";
 
 // ============================================================================
 // Enums
@@ -113,6 +114,10 @@ message ProtoPhysicalPlanMsg {
     PhysicalUnpivotMsg physical_unpivot = 21;
     PhysicalLateralJoinMsg physical_lateral_join = 22;
     PhysicalGenerateMsg physical_generate = 23;
+
+    // ML operators
+    PhysicalPredictMsg physical_predict = 24;
+    PhysicalFitMsg physical_fit = 25;
   }
 }
 
@@ -279,4 +284,20 @@ message PhysicalGenerateMsg {
   repeated string generator_output = 2;
   bool outer = 3;
   ProtoPhysicalPlanMsg child = 4;
+}
+
+// ── ML operators ──
+
+message PhysicalPredictMsg {
+  ComputeGraphMsg model = 1;
+  repeated InputMappingMsg input_mapping = 2;
+  ProtoPhysicalPlanMsg child = 3;
+}
+
+message PhysicalFitMsg {
+  ComputeGraphMsg model = 1;
+  repeated InputMappingMsg input_mapping = 2;
+  repeated InputMappingMsg label_mapping = 3;
+  TrainConfigMsg train_config = 4;
+  ProtoPhysicalPlanMsg child = 5;
 }

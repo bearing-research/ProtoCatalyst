@@ -145,8 +145,10 @@ object InlineCTE extends Rule:
         case ProtoLogicalPlan.With(ctes, _, child) =>
           // Don't count into nested With CTEs, but do count in the child
           countInPlan(child)
-        case ProtoLogicalPlan.RelationRef(_, _, _) => ()
-        case ProtoLogicalPlan.Values(_, _)         => ()
+        case ProtoLogicalPlan.Predict(_, _, child)   => countInPlan(child)
+        case ProtoLogicalPlan.Fit(_, _, _, _, child) => countInPlan(child)
+        case ProtoLogicalPlan.RelationRef(_, _, _)   => ()
+        case ProtoLogicalPlan.Values(_, _)           => ()
 
       // Also count references in subquery expressions
       countInExprs(p)

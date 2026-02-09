@@ -97,3 +97,9 @@ object CostEstimator:
         Cost(cpu = rows * rows, io = 0.0, memory = 0.0)
       case _: PhysicalGenerate =>
         Cost(cpu = rows, io = 0.0, memory = 0.0)
+
+      // ML operators
+      case _: PhysicalPredict =>
+        Cost(cpu = rows * 100.0, io = 0.0, memory = bytes)
+      case _: PhysicalFit =>
+        Cost(cpu = rows * 1000.0, io = 0.0, memory = bytes * 2.0)

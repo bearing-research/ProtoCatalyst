@@ -1,6 +1,7 @@
 package protocatalyst.types
 
 import java.io.Serializable
+
 import scala.collection.immutable
 
 /** Compile-time representation of Spark DataTypes. */

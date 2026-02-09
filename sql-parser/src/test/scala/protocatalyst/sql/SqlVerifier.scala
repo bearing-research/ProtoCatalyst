@@ -235,6 +235,12 @@ object SqlVerifier:
       case ProtoLogicalPlan.ResolvedHint(hints, child) =>
         s"${pad}Hint(${hints.mkString(", ")})\n${prettyPrintPlan(child, indent + 1)}"
 
+      case ProtoLogicalPlan.Predict(_, mapping, child) =>
+        s"${pad}Predict(inputs=[${mapping.size}])\n${prettyPrintPlan(child, indent + 1)}"
+
+      case ProtoLogicalPlan.Fit(_, inputMapping, labelMapping, config, child) =>
+        s"${pad}Fit(inputs=[${inputMapping.size}], labels=[${labelMapping.size}], epochs=${config.epochs})\n${prettyPrintPlan(child, indent + 1)}"
+
   private def prettyPrintProtoExpr(expr: ProtoExpr): String = expr match
     case ProtoExpr.Literal(value)              => value.toString
     case ProtoExpr.ColumnRef(name, qual, _, _) => qual.map(q => s"$q.$name").getOrElse(name)

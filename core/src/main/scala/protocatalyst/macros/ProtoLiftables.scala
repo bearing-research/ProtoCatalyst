@@ -561,3 +561,8 @@ object ProtoLiftables:
 
       case ProtoLogicalPlan.ResolvedHint(hints, child) =>
         '{ ProtoLogicalPlan.ResolvedHint(${ Expr(hints) }, ${ Expr(child) }) }
+
+      case _: ProtoLogicalPlan.Predict =>
+        throw IllegalArgumentException("Predict plan node cannot be used in compile-time queries")
+      case _: ProtoLogicalPlan.Fit =>
+        throw IllegalArgumentException("Fit plan node cannot be used in compile-time queries")

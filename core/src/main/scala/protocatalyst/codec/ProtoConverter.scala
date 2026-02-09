@@ -1,12 +1,13 @@
 package protocatalyst.codec
 
+import scala.collection.immutable
+
 import com.google.protobuf.ByteString
 import io.protocatalyst.proto.{v1 => pb}
 
-import scala.collection.immutable
-
 import protocatalyst.artifact._
 import protocatalyst.expr._
+import protocatalyst.ml.codec.MLProtoConverter
 import protocatalyst.plan._
 import protocatalyst.schema._
 import protocatalyst.types._
@@ -1006,6 +1007,36 @@ object ProtoConverter:
         val hb = pb.ResolvedHintMsg.newBuilder().setChild(toProtoPlan(child))
         hints.foreach(h => hb.addHints(toProtoPlanHint(h)))
         b.setResolvedHint(hb.build())
+
+      case ProtoLogicalPlan.Predict(model, inputMapping, child) =>
+        val pb2 = pb.PredictMsg
+          .newBuilder()
+          .setModel(MLProtoConverter.toProtoGraph(model))
+          .setChild(toProtoPlan(child))
+        inputMapping.foreach { (name, expr) =>
+          pb2.addInputMapping(
+            pb.InputMappingMsg.newBuilder().setName(name).setExpr(toProtoExpr(expr)).build()
+          )
+        }
+        b.setPredict(pb2.build())
+
+      case ProtoLogicalPlan.Fit(model, inputMapping, labelMapping, trainConfig, child) =>
+        val fb = pb.FitMsg
+          .newBuilder()
+          .setModel(MLProtoConverter.toProtoGraph(model))
+          .setTrainConfig(toProtoTrainConfig(trainConfig))
+          .setChild(toProtoPlan(child))
+        inputMapping.foreach { (name, expr) =>
+          fb.addInputMapping(
+            pb.InputMappingMsg.newBuilder().setName(name).setExpr(toProtoExpr(expr)).build()
+          )
+        }
+        labelMapping.foreach { (name, expr) =>
+          fb.addLabelMapping(
+            pb.InputMappingMsg.newBuilder().setName(name).setExpr(toProtoExpr(expr)).build()
+          )
+        }
+        b.setFit(fb.build())
     b.build()
 
   def fromProtoPlan(msg: pb.ProtoLogicalPlanMsg): ProtoLogicalPlan =
@@ -1162,6 +1193,24 @@ object ProtoConverter:
         val rh = msg.getResolvedHint
         val hints = (0 until rh.getHintsCount).map(i => fromProtoPlanHint(rh.getHints(i))).toVector
         ProtoLogicalPlan.ResolvedHint(hints, fromProtoPlan(rh.getChild))
+
+      case PREDICT =>
+        val pr = msg.getPredict
+        ProtoLogicalPlan.Predict(
+          model = MLProtoConverter.fromProtoGraph(pr.getModel),
+          inputMapping = fromProtoInputMappings(pr.getInputMappingList),
+          child = fromProtoPlan(pr.getChild)
+        )
+
+      case FIT =>
+        val f = msg.getFit
+        ProtoLogicalPlan.Fit(
+          model = MLProtoConverter.fromProtoGraph(f.getModel),
+          inputMapping = fromProtoInputMappings(f.getInputMappingList),
+          labelMapping = fromProtoInputMappings(f.getLabelMappingList),
+          trainConfig = fromProtoTrainConfig(f.getTrainConfig),
+          child = fromProtoPlan(f.getChild)
+        )
 
       case PLAN_NOT_SET => throw new IllegalArgumentException("ProtoLogicalPlanMsg plan not set")
 
@@ -1695,6 +1744,36 @@ object ProtoConverter:
         generatorOutput.foreach(gb.addGeneratorOutput)
         b.setPhysicalGenerate(gb.build())
 
+      case ProtoPhysicalPlan.PhysicalPredict(model, inputMapping, child) =>
+        val ppb = pb.PhysicalPredictMsg
+          .newBuilder()
+          .setModel(MLProtoConverter.toProtoGraph(model))
+          .setChild(toProtoPhysicalPlan(child))
+        inputMapping.foreach { (name, expr) =>
+          ppb.addInputMapping(
+            pb.InputMappingMsg.newBuilder().setName(name).setExpr(toProtoExpr(expr)).build()
+          )
+        }
+        b.setPhysicalPredict(ppb.build())
+
+      case ProtoPhysicalPlan.PhysicalFit(model, inputMapping, labelMapping, trainConfig, child) =>
+        val fb = pb.PhysicalFitMsg
+          .newBuilder()
+          .setModel(MLProtoConverter.toProtoGraph(model))
+          .setTrainConfig(toProtoTrainConfig(trainConfig))
+          .setChild(toProtoPhysicalPlan(child))
+        inputMapping.foreach { (name, expr) =>
+          fb.addInputMapping(
+            pb.InputMappingMsg.newBuilder().setName(name).setExpr(toProtoExpr(expr)).build()
+          )
+        }
+        labelMapping.foreach { (name, expr) =>
+          fb.addLabelMapping(
+            pb.InputMappingMsg.newBuilder().setName(name).setExpr(toProtoExpr(expr)).build()
+          )
+        }
+        b.setPhysicalFit(fb.build())
+
     b.build()
 
   def fromProtoPhysicalPlan(msg: pb.ProtoPhysicalPlanMsg): ProtoPhysicalPlan =
@@ -1928,5 +2007,56 @@ object ProtoConverter:
           child = fromProtoPhysicalPlan(g.getChild)
         )
 
+      case PHYSICAL_PREDICT =>
+        val pr = msg.getPhysicalPredict
+        ProtoPhysicalPlan.PhysicalPredict(
+          model = MLProtoConverter.fromProtoGraph(pr.getModel),
+          inputMapping = fromProtoInputMappings(pr.getInputMappingList),
+          child = fromProtoPhysicalPlan(pr.getChild)
+        )
+
+      case PHYSICAL_FIT =>
+        val f = msg.getPhysicalFit
+        ProtoPhysicalPlan.PhysicalFit(
+          model = MLProtoConverter.fromProtoGraph(f.getModel),
+          inputMapping = fromProtoInputMappings(f.getInputMappingList),
+          labelMapping = fromProtoInputMappings(f.getLabelMappingList),
+          trainConfig = fromProtoTrainConfig(f.getTrainConfig),
+          child = fromProtoPhysicalPlan(f.getChild)
+        )
+
       case PLAN_NOT_SET | null =>
         throw IllegalArgumentException(s"Unknown physical plan case: ${msg.getPlanCase}")
+
+  // ============================================================================
+  // ML helper conversions
+  // ============================================================================
+
+  private def fromProtoInputMappings(
+      list: java.util.List[pb.InputMappingMsg]
+  ): Vector[(String, ProtoExpr)] =
+    (0 until list.size()).map { i =>
+      val m = list.get(i)
+      (m.getName, fromProtoExpr(m.getExpr))
+    }.toVector
+
+  private def toProtoTrainConfig(tc: TrainConfig): pb.TrainConfigMsg =
+    pb.TrainConfigMsg
+      .newBuilder()
+      .setLossNode(tc.lossNode)
+      .setEpochs(tc.epochs)
+      .setLearningRate(tc.learningRate)
+      .setOptimizer(tc.optimizer match
+        case OptimizerType.SGD  => pb.OptimizerTypeEnum.OPTIMIZER_TYPE_SGD
+        case OptimizerType.Adam => pb.OptimizerTypeEnum.OPTIMIZER_TYPE_ADAM)
+      .build()
+
+  private def fromProtoTrainConfig(msg: pb.TrainConfigMsg): TrainConfig =
+    TrainConfig(
+      lossNode = msg.getLossNode,
+      epochs = msg.getEpochs,
+      learningRate = msg.getLearningRate,
+      optimizer = msg.getOptimizer match
+        case pb.OptimizerTypeEnum.OPTIMIZER_TYPE_ADAM => OptimizerType.Adam
+        case _                                        => OptimizerType.SGD
+    )

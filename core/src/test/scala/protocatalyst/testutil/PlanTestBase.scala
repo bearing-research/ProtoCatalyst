@@ -143,6 +143,8 @@ trait PlanTestBase:
     case ProtoLogicalPlan.Unpivot(_, _, _, _, child) => Vector(child)
     case ProtoLogicalPlan.LateralJoin(l, r, _)       => Vector(l, r)
     case ProtoLogicalPlan.Generate(_, _, _, child)   => Vector(child)
+    case ProtoLogicalPlan.Predict(_, _, child)       => Vector(child)
+    case ProtoLogicalPlan.Fit(_, _, _, _, child)     => Vector(child)
 
   private def sideBySide(left: String, right: String): String =
     val leftLines = left.split("\n")

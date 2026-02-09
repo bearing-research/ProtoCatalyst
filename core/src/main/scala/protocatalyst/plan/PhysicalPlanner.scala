@@ -134,6 +134,19 @@ class PhysicalPlanner(
       case Generate(generator, generatorOutput, outer, child) =>
         PhysicalGenerate(generator, generatorOutput, outer, planInternal(child, activeHints))
 
+      // ML operators — 1:1 pass-through
+      case Predict(model, inputMapping, child) =>
+        PhysicalPredict(model, inputMapping, planInternal(child, activeHints))
+
+      case Fit(model, inputMapping, labelMapping, trainConfig, child) =>
+        PhysicalFit(
+          model,
+          inputMapping,
+          labelMapping,
+          trainConfig,
+          planInternal(child, activeHints)
+        )
+
   // ── Join strategy selection ──
 
   private def planJoin(
@@ -352,6 +365,15 @@ class PhysicalPlanner(
         if childStats.rowCount < 0 then childStats
         else
           Statistics(rowCount = childStats.rowCount * 2, sizeInBytes = childStats.sizeInBytes * 2)
+
+      case PhysicalPredict(_, _, child) =>
+        val childStats = estimateStats(child)
+        // Same row count, slightly wider schema (extra output columns)
+        Statistics(rowCount = childStats.rowCount, sizeInBytes = childStats.sizeInBytes * 2)
+
+      case PhysicalFit(_, _, _, trainConfig, _) =>
+        // Output is (epoch, loss) — one row per epoch
+        Statistics(rowCount = trainConfig.epochs.toLong, sizeInBytes = trainConfig.epochs * 16L)
 
   // ── Helpers ──
 

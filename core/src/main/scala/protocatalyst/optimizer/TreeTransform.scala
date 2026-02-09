@@ -589,6 +589,25 @@ object TreeTransform:
         val newChild = transformPlanExprs(child)(transform)
         if newChild eq child then plan else ResolvedHint(hints, newChild)
 
+      case Predict(model, inputMapping, child) =>
+        val newMapping = inputMapping.map { (name, expr) => (name, transform(expr)) }
+        val mappingChanged =
+          newMapping.zip(inputMapping).exists { case ((_, ne), (_, oe)) => !(ne eq oe) }
+        val newChild = transformPlanExprs(child)(transform)
+        if !mappingChanged && (newChild eq child) then plan
+        else Predict(model, newMapping, newChild)
+
+      case Fit(model, inputMapping, labelMapping, trainConfig, child) =>
+        val newInput = inputMapping.map { (name, expr) => (name, transform(expr)) }
+        val newLabel = labelMapping.map { (name, expr) => (name, transform(expr)) }
+        val inputChanged =
+          newInput.zip(inputMapping).exists { case ((_, ne), (_, oe)) => !(ne eq oe) }
+        val labelChanged =
+          newLabel.zip(labelMapping).exists { case ((_, ne), (_, oe)) => !(ne eq oe) }
+        val newChild = transformPlanExprs(child)(transform)
+        if !inputChanged && !labelChanged && (newChild eq child) then plan
+        else Fit(model, newInput, newLabel, trainConfig, newChild)
+
   /** Transform a plan tree bottom-up (children first, then parent).
     *
     * @param plan
@@ -718,6 +737,15 @@ object TreeTransform:
       case ResolvedHint(hints, child) =>
         val newChild = transform(child)
         if newChild eq child then plan else ResolvedHint(hints, newChild)
+
+      case Predict(model, inputMapping, child) =>
+        val newChild = transform(child)
+        if newChild eq child then plan else Predict(model, inputMapping, newChild)
+
+      case Fit(model, inputMapping, labelMapping, trainConfig, child) =>
+        val newChild = transform(child)
+        if newChild eq child then plan
+        else Fit(model, inputMapping, labelMapping, trainConfig, newChild)
 
   // Helper to transform vectors efficiently
   private def transformVector[T <: AnyRef](vec: Vector[T])(f: T => T): Vector[T] =

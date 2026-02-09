@@ -5,6 +5,7 @@ option java_multiple_files = true;
 
 import "protocatalyst/v1/types.proto";
 import "protocatalyst/v1/schema.proto";
+import "protocatalyst/v1/ml_graph.proto";
 
 // ============================================================================
 // Enums
@@ -441,6 +442,10 @@ message ProtoLogicalPlanMsg {
     LateralJoinMsg lateral_join = 18;
     GenerateMsg generate = 19;
     ResolvedHintMsg resolved_hint = 20;
+
+    // ML operators
+    PredictMsg predict = 21;
+    FitMsg fit = 22;
   }
 }
 
@@ -564,4 +569,39 @@ message GenerateMsg {
 message ResolvedHintMsg {
   repeated PlanHintMsg hints = 1;
   ProtoLogicalPlanMsg child = 2;
+}
+
+// ============================================================================
+// ML plan messages
+// ============================================================================
+
+message InputMappingMsg {
+  string name = 1;
+  ProtoExprMsg expr = 2;
+}
+
+enum OptimizerTypeEnum {
+  OPTIMIZER_TYPE_SGD = 0;
+  OPTIMIZER_TYPE_ADAM = 1;
+}
+
+message TrainConfigMsg {
+  string loss_node = 1;
+  int32 epochs = 2;
+  double learning_rate = 3;
+  OptimizerTypeEnum optimizer = 4;
+}
+
+message PredictMsg {
+  ComputeGraphMsg model = 1;
+  repeated InputMappingMsg input_mapping = 2;
+  ProtoLogicalPlanMsg child = 3;
+}
+
+message FitMsg {
+  ComputeGraphMsg model = 1;
+  repeated InputMappingMsg input_mapping = 2;
+  repeated InputMappingMsg label_mapping = 3;
+  TrainConfigMsg train_config = 4;
+  ProtoLogicalPlanMsg child = 5;
 }

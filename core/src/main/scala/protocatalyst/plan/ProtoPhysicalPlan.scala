@@ -3,11 +3,24 @@ package protocatalyst.plan
 import java.io.Serializable
 
 import protocatalyst.expr._
+import protocatalyst.ml.graph.ComputeGraph
 import protocatalyst.schema._
 
 /** Build side selection for hash joins. */
 enum BuildSide extends Serializable:
   case BuildLeft, BuildRight
+
+/** Optimizer type for ML training. */
+enum OptimizerType extends Serializable:
+  case SGD, Adam
+
+/** Training configuration for Fit operator. */
+case class TrainConfig(
+    lossNode: String,
+    epochs: Int,
+    learningRate: Double,
+    optimizer: OptimizerType
+) extends Serializable
 
 /** Data partitioning strategy for Exchange nodes. */
 enum Partitioning extends Serializable:
@@ -197,5 +210,21 @@ enum ProtoPhysicalPlan extends Serializable:
       generator: ProtoExpr,
       generatorOutput: Vector[String],
       outer: Boolean,
+      child: ProtoPhysicalPlan
+  )
+
+  // ── ML operators ──
+
+  case PhysicalPredict(
+      model: ComputeGraph,
+      inputMapping: Vector[(String, ProtoExpr)],
+      child: ProtoPhysicalPlan
+  )
+
+  case PhysicalFit(
+      model: ComputeGraph,
+      inputMapping: Vector[(String, ProtoExpr)],
+      labelMapping: Vector[(String, ProtoExpr)],
+      trainConfig: TrainConfig,
       child: ProtoPhysicalPlan
   )

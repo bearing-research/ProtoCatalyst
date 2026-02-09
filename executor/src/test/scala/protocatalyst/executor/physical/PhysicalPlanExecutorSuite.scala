@@ -3,8 +3,8 @@ package protocatalyst.executor.physical
 import org.apache.arrow.memory.BufferAllocator
 
 import protocatalyst.arrow.ArrowAllocator
-import protocatalyst.executor.{Catalog, QueryRunner}
 import protocatalyst.executor.exec._
+import protocatalyst.executor.{Catalog, QueryRunner}
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.plan._
 import protocatalyst.schema._

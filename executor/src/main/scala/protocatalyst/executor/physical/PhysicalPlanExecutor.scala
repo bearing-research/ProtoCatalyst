@@ -165,6 +165,21 @@ class PhysicalPlanExecutor(
     case ProtoPhysicalPlan.PhysicalGenerate(gen, output, outer, child) =>
       AdvancedOps.generate(execute(child), gen, output, outer, evaluator, allocator)
 
+    // ── ML operators ──
+    case ProtoPhysicalPlan.PhysicalPredict(model, inputMapping, child) =>
+      PredictOp.execute(execute(child), model, inputMapping, evaluator, allocator)
+
+    case ProtoPhysicalPlan.PhysicalFit(model, inputMapping, labelMapping, trainConfig, child) =>
+      FitOp.execute(
+        execute(child),
+        model,
+        inputMapping,
+        labelMapping,
+        trainConfig,
+        evaluator,
+        allocator
+      )
+
   /** Limit: take only the first n rows from a batch. */
   private def limitBatch(batch: Batch, n: Int): Batch =
     if n >= batch.rowCount then batch

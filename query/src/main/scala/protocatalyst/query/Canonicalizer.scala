@@ -233,6 +233,22 @@ object Canonicalizer:
       case ResolvedHint(hints, child) =>
         ResolvedHint(hints, transformPlan(child, exprTransform))
 
+      case Predict(model, inputMapping, child) =>
+        Predict(
+          model,
+          inputMapping.map((name, expr) => (name, exprTransform(expr))),
+          transformPlan(child, exprTransform)
+        )
+
+      case Fit(model, inputMapping, labelMapping, trainConfig, child) =>
+        Fit(
+          model,
+          inputMapping.map((name, expr) => (name, exprTransform(expr))),
+          labelMapping.map((name, expr) => (name, exprTransform(expr))),
+          trainConfig,
+          transformPlan(child, exprTransform)
+        )
+
       case r: RelationRef => r
 
   private def transformExpr(
