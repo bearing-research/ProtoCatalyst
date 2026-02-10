@@ -8,10 +8,10 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 
 | Metric | Count |
 |--------|------:|
-| Source lines | ~46,500 |
-| Test lines | ~40,000 |
-| Test cases | ~2,493 |
-| Modules | 12 |
+| Source lines | ~47,000 |
+| Test lines | ~40,500 |
+| Test cases | ~1,955 |
+| Modules | 13 |
 | Optimizer rules | 56 (48 SQL + 8 ML) |
 | IR expression types | 93 |
 | IR logical plan node types | 22 |
@@ -175,6 +175,28 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
   - 17 integration tests (gracefully skip when server unavailable — no CI failures)
 - **Why SQL Transpilation?** — Engine-independent approach works for any SQL-compatible backend (DataFusion, DuckDB, PostgreSQL, Trino, Snowflake)
 - **Why ADBC?** — Arrow-native API, 33% faster than JDBC, stable specification (v1.1.0), pure JVM (no native code management)
+
+### Phase 11c: Substrait Converter (Partial) 🚧
+
+- **Substrait Module** — new `substrait` module with Substrait Java bindings (io.substrait:core:0.78.0)
+- **SubstraitTypeConverter** — `ProtoType` → Substrait Type conversion (fully working)
+  - Handles all primitive types (Boolean, Int, Long, Float, Double, String, Binary, Date, Timestamp, Decimal)
+  - Supports complex types (Array, Map, Struct) with nested structures
+  - 19 type converter tests passing
+- **SubstraitExprConverter** — `ProtoExpr` → Substrait Expression conversion (partially working)
+  - **Literals**: All types working (Boolean, Int, Long, Float, Double, String, Binary, Date, Timestamp, Decimal)
+  - **Cast**: Fully working with proper failure behavior
+  - **Alias**: Working (passes through child expression)
+  - **Functions**: Documented but blocked by Substrait extension system complexity
+  - 24 expression converter tests passing
+- **SubstraitFunctionRegistry** — Function mapping stub (documents required integration work)
+  - Maps ProtoCatalyst function names → Substrait function names
+  - Documents Substrait's YAML-based function extension system
+  - Full implementation requires loading extension files and resolving function anchors (~500-1000 lines)
+- **Blocker**: Substrait's function extension system is complex and requires substantial integration work beyond current scope
+- **Alternative**: SQL transpiler backend (Phase 11b) works today without function mapping complexity
+- **Status**: Types + literals + cast working; functions, aggregates, window functions, and plan conversion deferred
+- **Tests**: 43 Substrait tests passing (19 type + 24 expression)
 
 ---
 

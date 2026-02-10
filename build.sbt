@@ -22,7 +22,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(proto, core, encoder, arrow, executor, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
+  .aggregate(proto, core, encoder, arrow, executor, substrait, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -124,6 +124,28 @@ lazy val executor = project
       // ADBC Driver Manager
       "org.apache.arrow.adbc" % "adbc-driver-manager" % "0.15.0",
       // ADBC Flight SQL Driver (connects to DataFusion Flight SQL server)
+      "org.apache.arrow.adbc" % "adbc-driver-flight-sql" % "0.15.0"
+    ),
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    ),
+    Test / fork := true
+  )
+
+// Substrait module: converts ProtoCatalyst IR to Substrait (industry-standard IR format)
+lazy val substrait = project
+  .in(file("substrait"))
+  .dependsOn(core, arrow)
+  .settings(
+    name := "protocatalyst-substrait",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      // Substrait Java bindings (protobuf-based IR format)
+      "io.substrait" % "core" % "0.78.0",
+      // ADBC for executing Substrait plans via Flight SQL
+      "org.apache.arrow.adbc" % "adbc-core" % "0.15.0",
+      "org.apache.arrow.adbc" % "adbc-driver-manager" % "0.15.0",
       "org.apache.arrow.adbc" % "adbc-driver-flight-sql" % "0.15.0"
     ),
     Test / javaOptions ++= Seq(
