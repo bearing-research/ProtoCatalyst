@@ -279,9 +279,9 @@ lazy val mlQuery = project
   )
 
 // Encoder-Spark bridge module (Scala 3, uses Spark 4.1.x Scala 2.13 jars via For3Use2_13).
-// Provides InternalRowSerializer / UnsafeRowSerializer targeting Spark's row formats, while
-// keeping compile-time Mirror-based derivation in Scala 3. Phase A of the encoder benchmark
-// work — see docs/ENCODER_PARITY.md.
+// Provides UnsafeRowSerializer — compile-time Mirror-derived serializer that writes the same
+// packed UnsafeRow byte layout Spark's whole-stage codegen produces. The apples-to-apples
+// comparison target for the Phase A encoder benchmark. See docs/ENCODER_PARITY.md.
 lazy val encoderSpark = project
   .in(file("encoder-spark"))
   .dependsOn(core, encoder)

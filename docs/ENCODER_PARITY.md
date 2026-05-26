@@ -9,7 +9,7 @@ matching `ProtoEncoder` derivation in this repo.
   `org/apache/spark/sql/catalyst/ScalaReflection.scala`.
 - ProtoCatalyst source: `encoder/src/main/scala/protocatalyst/encoder/ProtoEncoder.scala`
   and `core/src/main/scala/protocatalyst/types/ProtoType.scala`.
-- Live cross-check: `encoder-spark/src/test/.../InternalRowSerializerSpec.scala`
+- Live cross-check: `encoder-spark/src/test/.../UnsafeRowSerializerSpec.scala`
   (15 tests, runs on Spark 4.1.2 catalyst jars via `CrossVersion.for3Use2_13`).
 
 ### 4.0 → 4.1 deltas worth knowing
