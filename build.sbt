@@ -22,7 +22,7 @@ lazy val commonSettings = Seq(
 // Note: spark module excluded until Spark 4.0 Scala 3 artifacts are published
 lazy val root = project
   .in(file("."))
-  .aggregate(proto, core, encoder, arrow, executor, substrait, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, mlCore, mlQuery)
+  .aggregate(proto, core, encoder, arrow, executor, substrait, query, sqlParser, benchmarks, benchmarkSpark, sparkCatalyst, encoderSpark, mlCore, mlQuery)
   .settings(
     name := "protocatalyst",
     publish / skip := true
@@ -186,7 +186,7 @@ lazy val query = project
 //     name := "protocatalyst-spark",
 //     commonSettings,
 //     libraryDependencies ++= Seq(
-//       "org.apache.spark" %% "spark-sql" % "4.0.0" % Provided
+//       "org.apache.spark" %% "spark-sql" % "4.1.2" % Provided
 //     )
 //   )
 
@@ -230,8 +230,8 @@ lazy val benchmarkSpark = project
     semanticdbEnabled := true,
     semanticdbVersion := scalafixSemanticdb.revision,
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "4.0.0",
-      "org.apache.spark" %% "spark-catalyst" % "4.0.0",
+      "org.apache.spark" %% "spark-sql" % "4.1.2",
+      "org.apache.spark" %% "spark-catalyst" % "4.1.2",
       "org.scala-lang" % "scala-reflect" % "2.13.16",  // Required for TypeTag
       // Arrow dependencies for Arrow benchmarks
       "org.apache.arrow" % "arrow-memory-core" % "18.1.0",
@@ -278,6 +278,34 @@ lazy val mlQuery = project
     commonSettings
   )
 
+// Encoder-Spark bridge module (Scala 3, uses Spark 4.1.x Scala 2.13 jars via For3Use2_13).
+// Provides InternalRowSerializer / UnsafeRowSerializer targeting Spark's row formats, while
+// keeping compile-time Mirror-based derivation in Scala 3. Phase A of the encoder benchmark
+// work — see docs/ENCODER_PARITY.md.
+lazy val encoderSpark = project
+  .in(file("encoder-spark"))
+  .dependsOn(core, encoder)
+  .settings(
+    name := "protocatalyst-encoder-spark",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      ("org.apache.spark" %% "spark-sql" % "4.1.2")
+        .cross(CrossVersion.for3Use2_13)
+        .exclude("org.scala-lang.modules", "scala-xml_2.13"),
+      ("org.apache.spark" %% "spark-catalyst" % "4.1.2")
+        .cross(CrossVersion.for3Use2_13)
+        .exclude("org.scala-lang.modules", "scala-xml_2.13")
+    ),
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    ),
+    Test / fork := true
+  )
+
 // Spark Catalyst integration module (Scala 2.13) - Convert ProtoLogicalPlan to Spark LogicalPlan
 // Note: This module is standalone (no dependency on Scala 3 modules) to avoid version conflicts
 // Depends on proto (Java-only) for protobuf deserialization
@@ -296,8 +324,8 @@ lazy val sparkCatalyst = project
     semanticdbEnabled := true,
     semanticdbVersion := scalafixSemanticdb.revision,
     libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-sql" % "4.0.0",
-      "org.apache.spark" %% "spark-catalyst" % "4.0.0",
+      "org.apache.spark" %% "spark-sql" % "4.1.2",
+      "org.apache.spark" %% "spark-catalyst" % "4.1.2",
       "io.circe" %% "circe-core" % "0.14.6",
       "io.circe" %% "circe-parser" % "0.14.6",
       "org.scalameta" %% "munit" % "1.0.0" % Test
