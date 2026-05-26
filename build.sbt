@@ -218,6 +218,10 @@ lazy val benchmarkSpark = project
   .settings(
     name := "protocatalyst-benchmark-spark",
     scalaVersion := "2.13.16",
+    // SIP-51: Spark 4.1.2 transitively requires scala-library >= 2.13.18, but semanticdb-scalac
+    // for 2.13.18 isn't published yet. Demote the upgrade check; safe because we don't link
+    // against newer-stdlib symbols ourselves.
+    allowUnsafeScalaLibUpgrade := true,
     publish / skip := true,
     scalacOptions ++= Seq(
       "-deprecation",
@@ -248,6 +252,8 @@ lazy val benchmarkSpark = project
     Jmh / fork := true,
     // Task to generate golden files for Spark parity testing
     // Run with: sbt "benchmarkSpark/runMain protocatalyst.benchmark.GoldenFileGenerator"
+    // The fork cwd is the project root so relative paths to e.g. encoder-spark resolve.
+    run / baseDirectory := (ThisBuild / baseDirectory).value,
     run / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
@@ -315,6 +321,8 @@ lazy val sparkCatalyst = project
   .settings(
     name := "protocatalyst-spark-catalyst",
     scalaVersion := "2.13.16",
+    // SIP-51 — same rationale as benchmarkSpark.
+    allowUnsafeScalaLibUpgrade := true,
     scalacOptions ++= Seq(
       "-deprecation",
       "-feature",
