@@ -489,3 +489,412 @@ delivers concrete benefits:
 
 These are the properties we set out to deliver. The next part of
 the report describes how.
+
+---
+
+# Part 3 — Our approach
+
+## §6. ProtoCatalyst's compile-time encoder
+
+### High-level architecture
+
+The implementation spans three modules:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ encoder/  (Scala 3, no Spark)                                │
+│                                                              │
+│   ProtoType        — engine-independent type IR              │
+│   ProtoSchema      — schema description                      │
+│   ProtoEncoder     — Mirror-based schema derivation          │
+│   InlineRowSerializer — inline-match Array[Any] serializer   │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ (depends on)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ encoder-spark/  (Scala 3 + Spark 4.1.2 via for3Use2_13)     │
+│                                                              │
+│   UnsafeRowSerializer        — public trait + macro entry    │
+│   UnsafeRowSerializerMacro   — quoted-macro emission         │
+│   SparkTypeMapping            — ProtoType ↔ Spark DataType   │
+│   SparkInternalTypeConverter  — legacy strategy (retained    │
+│                                  for the simpler InlineRow   │
+│                                  variant)                    │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ (consumes Spark's Scala 2.13 jars
+                            │  via CrossVersion.for3Use2_13)
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Spark 4.1.2 catalyst — UnsafeRow, UnsafeRowWriter,           │
+│                          Decimal, UTF8String, DateTimeUtils  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The split is deliberate:
+
+- **`encoder/`** is Spark-free. It's the schema IR layer — what a
+  case class "looks like" structurally. This module is reusable by
+  other engines (we have a Substrait module and a standalone Arrow
+  executor that also consume `ProtoType`).
+- **`encoder-spark/`** is the bridge. It uses Scala 3 macros over
+  Spark's Scala 2.13 row classes. This is the module that produces
+  byte-identical `UnsafeRow` output and is the subject of this
+  report.
+- **`benchmark-spark/`** (not shown) is Scala 2.13 + native Spark.
+  It runs the Spark-side comparison (`ExpressionEncoder`) and
+  writes byte fixtures for the parity test. We explain the
+  cross-version communication pattern in §8.
+
+### The two-step derivation
+
+`UnsafeRowSerializer.derived[T]` is the public API:
+
+```scala
+// encoder-spark/src/main/scala/.../UnsafeRowSerializer.scala
+inline def derived[T](using m: Mirror.ProductOf[T]): UnsafeRowSerializer[T] =
+  val schema = ProtoEncoder.derived[T].schema      // step 1
+  derivedMacroEntry[T](schema)                      // step 2
+
+private inline def derivedMacroEntry[T](schema: ProtoSchema): UnsafeRowSerializer[T] =
+  ${ UnsafeRowSerializerMacro.derivedImpl[T]('schema) }
+```
+
+**Step 1** uses `Mirror.ProductOf[T]` (available at the call site
+via the implicit) to derive the `ProtoSchema` — field names, field
+types, nullability. This is the `inline-match` mechanism described
+in §5; it runs at scalac time and bakes the schema as a literal
+value.
+
+**Step 2** is the quoted-macro that emits the read/write lambdas.
+The `'{ schema }` splice passes the schema as a runtime value; the
+macro reflects on `T` to emit a direct constructor call for the
+read path and direct `writer.write(idx, value.field)` calls for the
+write path.
+
+Critically, **the `Mirror` is used only at compile time**. Nothing
+in the runtime code path references `Mirror.fromProduct`,
+`Tuple.fromArray`, `ArrayProduct`, or any reflection. The compiled
+output is pure JVM bytecode constructing `T` instances directly.
+
+## §7. Implementation: `UnsafeRowSerializer`
+
+### The macro's read-side emission
+
+For `case class Lineitem(orderkey: Long, partkey: Long, ...,
+shipdate: LocalDate, ..., comment: String)`, the macro emits:
+
+```scala
+val readFn: UnsafeRow => Lineitem = (row: UnsafeRow) =>
+  new Lineitem(
+    row.getLong(0),                                       // orderkey
+    row.getLong(1),                                       // partkey
+    row.getLong(2),                                       // suppkey
+    row.getInt(3),                                        // linenumber
+    if (row.isNullAt(4)) null                             // quantity
+       else BigDecimal(row.getDecimal(4, 38, 18).toJavaBigDecimal),
+    if (row.isNullAt(5)) null                             // extendedprice
+       else BigDecimal(row.getDecimal(5, 38, 18).toJavaBigDecimal),
+    // ... 6 more fields ...
+    if (row.isNullAt(10)) null                            // shipdate
+       else DateTimeUtils.daysToLocalDate(row.getInt(10)),
+    // ... 4 more fields ...
+    if (row.isNullAt(15)) null                            // comment
+       else row.getUTF8String(15).toString
+  )
+```
+
+Properties of this code:
+
+- **Single constructor call.** No `Array[Any]` allocation, no
+  `Mirror.fromProduct`, no `ArrayProduct` wrapper.
+- **Primitives flow unboxed.** `Long` and `Int` slots become
+  unboxed `long`/`int` values passed directly to the constructor.
+- **Monomorphic call sites.** Each `getLong(0)`, `getInt(3)` is a
+  direct method call the JIT can inline aggressively.
+- **No dispatch on `DataType` at runtime.** The macro decided what
+  to emit at *scalac* time. Spark's codegen approach reaches the
+  same result via runtime bytecode generation; we reach it via
+  compile-time emission.
+
+The write-side mirror: `writer.write(0, value.orderkey)` per field.
+Direct field selector (`Select(value, sym)`) — no
+`productElement(i).asInstanceOf[T]` boxing as the old
+`InlineRowSerializer` did.
+
+### Writer caching
+
+`UnsafeRowSerializerImpl[T]` caches a single `UnsafeRowWriter`
+instance at construction:
+
+```scala
+class UnsafeRowSerializerImpl[T](
+    val schema: ProtoSchema,
+    val fieldCount: Int,
+    writeFn: (UnsafeRowWriter, T) => Unit,
+    readFn: UnsafeRow => T
+) extends UnsafeRowSerializer[T]:
+
+  private val cachedWriter = new UnsafeRowWriter(fieldCount)
+
+  def serialize(value: T): UnsafeRow =
+    cachedWriter.reset()
+    cachedWriter.zeroOutNullBytes()
+    writeFn(cachedWriter, value)
+    cachedWriter.getRow      // SAME instance every call
+```
+
+This mirrors Spark's `UnsafeProjection` pattern. The returned
+`UnsafeRow` is the same instance on every call; only the byte buffer
+contents change. Callers retaining the row must `.copy()` —
+documented on the trait. A plain instance field rather than
+`ThreadLocal` because in Spark's per-task execution model there is
+one task per thread, and the `ThreadLocal.get` indirection would
+add cost for no gain.
+
+For callers that want explicit writer control (e.g., iterating with
+a single writer across multiple serializers), `writeTo(writer:
+UnsafeRowWriter, value: T)` exposes the inner write function
+directly.
+
+### Macro construction details for generic case classes
+
+A subtlety the prototype originally got wrong: `case class Box[A]
+(id: Int, value: A)` derived as `Box[String]` should see the field
+`value` as `String`, not as the type variable `A`. The naïve
+implementation reads field types from the field's declaration tree
+(`ValDef.tpt.tpe`), which preserves type parameters.
+
+The correct pattern uses `tpe.memberType(fieldSym)` where `tpe` is
+the applied receiver type `TypeRepr.of[T]`:
+
+```scala
+val ctorArgs = caseFields.zipWithIndex.map { (fieldSym, idx) =>
+  val fieldTpe = tpe.memberType(fieldSym)    // substitutes A → String
+  buildReadExpr(fieldTpe, idx, rowExpr).asTerm
+}
+```
+
+The constructor invocation also requires care: `New(TypeIdent
+(classSym))` strips type arguments, producing a call like `new Box(
+...)` that fails type-checking for polymorphic ctors with
+"constructor Box in class Box does not take parameters." The fix is
+to use the fully-applied type tree and pipe type args through
+`appliedToTypes`:
+
+```scala
+New(TypeTree.of[T])
+  .select(classSym.primaryConstructor)
+  .appliedToTypes(typeArgs)     // List(TypeRepr.of[String]) for Box[String]
+  .appliedToArgs(ctorArgs)
+```
+
+Both fixes are exercised by `UnsafeRowExtraTypesSpec` —
+`Box[String]`, `Box[Long]`, `Box[BigDecimal]`, and `Pair[Int,
+String]` all round-trip correctly. We mention these explicitly
+because they're the kind of detail that breaks silently in macro
+work and would manifest as confusing "type variable" errors for
+end users.
+
+### Type coverage
+
+The macro supports the TPC-H-relevant type surface plus a margin:
+
+- **Primitives**: `Boolean`, `Byte`, `Short`, `Int`, `Long`,
+  `Float`, `Double`.
+- **Variable-length leaves**: `String`, `Array[Byte]`,
+  `BigDecimal`, `java.math.BigDecimal`.
+- **Temporal**: `java.time.LocalDate`, `java.sql.Date`,
+  `java.time.Instant`, `java.sql.Timestamp`,
+  `java.time.LocalDateTime`, `java.time.LocalTime` (Spark 4.1+),
+  `java.time.Duration`, `java.time.Period`.
+- **Identifier**: `java.util.UUID` (stored as `StringType`,
+  canonical 36-char form).
+- **Optionality**: `Option[T]` over any of the above.
+
+Not yet supported, classified by effort to add (the macro rejects
+at compile time with a clear message):
+
+| Category | Types | Effort |
+|---|---|---|
+| Just need more inline cases | `OffsetDateTime`, `ZonedDateTime`, `java.util.Date`, `BigInt`, `java.math.BigInteger` | Hours |
+| Needs `UnsafeArrayWriter` / `UnsafeMapWriter` / recursive ctor emission | Collections (`Seq` / `List` / `Vector` / `Set` / `Array[T]` of non-byte), Maps, nested case classes | Days |
+| Out of scope by design | `Decimal`, `CalendarInterval`, `VariantVal`, `Geography`, `Geometry` (Spark-internal classes) | Belongs in a spark-coupling bridge module |
+
+The cross-reference against Spark 4.1's full `AgnosticEncoder`
+catalog is in [`docs/ENCODER_PARITY.md`](ENCODER_PARITY.md).
+
+### Binary / wire compatibility
+
+A direct consequence of byte-level parity (proven in §9): any
+consumer that reads Spark's `UnsafeRow` reads ours identically —
+Catalyst operators (filter, project, join, exchange), shuffle
+blocks, Tungsten projections, Parquet writers via
+`UnsafeProjection`. **Wire and disk format compatibility is
+automatic.** Replacing the encoder in a Spark fork doesn't require
+changes to downstream operators, the shuffle service,
+lake-format writers, or any persisted artifacts. This is the
+property that makes the migration mechanically feasible without
+a flag day.
+
+## §8. The build dance
+
+This section documents the operational cost of running Scala 3
+code against a Scala 2.13 Spark in 2026. Each item here is real
+friction we encountered in this project; each one disappears the
+day Spark publishes Scala 3 artifacts. **The accumulated workaround
+list is itself the strongest single argument for the migration.**
+
+### `CrossVersion.for3Use2_13`
+
+Spark 4.1 ships only Scala 2.13 jars. To use them from a Scala 3
+module:
+
+```scala
+// build.sbt — encoderSpark module
+libraryDependencies ++= Seq(
+  ("org.apache.spark" %% "spark-sql" % "4.1.2")
+    .cross(CrossVersion.for3Use2_13)
+    .exclude("org.scala-lang.modules", "scala-xml_2.13"),
+  ("org.apache.spark" %% "spark-catalyst" % "4.1.2")
+    .cross(CrossVersion.for3Use2_13)
+    .exclude("org.scala-lang.modules", "scala-xml_2.13")
+)
+```
+
+`CrossVersion.for3Use2_13` tells sbt to fetch the `_2.13` artifact
+but link it onto a Scala 3 classpath. Most Spark classes
+(`UnsafeRow`, `UnsafeRowWriter`, `Decimal`, `UTF8String`) cross
+over cleanly because they don't rely on Scala 2-specific runtime
+features. The exclude is for transitive `scala-xml_2.13` that
+otherwise duplicates with a Scala 3 build.
+
+### The `ScalaReflection.<clinit>` wall
+
+Even bypassing `TypeTag` (via the
+`ExpressionEncoder.apply(agnosticEncoder)` constructor that
+doesn't need it), Spark's codegen internally calls
+`scala.reflect.runtime.universe` to look up `Array.apply` during
+method resolution. Scala 3's `Array` companion is shaped
+differently than what Scala 2's reflection expects — the
+`<clinit>` of `ScalaReflection` throws `FatalError` and the class
+becomes permanently unusable in that JVM.
+
+We discovered this when first writing the byte-parity test
+directly in Scala 3:
+
+```
+ExceptionInInitializerError: null
+  at o.a.s.s.c.expressions.objects.Invoke.encodedFunctionName...
+  at o.a.s.s.c.encoders.ExpressionEncoder$Serializer.apply...
+  at protocatalyst.encoder.spark.UnsafeRowParitySpec...
+Caused by: scala.reflect.internal.FatalError: class Array does
+not have a member apply
+  at scala.reflect.internal.Definitions$DefinitionsClass...
+  at scala.reflect.runtime.JavaUniverseForce.force...
+  at o.a.s.s.catalyst.ScalaReflection.<clinit>...
+```
+
+**Workaround**: run Spark from a Scala 2.13 fixture-generator and
+have the Scala 3 test consume byte files. The fixtures are produced
+once by `protocatalyst.benchmark.UnsafeRowParityFixtures.main`
+(Scala 2.13), written to
+`encoder-spark/src/test/resources/parity/*.bin`, and consumed by
+the Scala 3 `UnsafeRowParitySpec` for byte-level comparison.
+Bytes are language-neutral.
+
+This pattern — produce-in-Scala-2.13, consume-in-Scala-3 via files
+— is used in three places in this project: the byte fixtures, the
+TPC-H Parquet data, and the JMH JSON results that get merged in
+the report. Every one of these intermediations is overhead that
+the migration would eliminate.
+
+### SIP-51 compatibility check
+
+Spark 4.1.2 transitively pulls in `scala-library:2.13.18+`. Our
+Scala 2.13 modules pin to 2.13.16 (because the
+`semanticdb-scalac:4.13.x` plugin hasn't been published for 2.13.18
+yet, and we use semanticdb for scalafix). sbt's SIP-51 check
+rejects this combination by default. We demote with:
+
+```scala
+allowUnsafeScalaLibUpgrade := true
+```
+
+Safe because we don't link against new-stdlib symbols ourselves —
+Spark does, internally, and it's tested against the newer
+stdlib. But it's a workaround for a real cross-version constraint.
+
+### Spark on JDK 21 module access
+
+`SparkDateTimeUtils` reflects into `sun.util.calendar.ZoneInfo`
+for timestamp handling on JDK 17+. JDK strong encapsulation
+requires explicit opt-in:
+
+```scala
+run / javaOptions ++= Seq(
+  "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+  ...
+)
+```
+
+Not Scala-3-specific (Spark needs this on Scala 2.13 too on JDK
+21+), but worth noting as part of the operational picture.
+
+### Spark REPL classloader confusion under sbt
+
+`UnsafeProjection` codegen tries to fetch generated classes via a
+"REPL artifact server" because sbt's `MutableURLClassLoader`
+triggers Spark's REPL heuristic. The fetch goes to a non-existent
+HTTP server and fails. Fix:
+
+```scala
+.config("spark.driver.userClassPathFirst", "true")
+.config("spark.executor.userClassPathFirst", "true")
+```
+
+Documented [in Spark's runtime classloader logic][spark-classloader];
+this incantation appears in many community recipes for running
+Spark under sbt or in IDE test runners.
+
+[spark-classloader]: https://github.com/apache/spark/blob/master/core/src/main/scala/org/apache/spark/executor/Executor.scala
+
+### Cross-module file-based communication
+
+Because Scala 2.13 cannot call into Scala 3 macros, the project has
+three intentional file-based intermediations:
+
+| Producer | Consumer | File |
+|---|---|---|
+| Scala 2.13 (`UnsafeRowParityFixtures`) | Scala 3 (`UnsafeRowParitySpec`) | `encoder-spark/src/test/resources/parity/*.bin` |
+| Scala 2.13 (`TpchParquetConverter`) | both via Spark | `data/tpch/sf-N-parquet/*.parquet/` |
+| Each JMH side independently | report (eventually charts) | `results/<ts>-sfN/micro-*.json` |
+
+Each one is a wedge between code that wants to share types but
+cannot, working around it via byte arrays. Each one disappears
+when the wall comes down.
+
+### Cumulative cost
+
+Tracking concretely for this project:
+
+- **~12 lines of build.sbt** specifically for the cross-version
+  workarounds (`for3Use2_13`, exclusions,
+  `allowUnsafeScalaLibUpgrade`, the extra `--add-opens` flags).
+- **~150 lines of duplicated code** (case classes and the `.tbl`
+  parser exist in both Scala 3 and Scala 2.13 modules because they
+  can't share).
+- **~300 lines of fixture-generation infrastructure**
+  (`UnsafeRowParityFixtures`, `TpchParquetConverter`,
+  `TpchQueryBench`) — needed because we can't simply call
+  `ExpressionEncoder` from Scala 3 tests.
+- **One additional JVM fork per cross-version round trip**, with
+  the corresponding bench-orchestration complexity in
+  `scripts/bench.sh`.
+
+A user upgrading their Spark application to Scala 3 today would
+hit a strict superset of these workarounds — without our project's
+benefit of being able to design around them. The migration argument
+is straightforward: doing this once, at the encoder level, saves
+the community from paying these costs forever.
