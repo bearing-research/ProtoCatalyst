@@ -469,10 +469,73 @@ emission requirement, but the technique is viable in principle.
 Replacing `TypeTag` + `runtime.universe` with compile-time macros
 delivers concrete benefits:
 
-- **GraalVM `native-image` becomes viable.** Spark's current encoder
-  is one of the standard blockers for native-image; replacing it
-  removes that block. Spark Connect workers could ship as native
-  binaries with sub-100-ms cold start.
+- **GraalVM `native-image` AOT compilation becomes viable for the
+  encoder layer.** This claim needs unpacking because it's the most
+  externally-cited benefit of compile-time derivation, and it's also
+  the most easily over-claimed. Going slowly:
+
+  GraalVM's `native-image` is an ahead-of-time (AOT) Java compiler
+  with a **closed-world assumption**: every class, method, and
+  field that runs at runtime must be discoverable at AOT-compile
+  time. The compiler does whole-program reachability analysis,
+  emits a self-contained native binary, and discards the JVM and
+  the JIT entirely. Cold start drops from ~300 ms (JVM init +
+  classloading) to single-digit ms because there's no JVM to
+  start.
+
+  Runtime reflection (`Class.forName`, `Method.invoke`,
+  `Constructor.newInstance`, `scala.reflect.runtime.universe`) is
+  fundamentally hostile to closed-world AOT. GraalVM can handle
+  bounded cases via [reflection metadata
+  files][graalvm-reflect-config] — a `reflect-config.json`
+  enumerating every reflectively-accessed member. But this only
+  works when the *set of reflectively-accessed types* is known in
+  advance. For Spark's `ExpressionEncoder`, the set is "every
+  user case class," which is unbounded at build time. There is no
+  practical reflection config that enumerates "all user case
+  classes" — every downstream Spark application would need its own.
+
+  [graalvm-reflect-config]: https://www.graalvm.org/latest/reference-manual/native-image/dynamic-features/Reflection/
+
+  **Our compile-time encoder, by construction, only emits static
+  bytecode at `scalac` time.** Inspecting the macro's output for a
+  typical case class — the very ordinary `new Lineitem(
+  row.getLong(0), row.getInt(1), ...)` shape shown in §7 — there
+  are zero reflective calls. Every method call is monomorphic and
+  resolved at compile time. From `native-image`'s perspective, the
+  encoder is just normal Scala code: indistinguishable from any
+  other Scala 3 program, no `reflect-config.json` required.
+
+  **What this does NOT mean: "Spark becomes native-image ready."**
+  Spark has other AOT blockers: SQL/Catalyst's
+  `GenerateUnsafeProjection` does runtime bytecode generation
+  (Janino compiles emitted Java strings to bytecode and loads them
+  via a custom classloader — fundamentally incompatible with
+  closed-world AOT), `UDFRegistration` accepts arbitrary lambdas
+  and reflects on them, Hive UDFs are dynamically loaded, and so
+  on. **Removing the encoder is one specific blocker among
+  several.** What we deliver is the *typed Dataset[T] read/write
+  path* — the highest-traffic per-row operation — being AOT-clean.
+
+  Realistic near-term scenarios this unlocks:
+  - **Spark Connect clients/workers.** Spark Connect's protocol is
+    Arrow + gRPC; the client doesn't need full Catalyst at runtime.
+    A native-image Spark Connect client with an AOT-clean encoder
+    could ship as a ~30 MB binary with single-digit-ms startup,
+    suitable for Lambda functions or CLI tools that build typed
+    queries and submit them to a remote Catalyst server.
+  - **Embedded analytics in non-JVM hosts.** Polyglot deployments
+    where a Python or Node.js application links against a native
+    Spark library for typed Dataset processing on local data.
+  - **Edge / IoT workers** where 100+ MB JVMs and 500 ms cold
+    starts are prohibitive.
+
+  None of these scenarios *fully* exist today; the encoder lock is
+  one of several reasons. Removing it is a precondition rather than
+  a sufficient condition. The honest claim: **a Scala 3 macro
+  encoder makes the encoder layer indistinguishable from any
+  AOT-clean Scala code; the rest of Spark's AOT-readiness story is
+  separate work this report doesn't address.**
 - **No `scala.reflect.runtime.universe` initialization.** The
   ~50–100 ms JDK-21 cold-start cost we measure indirectly via
   Spark's own codegen log lines (§13) disappears entirely.
@@ -1558,10 +1621,17 @@ compatibility with existing Spark artifacts.
   could upgrade typed `Dataset[T]` code, and the cross-version
   workarounds catalogued in §8 disappear from every downstream
   user's build.
-- **GraalVM native-image becomes viable.** Spark Connect could
-  ship workers as native binaries with sub-100-ms cold start,
-  opening genuinely new deployment topologies (Lambda-style typed
-  query workers, embedded analytics in non-JVM hosts).
+- **GraalVM native-image AOT becomes viable for the encoder layer
+  specifically** (full mechanism in §5). The encoder stops blocking
+  AOT compilation because it emits only static bytecode with no
+  runtime reflection. This is a *necessary* step toward
+  native-image-deployable Spark, not a sufficient one — Spark
+  has other AOT blockers (notably `GenerateUnsafeProjection`'s
+  runtime bytecode generation via Janino) that would need separate
+  work. The realistic near-term win: native-image Spark Connect
+  clients with single-digit-ms cold start, opening deployment
+  topologies like AWS Lambda typed-query submission or embedded
+  analytics in non-JVM hosts.
 - **Cold-start cost drops.** No more `runtime.universe`
   initialization per JVM (the 50–100 ms hit measured in §13). For
   short-lived JVMs — serverless executors, ad-hoc shells, IDE test
