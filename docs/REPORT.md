@@ -255,3 +255,237 @@ is real and material in queries where the typed lambda forces
 per-row materialization, smaller than isolated JMH suggests because
 Spark optimizes around it for filterable rows."** The next sections
 make this precise.
+
+---
+
+# Part 2 — The Scala 2.13 wall
+
+## §4. Why Spark can't simply move to Scala 3
+
+The Scala community has shipped Scala 3 since May 2021. Most major
+libraries — Akka, Cats, Circe, Play, ZIO, http4s — have Scala 3
+artifacts published. Spark does not.
+
+The reason is the encoder. Specifically: `ExpressionEncoder[T]()`
+requires a `TypeTag[T]`, and `TypeTag` requires Scala 2's
+`scala.reflect.runtime.universe`, and that runtime universe will not
+initialize cleanly on a Scala 3 classpath. We describe the failure
+mode concretely because the structural reason matters for the
+migration argument.
+
+### The transitive dependency chain
+
+```
+ExpressionEncoder[T]()                       # TypeTag[T] required
+  └─ ScalaReflection.encoderFor[T]
+      └─ typeTag[T].in(mirror).tpe           # forces runtime.universe
+          └─ scala.reflect.runtime.JavaUniverse.init()
+              └─ JavaUniverseForce.force()
+                  └─ getMember(Array, "apply")   # FAILS on Scala 3
+```
+
+The last step looks up `scala.Array.apply` via reflective member
+lookup. On a Scala 2.13 classpath, `Array.apply` is a method of the
+`scala.Array` companion that constructs primitive-specialized arrays.
+On a Scala 3 classpath, the same companion exists but its shape
+differs subtly enough that Scala 2's symbol-table walker throws:
+
+```
+scala.reflect.internal.FatalError: class Array does not have a
+member apply
+        at scala.reflect.internal.Definitions$DefinitionsClass
+                  .fatalMissingSymbol(Definitions.scala:1426)
+        at scala.reflect.runtime.JavaUniverseForce.force(...)
+        at scala.reflect.runtime.JavaUniverse.init(...)
+        at org.apache.spark.sql.catalyst.ScalaReflection
+                  .<clinit>(ScalaReflection.scala:43)
+```
+
+This is the same `ExceptionInInitializerError` we encountered when
+trying to invoke `ExpressionEncoder` from Scala 3 during this
+project's byte-parity test (§9). It is not a build-system
+inconvenience — it is a runtime initialization failure that no
+classpath manipulation, `--add-opens`, or `For3Use2_13` shim can
+fix. The Scala 3 stdlib's `Array` companion is different at the
+JVM level, and Scala 2's reflection cannot introspect it.
+
+The encoder isn't merely *implemented* in Scala 2. It is
+*structurally coupled* to Scala 2's runtime reflection. Any code
+path that calls `ExpressionEncoder[T]()`, directly or
+transitively, will fail on Scala 3.
+
+### What this means for typical Spark code
+
+A typed `Dataset[T]` operation reaches the encoder in many places:
+
+```scala
+val ds = spark.read.parquet(path).as[Lineitem]   // ExpressionEncoder
+ds.filter(_.shipdate.isBefore(cutoff))            // ExpressionEncoder
+ds.groupByKey(_.returnflag)                       // ExpressionEncoder
+ds.map(l => (l.partkey, l.quantity))              // ExpressionEncoder
+ds.collect()                                       // ExpressionEncoder
+```
+
+Any line in that fragment, on a Scala 3 classpath, throws on the
+first execution. The user-facing error message is the unhelpful
+`FatalError: class Array does not have a member apply` deep in a
+stack trace. Removing `.as[Lineitem]` (working in untyped
+`DataFrame` land) is the only escape.
+
+### Workarounds people use today
+
+Three patterns appear in the Spark+Scala 3 community:
+
+**Use `DataFrame` instead of `Dataset[T]`.** Sacrifices type safety:
+column-existence and column-type errors move from `scalac` time to
+runtime. Pays the encoder tax to escape... by abandoning the encoder.
+The largest user population, because it's the only path that just
+works.
+
+**Use Frameless's [`TypedEncoder`][frameless].** A community library
+that provides a typed `Dataset`-like API in Scala 2 by building
+Catalyst `Expression` trees from typed values. Avoids `TypeTag` on
+its own surface but is itself Scala 2.13 and delegates to Spark's
+codegen — so it works *in Scala 2.13* and doesn't help the Scala 3
+case. Frameless's documentation claims "identical performance" to
+`ExpressionEncoder`; this is literally true because Frameless emits
+the same Catalyst expression trees Spark would generate from a
+`TypeTag`, then runs them through the same `GenerateUnsafeProjection`.
+
+**Use [`spark-scala3`][sparkscala3].** A thin Scala 3 surface around
+Spark's Scala 2.13 jars via sbt's `CrossVersion.for3Use2_13`. Works
+for non-`Dataset` code (DataFrame, SQL strings, RDD APIs). Runs
+into the same `TypeTag` wall on any `Dataset[T]` operation.
+
+[frameless]: https://typelevel.org/frameless/TypedEncoder.html
+[sparkscala3]: https://github.com/vincenzobaz/spark-scala3
+
+### Previous attempts at compile-time encoders
+
+We surveyed the prior art (commit `ff1610a`'s research agent looked
+at jsoniter-scala, circe, Frameless, magnolia, chimney) and found
+**no published case study** of a Scala 3 compile-time `UnsafeRow`
+encoder. The closest neighbors:
+
+- [`jsoniter-scala`][js] uses Scala 3 quoted macros to derive JSON
+  codecs that beat Jackson by ~1.5–2× on similar workloads. The
+  pattern is direct — but it targets JSON byte strings, not Spark's
+  `UnsafeRow` layout.
+- [`circe`][circe] uses Magnolia-derived encoders for JSON ASTs.
+  Same family of techniques.
+- Frameless (above) — delegates to Spark, isn't independent
+  evidence that the technique works without Spark's runtime
+  reflection.
+
+Spark's specific output format combined with Scala 3 macro
+derivation is novel territory; nobody has published numbers showing
+that a from-scratch compile-time encoder can match Spark's
+codegen-emitted bytecode on `UnsafeRow`. This report fills that gap.
+
+[circe]: https://github.com/circe/circe
+
+## §5. The Scala 3 derivation story
+
+Scala 3 offers three mechanisms for compile-time-derived code. We
+use two of them.
+
+### Mechanism 1 — `inline match` on a type tuple via `Mirror`
+
+`Mirror.ProductOf[T]` exposes the structural shape of a case class
+at the type level. With `inline`, we can pattern-match on the field
+types and emit specialized code per case at the macro-expansion
+site:
+
+```scala
+inline def deriveFields[Types <: Tuple]: Vector[FieldEncoder[?]] =
+  inline erasedValue[Types] match
+    case _: EmptyTuple => Vector.empty
+    case _: (Long *: ts)   => ... // specialized to Long
+    case _: (String *: ts) => ... // specialized to String
+    case _: (t *: ts)      => deriveFields[ts]
+```
+
+Cheap to write, JIT-friendly, and the inline-expansion produces
+straight-line code with no runtime dispatch. Limitations: the field
+types must be known at expansion site (no recursion through
+non-case-class wrappers), and any final construction goes through
+`Mirror.fromProduct(Product)` — which forces every primitive
+argument through `java.lang.Long`/`Integer` **boxing**.
+
+We use this mechanism for schema derivation
+(`ProtoEncoder.derived[T]`), where the boxing isn't on the hot path.
+
+### Mechanism 2 — `quoted.Expr` macros
+
+The full Scala 3 macro reflection API. The macro receives a `Type[T]`
+and a `Quotes` context, walks the type structure via the reflection
+API (`TypeRepr`, `Symbol`, `caseFields`), and emits arbitrary code
+trees:
+
+```scala
+def derivedImpl[T: Type](using Quotes): Expr[Encoder[T]] = {
+  import quotes.reflect.*
+  val classSym = TypeRepr.of[T].classSymbol.get
+  val ctor = classSym.primaryConstructor
+
+  // Emits the literal expression `new T(arg0, arg1, ...)`
+  // where each arg has its own concrete type — no boxing.
+  val args = classSym.caseFields.zipWithIndex.map { (fSym, i) =>
+    emitFieldReader(fSym, i)
+  }
+  '{ new MyEncoder[T] {
+    override def read(row: UnsafeRow): T =
+      ${ Apply(Select(New(TypeTree.of[T]), ctor), args).asExprOf[T] }
+  }}
+}
+```
+
+Critical property: the emitted code can call the case-class
+constructor *directly*, with each argument's static type matching
+the constructor's expected parameter type. **Primitives stay
+unboxed.** This is the pattern `jsoniter-scala`'s `JsonCodecMaker`
+uses; we adopt it.
+
+We use this mechanism for the per-row encode/decode path
+(`UnsafeRowSerializer.derived[T]`), where avoiding boxing on every
+field on every row matters for throughput.
+
+### Mechanism 3 — Magnolia and similar typeclass-derivation libraries
+
+[Magnolia][magnolia] (Scala-2 and Scala-3) and its Scala-3-native
+heir, [chimney][chimney]'s `PartialTransformer.derive`, abstract
+over typeclass derivation. They trade macro verbosity for a
+constrained API. We do not use them here because the constrained
+API is harder to reconcile with `UnsafeRow`'s field-by-field
+emission requirement, but the technique is viable in principle.
+
+[magnolia]: https://github.com/softwaremill/magnolia
+[chimney]: https://chimney.readthedocs.io/
+
+### What "no runtime reflection" buys
+
+Replacing `TypeTag` + `runtime.universe` with compile-time macros
+delivers concrete benefits:
+
+- **GraalVM `native-image` becomes viable.** Spark's current encoder
+  is one of the standard blockers for native-image; replacing it
+  removes that block. Spark Connect workers could ship as native
+  binaries with sub-100-ms cold start.
+- **No `scala.reflect.runtime.universe` initialization.** The
+  ~50–100 ms JDK-21 cold-start cost we measure indirectly via
+  Spark's own codegen log lines (§13) disappears entirely.
+- **Schema validation at compile time.** A misspelled case-class
+  field, a wrong type, a missing field — these become `scalac`
+  errors rather than runtime "no such column" failures at first
+  request.
+- **Inlined dispatch on the hot path.** The JIT sees specialized
+  code per field type — `row.getLong(0)`, `row.getInt(3)`,
+  `row.getUTF8String(13).toString` — rather than a megamorphic
+  `match` on `DataType` at runtime. We confirm this manifests as
+  measurable per-row speedup in §11.
+- **The Scala 3 lock comes down.** Zero `scala.reflect.runtime`
+  references means Spark can publish Scala 3 jars and a typed
+  `Dataset[T]` user can finally upgrade.
+
+These are the properties we set out to deliver. The next part of
+the report describes how.
