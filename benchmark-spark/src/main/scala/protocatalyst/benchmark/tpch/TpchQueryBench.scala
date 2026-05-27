@@ -120,21 +120,24 @@ object TpchQueryBench {
         variants.foreach { variant =>
           val tag = s"$qName.${variant.name}"
           val runWithRetries: Either[Throwable, Seq[Long]] = Try {
-            // Warmup
+            // Warmup. Use `collect()` (not `count()`) so Spark's optimizer can't prune unused
+            // aggregates, ORDER BY, or output projections. For TPC-H the result sets are tiny
+            // (Q1: ~4 rows, Q6/Q14: 1 row, Q21: ≤100 rows), so driver-side materialization is
+            // cheap and full work is forced.
             (1 to Warmup).foreach { _ =>
               TpchQueries.withSf(spark, sf) {
-                variant.run(spark).count()
+                variant.run(spark).collect()
               }
             }
             // Measure
             (1 to Measure).map { _ =>
               clearCaches(spark)
               val t0 = System.nanoTime()
-              val rowCount = TpchQueries.withSf(spark, sf) {
-                variant.run(spark).count()
+              val rows = TpchQueries.withSf(spark, sf) {
+                variant.run(spark).collect()
               }
               val elapsedMs = (System.nanoTime() - t0) / 1_000_000L
-              println(f"  $tag%-8s run-$rowCount%s → $elapsedMs ms")
+              println(f"  $tag%-8s run-${rows.length}%-5d → $elapsedMs ms")
               elapsedMs
             }
           }.toEither

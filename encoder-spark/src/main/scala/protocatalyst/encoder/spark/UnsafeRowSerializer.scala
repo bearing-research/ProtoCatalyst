@@ -12,22 +12,36 @@ import protocatalyst.schema.ProtoSchema
 /** Compile-time-derived serializer that writes directly into Spark's packed `UnsafeRow` byte
   * layout — the same target Spark's whole-stage codegen produces.
   *
-  * Per-field dispatch is inlined at the call site via Scala 3 `Mirror.ProductOf` + inline match
-  * on the field-type tuple. Each field maps to one `UnsafeRowWriter.write(ordinal, value)` call
-  * with no megamorphic dispatch and no boxing for primitives. `setNullAt(ordinal)` handles
-  * `Option.None`. The `writer` is reusable across rows via `writeTo(writer, value)`, which is
-  * the zero-allocation hot-path Spark codegen uses.
+  * Implementation: a Scala 3 `quoted.Expr` macro
+  * ([[protocatalyst.encoder.spark.UnsafeRowSerializerMacro]]) emits a direct case-class
+  * constructor call for the deserialize path (`new T(row.getLong(0), row.getInt(1), ...)`) and a
+  * sequence of `writer.write(idx, value.field)` statements for the serialize path. No
+  * `Array[Any]` intermediates, no `Mirror.fromProduct` boxing, no megamorphic dispatch on
+  * `DataType` at runtime. Matches jsoniter-scala's `JsonCodecMaker` pattern.
   *
-  * Scope is limited to the TPC-H-relevant type surface:
-  *  - All Spark primitives (Boolean..Double), String, Array[Byte], BigDecimal / Java BigDecimal,
-  *    LocalDate / java.sql.Date, Instant / java.sql.Timestamp / LocalDateTime, LocalTime
-  *    (Spark 4.1+), Duration, Period, UUID.
+  * The `UnsafeRowWriter` is cached as an instance field (mirroring Spark's `UnsafeProjection`)
+  * and reused across `serialize()` calls. The returned `UnsafeRow` is the same instance every
+  * call — callers retaining the row must `.copy()`.
+  *
+  * Supported field types (covered by the macro; anything else is rejected at COMPILE time with
+  * a clear `report.errorAndAbort` message — strictly stronger than a runtime exception):
+  *
+  *  - Primitives: `Boolean`, `Byte`, `Short`, `Int`, `Long`, `Float`, `Double`.
+  *  - Variable-length leaves: `String`, `Array[Byte]`, `BigDecimal`, `java.math.BigDecimal`.
+  *  - Temporal: `java.time.LocalDate`, `java.sql.Date`, `java.time.Instant`,
+  *    `java.sql.Timestamp`, `java.time.LocalDateTime`, `java.time.LocalTime` (Spark 4.1+),
+  *    `java.time.Duration`, `java.time.Period`.
+  *  - `java.util.UUID` (stored as `StringType`, canonical 36-char form).
   *  - `Option[T]` over any of the above.
   *
-  * Out of scope for this commit (throws `IllegalStateException` at runtime if encountered):
-  *  - Collections (`Seq` / `List` / `Vector` / `Set` / `Array[T]` of non-byte), Maps,
-  *    nested case classes. None of these appear in the headline TPC-H tables; they'll land in a
-  *    follow-up using `UnsafeArrayWriter` / `UnsafeMapWriter` and nested writer chaining.
+  * Not yet supported (caught at compile time, will be added in follow-ups):
+  *  - Collections (`Seq` / `List` / `Vector` / `Set` / `Array[T]` of non-byte). Need
+  *    `UnsafeArrayWriter` integration.
+  *  - Maps. Need `UnsafeMapWriter` integration.
+  *  - Nested case classes. Need recursive macro construction.
+  *  - `OffsetDateTime`, `ZonedDateTime`, `java.util.Date`, `BigInt`. Each just needs more cases.
+  *  - Spark-class external types (`Decimal`, `CalendarInterval`, `VariantVal`, `Geography`,
+  *    `Geometry`). Belong in a Spark-coupling bridge, not the core macro.
   */
 trait UnsafeRowSerializer[T]:
   def schema: ProtoSchema

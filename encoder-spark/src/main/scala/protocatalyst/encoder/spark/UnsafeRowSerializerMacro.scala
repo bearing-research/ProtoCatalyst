@@ -2,13 +2,14 @@ package protocatalyst.encoder.spark
 
 import java.{sql => jsql}
 import java.math.{BigDecimal => JBigDecimal}
-import java.time.{Instant, LocalDate, LocalDateTime, LocalTime}
+import java.time.{Duration, Instant, LocalDate, LocalDateTime, LocalTime, Period}
+import java.util.UUID
 
 import scala.quoted.*
 
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.sql.catalyst.expressions.codegen.UnsafeRowWriter
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.catalyst.util.{DateTimeUtils, IntervalUtils}
 import org.apache.spark.sql.types.{Decimal => SparkDecimal}
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -47,6 +48,13 @@ object UnsafeRowSerializerMacro:
     val n = caseFields.length
     val countExpr = Expr(n)
 
+    // Type arguments applied to `T`. For `T = Box[String]` this is `List(String)`; for a
+    // non-generic case class it's `Nil`. We need these to construct the call via TypeApply
+    // when the primary constructor is polymorphic.
+    val typeArgs: List[TypeRepr] = tpe match
+      case AppliedType(_, args) => args
+      case _                    => Nil
+
     // === readFn: UnsafeRow => T ===
     //
     // Emits a lambda whose body is `new T(readExpr_0, readExpr_1, ..., readExpr_{n-1})`. Each
@@ -60,13 +68,16 @@ object UnsafeRowSerializerMacro:
         val rowParam = params.head.asInstanceOf[Term]
         val rowExpr = rowParam.asExprOf[UnsafeRow]
         val ctorArgs = caseFields.zipWithIndex.map { case (fieldSym, idx) =>
-          val fieldTpe = fieldTypeOf(fieldSym)
+          val fieldTpe = tpe.memberType(fieldSym)
           buildReadExpr(fieldTpe, idx, rowExpr).asTerm
         }
-        Apply(
-          Select(New(TypeIdent(classSym)), classSym.primaryConstructor),
-          ctorArgs
-        )
+        // `New(TypeTree.of[T])` preserves applied type arguments (e.g. `Box[String]`, not bare
+        // `Box`). For polymorphic case classes the primary constructor takes type args first;
+        // `appliedToTypes` handles that, `appliedToArgs` the value args.
+        New(TypeTree.of[T])
+          .select(classSym.primaryConstructor)
+          .appliedToTypes(typeArgs)
+          .appliedToArgs(ctorArgs)
       }
     )
     val readLambda = readLambdaTerm.asExprOf[UnsafeRow => T]
@@ -88,7 +99,7 @@ object UnsafeRowSerializerMacro:
         val valueParam = params(1).asInstanceOf[Term]
         val writerExpr = writerParam.asExprOf[UnsafeRowWriter]
         val statements: List[Term] = caseFields.zipWithIndex.map { case (fieldSym, idx) =>
-          val fieldTpe = fieldTypeOf(fieldSym)
+          val fieldTpe = tpe.memberType(fieldSym)
           val fieldAccess = Select(valueParam, fieldSym)
           buildWriteExpr(fieldTpe, idx, writerExpr, fieldAccess).asTerm
         }
@@ -113,11 +124,6 @@ object UnsafeRowSerializerMacro:
   // first-class Expr / Term trees so the constructor / write-statement can be
   // built as one inlined call.
   // -------------------------------------------------------------------------
-
-  private def fieldTypeOf(using Quotes)(sym: quotes.reflect.Symbol): quotes.reflect.TypeRepr =
-    sym.tree match
-      case vd: quotes.reflect.ValDef => vd.tpt.tpe
-      case _                         => sym.termRef.widen
 
   /** Build the read expression for a case-class field of static type `tpe` at slot `idx`. */
   private def buildReadExpr(using Quotes)(
@@ -178,6 +184,21 @@ object UnsafeRowSerializerMacro:
         '{
           if $row.isNullAt($idxE) then null
           else LocalTime.ofNanoOfDay($row.getLong($idxE))
+        }
+      case '[Duration] =>
+        '{
+          if $row.isNullAt($idxE) then null
+          else IntervalUtils.microsToDuration($row.getLong($idxE))
+        }
+      case '[Period] =>
+        '{
+          if $row.isNullAt($idxE) then null
+          else IntervalUtils.monthsToPeriod($row.getInt($idxE))
+        }
+      case '[UUID] =>
+        '{
+          if $row.isNullAt($idxE) then null
+          else UUID.fromString($row.getUTF8String($idxE).toString)
         }
       case '[Option[t]] => buildOptionReadExpr[t](idx, row)
       case _            =>
@@ -259,6 +280,21 @@ object UnsafeRowSerializerMacro:
           if $row.isNullAt($idxE) then None
           else Some(LocalTime.ofNanoOfDay($row.getLong($idxE)))
         }.asExprOf[Option[T]]
+      case '[Duration] =>
+        '{
+          if $row.isNullAt($idxE) then None
+          else Some(IntervalUtils.microsToDuration($row.getLong($idxE)))
+        }.asExprOf[Option[T]]
+      case '[Period] =>
+        '{
+          if $row.isNullAt($idxE) then None
+          else Some(IntervalUtils.monthsToPeriod($row.getInt($idxE)))
+        }.asExprOf[Option[T]]
+      case '[UUID] =>
+        '{
+          if $row.isNullAt($idxE) then None
+          else Some(UUID.fromString($row.getUTF8String($idxE).toString))
+        }.asExprOf[Option[T]]
       case _ =>
         report.errorAndAbort(
           s"UnsafeRowSerializer: unsupported Option inner type ${TypeRepr.of[T].show} at index $idx"
@@ -337,6 +373,24 @@ object UnsafeRowSerializerMacro:
         '{
           if $v == null then $writer.setNullAt($idxE)
           else $writer.write($idxE, $v.toNanoOfDay)
+        }
+      case '[Duration] =>
+        val v = fieldAccess.asExprOf[Duration]
+        '{
+          if $v == null then $writer.setNullAt($idxE)
+          else $writer.write($idxE, IntervalUtils.durationToMicros($v))
+        }
+      case '[Period] =>
+        val v = fieldAccess.asExprOf[Period]
+        '{
+          if $v == null then $writer.setNullAt($idxE)
+          else $writer.write($idxE, IntervalUtils.periodToMonths($v))
+        }
+      case '[UUID] =>
+        val v = fieldAccess.asExprOf[UUID]
+        '{
+          if $v == null then $writer.setNullAt($idxE)
+          else $writer.write($idxE, UTF8String.fromString($v.toString))
         }
       case '[Option[t]] => buildOptionWriteExpr[t](idx, writer, fieldAccess)
       case _            =>
@@ -432,6 +486,24 @@ object UnsafeRowSerializerMacro:
         '{
           if $opt.isEmpty then $writer.setNullAt($idxE)
           else $writer.write($idxE, $opt.get.toNanoOfDay)
+        }
+      case '[Duration] =>
+        val opt = fieldAccess.asExprOf[Option[Duration]]
+        '{
+          if $opt.isEmpty then $writer.setNullAt($idxE)
+          else $writer.write($idxE, IntervalUtils.durationToMicros($opt.get))
+        }
+      case '[Period] =>
+        val opt = fieldAccess.asExprOf[Option[Period]]
+        '{
+          if $opt.isEmpty then $writer.setNullAt($idxE)
+          else $writer.write($idxE, IntervalUtils.periodToMonths($opt.get))
+        }
+      case '[UUID] =>
+        val opt = fieldAccess.asExprOf[Option[UUID]]
+        '{
+          if $opt.isEmpty then $writer.setNullAt($idxE)
+          else $writer.write($idxE, UTF8String.fromString($opt.get.toString))
         }
       case _ =>
         report.errorAndAbort(
