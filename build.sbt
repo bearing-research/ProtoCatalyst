@@ -193,7 +193,7 @@ lazy val query = project
 // Benchmarks module (Scala 3) - JMH benchmarks for ProtoCatalyst encoders
 lazy val benchmarks = project
   .in(file("benchmarks"))
-  .dependsOn(core, encoder, arrow)
+  .dependsOn(core, encoder, arrow, encoderSpark)
   .enablePlugins(JmhPlugin)
   .settings(
     name := "protocatalyst-benchmarks",
@@ -207,7 +207,9 @@ lazy val benchmarks = project
       "--add-opens=java.base/java.nio=ALL-UNNAMED",
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
-    Jmh / fork := true
+    Jmh / fork := true,
+    // TPC-H benchmarks load data/tpch/<sf>/*.tbl from project root.
+    Jmh / baseDirectory := (ThisBuild / baseDirectory).value
   )
 
 // Benchmark Spark comparison module (Scala 2.13) - Compare with Spark's ExpressionEncoder
@@ -250,6 +252,8 @@ lazy val benchmarkSpark = project
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
     Jmh / fork := true,
+    // TPC-H benchmarks load data/tpch/<sf>/*.tbl from project root.
+    Jmh / baseDirectory := (ThisBuild / baseDirectory).value,
     // Task to generate golden files for Spark parity testing
     // Run with: sbt "benchmarkSpark/runMain protocatalyst.benchmark.GoldenFileGenerator"
     // The fork cwd is the project root so relative paths to e.g. encoder-spark resolve.
