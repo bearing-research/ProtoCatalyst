@@ -13,7 +13,7 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.types.{Decimal => SparkDecimal, StructType => SparkStructType}
 import org.apache.spark.unsafe.types.UTF8String
 
-import protocatalyst.encoder.{InlineRowSerializer, InternalTypeConverter, ProtoEncoder}
+import protocatalyst.encoder.ProtoEncoder
 import protocatalyst.schema.ProtoSchema
 
 /** Compile-time-derived serializer that writes directly into Spark's packed `UnsafeRow` byte
@@ -41,12 +41,17 @@ trait UnsafeRowSerializer[T]:
   def sparkSchema: SparkStructType
   def fieldCount: Int
 
-  /** Allocates a fresh `UnsafeRow` per call. Convenient for tests; not the hot path. */
+  /** Serializes `value` via an internally-cached `UnsafeRowWriter`. The returned `UnsafeRow` is
+    * owned by this serializer — it is the same instance every call, with its byte buffer
+    * overwritten. Callers that need to retain a row across subsequent `serialize()` calls must
+    * call `.copy()`. This matches Spark's `UnsafeProjection` mutable-row contract.
+    */
   def serialize(value: T): UnsafeRow
 
-  /** Writes `value` into the provided `writer`'s buffer in-place. Caller is responsible for
-    * calling `writer.reset()` between rows (matching Spark codegen's reuse pattern). Returns the
-    * resulting `UnsafeRow`, which shares the writer's underlying buffer.
+  /** Writes `value` into the provided `writer`'s buffer in-place. Useful when the caller wants
+    * to manage writer lifecycle explicitly (e.g. iterating with a single shared writer across
+    * multiple serializers). The returned `UnsafeRow` shares the writer's buffer; the caller
+    * owns reset semantics.
     */
   def writeTo(writer: UnsafeRowWriter, value: T): UnsafeRow
 
@@ -55,9 +60,9 @@ trait UnsafeRowSerializer[T]:
     */
   def newWriter(): UnsafeRowWriter = new UnsafeRowWriter(fieldCount)
 
-  /** Deserialize an `UnsafeRow` back to `T`. Reads each slot via the `InternalRow` getter
-    * (`UnsafeRow extends InternalRow`) into an `Array[Any]`, then runs the existing
-    * `InlineRowSerializer.deserialize` path with a Spark-typed `InternalTypeConverter` in scope.
+  /** Deserialize an `UnsafeRow` back to `T`. Each field is read via the right typed
+    * `UnsafeRow` getter (`getLong` / `getInt` / `getUTF8String` / …) dispatched at compile
+    * time — no megamorphic `row.get(i, dataType)` and no second-pass strategy lookup.
     */
   def deserialize(row: UnsafeRow): T
 
@@ -65,34 +70,43 @@ object UnsafeRowSerializer:
 
   inline def derived[T](using m: Mirror.ProductOf[T]): UnsafeRowSerializer[T] =
     val protoEncoder = ProtoEncoder.derived[T]
-    val inner = InlineRowSerializer.derived[T]
     val count = constValue[Tuple.Size[m.MirroredElemTypes]]
 
     val writeFn: (UnsafeRowWriter, T) => Unit = (writer, value) =>
       val product = value.asInstanceOf[Product]
       writeFieldsImpl[m.MirroredElemTypes](writer, product, 0)
 
-    new UnsafeRowSerializerImpl[T](inner, protoEncoder.schema, count, writeFn)
+    val readFn: UnsafeRow => T = (row) =>
+      val arr = new Array[Any](count)
+      readFieldsImpl[m.MirroredElemTypes](row, arr, 0)
+      m.fromProduct(ArrayProduct(arr))
+
+    new UnsafeRowSerializerImpl[T](protoEncoder.schema, count, writeFn, readFn)
 
   /** Public so the `inline def derived[T]` expansion in user code can instantiate it. Not part
     * of the stable API; consume the trait.
     */
   class UnsafeRowSerializerImpl[T](
-      inner: InlineRowSerializer[T],
       val schema: ProtoSchema,
       val fieldCount: Int,
-      writeFn: (UnsafeRowWriter, T) => Unit
+      writeFn: (UnsafeRowWriter, T) => Unit,
+      readFn: UnsafeRow => T
   ) extends UnsafeRowSerializer[T]:
 
-    private given InternalTypeConverter = SparkInternalTypeConverter
     val sparkSchema: SparkStructType = SparkTypeMapping.toSparkStructType(schema)
 
+    // Cached writer — mirrors Spark's UnsafeProjection pattern. Allocated once per serializer
+    // instance; per-call `serialize()` resets and reuses. Plain instance field rather than
+    // ThreadLocal: in per-task Spark execution there's one task per thread, so the extra
+    // `ThreadLocal.get` lookup would be pure overhead. Callers sharing a serializer across
+    // threads should construct their own writer and use `writeTo` instead.
+    private val cachedWriter = new UnsafeRowWriter(fieldCount)
+
     def serialize(value: T): UnsafeRow =
-      val writer = new UnsafeRowWriter(fieldCount)
-      writer.reset()
-      writer.zeroOutNullBytes()
-      writeFn(writer, value)
-      writer.getRow
+      cachedWriter.reset()
+      cachedWriter.zeroOutNullBytes()
+      writeFn(cachedWriter, value)
+      cachedWriter.getRow
 
     def writeTo(writer: UnsafeRowWriter, value: T): UnsafeRow =
       writer.reset()
@@ -100,14 +114,14 @@ object UnsafeRowSerializer:
       writeFn(writer, value)
       writer.getRow
 
-    def deserialize(row: UnsafeRow): T =
-      val arr = new Array[Any](fieldCount)
-      var i = 0
-      while i < fieldCount do
-        if row.isNullAt(i) then arr(i) = null
-        else arr(i) = row.get(i, sparkSchema.fields(i).dataType)
-        i += 1
-      inner.deserialize(arr)
+    def deserialize(row: UnsafeRow): T = readFn(row)
+
+  /** Adapter from `Array[Any]` to `Product`, used to feed `Mirror.fromProduct`. Step 3 (a
+    * quoted-macro direct-constructor emission) eliminates this intermediate entirely. */
+  class ArrayProduct(values: Array[Any]) extends Product:
+    def productArity: Int = values.length
+    def productElement(n: Int): Any = values(n)
+    def canEqual(that: Any): Boolean = that.isInstanceOf[ArrayProduct]
 
   // ============================================================
   // Compile-time-specialized field dispatch
@@ -273,7 +287,155 @@ object UnsafeRowSerializer:
   private inline def unsupportedField[T](idx: Int): Nothing =
     throw new IllegalStateException(
       s"UnsafeRowSerializer: field at index $idx has a type that's not yet wired into the " +
-        s"UnsafeRow write path. Wire the appropriate UnsafeArrayWriter / UnsafeMapWriter / nested" +
-        s"products, OffsetDateTime/ZonedDateTime/util.Date/UUID/BigInt/Duration/Period until " +
-        s"the follow-up commit adds them here."
+        s"UnsafeRow path. Add the matching case to writeFieldsImpl/readFieldsImpl. Currently " +
+        s"unsupported: collections, maps, nested products, OffsetDateTime/ZonedDateTime/" +
+        s"util.Date/UUID/BigInt/Duration/Period."
     )
+
+  // ============================================================
+  // Compile-time-specialized deserialize (the read counterpart of writeFieldsImpl)
+  //
+  // Each case emits one direct `row.getXxx(idx)` call — monomorphic, JIT-inlinable, no
+  // megamorphic dispatch on Spark's DataType. Boxing into `Array[Any]` is unavoidable while we
+  // feed `Mirror.fromProduct`; eliminating that requires step 3 (quoted-macro constructor
+  // emission), which is the next optimization tier.
+  // ============================================================
+
+  inline def readFieldsImpl[Types <: Tuple](
+      row: UnsafeRow,
+      arr: Array[Any],
+      idx: Int
+  ): Unit =
+    inline erasedValue[Types] match
+      case _: EmptyTuple => ()
+
+      // === Unboxed primitives ===
+      case _: (Boolean *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getBoolean(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Byte *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getByte(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Short *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getShort(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Int *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getInt(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Long *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getLong(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Float *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getFloat(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Double *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getDouble(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      // === String → from UTF8String ===
+      case _: (String *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getUTF8String(idx).toString
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      // === Binary ===
+      case _: (Array[Byte] *: ts) =>
+        arr(idx) = if row.isNullAt(idx) then null else row.getBinary(idx)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      // === Decimal — matches the (38, 18) precision used on the write side ===
+      case _: (BigDecimal *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else BigDecimal(row.getDecimal(idx, 38, 18).toJavaBigDecimal)
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (JBigDecimal *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else row.getDecimal(idx, 38, 18).toJavaBigDecimal
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      // === Temporal types ===
+      case _: (LocalDate *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else DateTimeUtils.daysToLocalDate(row.getInt(idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (jsql.Date *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else DateTimeUtils.toJavaDate(row.getInt(idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (Instant *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else DateTimeUtils.microsToInstant(row.getLong(idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (jsql.Timestamp *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else DateTimeUtils.toJavaTimestamp(row.getLong(idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (LocalDateTime *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else DateTimeUtils.microsToLocalDateTime(row.getLong(idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (LocalTime *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then null
+          else LocalTime.ofNanoOfDay(row.getLong(idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      // === Option[T] — null bit determines None; if set, recurse into the inner reader ===
+      case _: (Option[t] *: ts) =>
+        arr(idx) =
+          if row.isNullAt(idx) then None
+          else Some(readOptionValue[t](row, idx))
+        readFieldsImpl[ts](row, arr, idx + 1)
+
+      case _: (t *: ts) =>
+        unsupportedField[t](idx)
+
+  /** Read the inner value of an `Option[T]` slot known to be present (the caller has already
+    * checked `row.isNullAt`). Primitives stay unboxed inside the case branches; the result is
+    * still boxed by `Some(_)` allocation when the case-class field is `Option[Int]`. */
+  private inline def readOptionValue[T](row: UnsafeRow, idx: Int): T =
+    inline erasedValue[T] match
+      case _: Boolean    => row.getBoolean(idx).asInstanceOf[T]
+      case _: Byte       => row.getByte(idx).asInstanceOf[T]
+      case _: Short      => row.getShort(idx).asInstanceOf[T]
+      case _: Int        => row.getInt(idx).asInstanceOf[T]
+      case _: Long       => row.getLong(idx).asInstanceOf[T]
+      case _: Float      => row.getFloat(idx).asInstanceOf[T]
+      case _: Double     => row.getDouble(idx).asInstanceOf[T]
+      case _: String     => row.getUTF8String(idx).toString.asInstanceOf[T]
+      case _: Array[Byte] => row.getBinary(idx).asInstanceOf[T]
+      case _: BigDecimal =>
+        BigDecimal(row.getDecimal(idx, 38, 18).toJavaBigDecimal).asInstanceOf[T]
+      case _: JBigDecimal =>
+        row.getDecimal(idx, 38, 18).toJavaBigDecimal.asInstanceOf[T]
+      case _: LocalDate =>
+        DateTimeUtils.daysToLocalDate(row.getInt(idx)).asInstanceOf[T]
+      case _: jsql.Date =>
+        DateTimeUtils.toJavaDate(row.getInt(idx)).asInstanceOf[T]
+      case _: Instant =>
+        DateTimeUtils.microsToInstant(row.getLong(idx)).asInstanceOf[T]
+      case _: jsql.Timestamp =>
+        DateTimeUtils.toJavaTimestamp(row.getLong(idx)).asInstanceOf[T]
+      case _: LocalDateTime =>
+        DateTimeUtils.microsToLocalDateTime(row.getLong(idx)).asInstanceOf[T]
+      case _: LocalTime =>
+        LocalTime.ofNanoOfDay(row.getLong(idx)).asInstanceOf[T]
+      case _ => unsupportedField[T](idx)
