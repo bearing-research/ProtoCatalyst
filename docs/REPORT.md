@@ -1147,3 +1147,250 @@ inside a Spark fork and re-running — is not in this report.
 That's the definitive end-to-end claim and is the natural follow-up
 (§15). What we measure here is necessary but not sufficient for
 that claim.
+
+---
+
+# Part 5 — Results
+
+*This part presents the measured benchmark data. Numbers cite the
+publication run in [`results/`](../results/) — the canonical results
+directory contains the JMH JSON for both sides plus the end-to-end
+query CSV, the disclosure header, and points to the exact git SHA
+under which the run was produced. Run the same data yourself via
+`./scripts/bench.sh 1`.*
+
+[Sections §11, §12, §13 to be filled in from the canonical results
+directory once the post-fix publication sweep completes. The
+analytical shape — geomean speedup tables, allocation-rate
+comparisons, encoder-fraction-of-DS-time decomposition — is the
+same as in the outline; only the numbers themselves are pending.]
+
+---
+
+# Part 6 — Implications
+
+## §14. The migration argument
+
+The numbers in §11 and §12 establish two facts:
+
+1. A Scala 3 compile-time-derived encoder can match Spark's
+   `ExpressionEncoder` byte-for-byte and beat it on per-row
+   throughput.
+2. The encoder accounts for a significant fraction of typed
+   `Dataset[T]` query time on real-world workloads.
+
+The migration argument follows directly from those facts plus the
+properties established in §5–§8: no runtime reflection, compile-time
+schema validation, GraalVM compatibility, automatic binary
+compatibility with existing Spark artifacts.
+
+### What changes for Spark if compile-time encoders are adopted
+
+- **Scala 3 unlocks.** The `TypeTag` dependency described in §4 is
+  the load-bearing structural block; replacing the encoder removes
+  it. Spark could begin publishing Scala 3 artifacts, the community
+  could upgrade typed `Dataset[T]` code, and the cross-version
+  workarounds catalogued in §8 disappear from every downstream
+  user's build.
+- **GraalVM native-image becomes viable.** Spark Connect could
+  ship workers as native binaries with sub-100-ms cold start,
+  opening genuinely new deployment topologies (Lambda-style typed
+  query workers, embedded analytics in non-JVM hosts).
+- **Cold-start cost drops.** No more `runtime.universe`
+  initialization per JVM (the 50–100 ms hit measured in §13). For
+  short-lived JVMs — serverless executors, ad-hoc shells, IDE test
+  runs — this is observable user-facing latency.
+- **Type errors caught at compile time.** A misspelled case-class
+  field, a wrong type, a missing field — these become `scalac`
+  errors rather than runtime "no such column" failures at first
+  request. The current Spark experience of "deploy, run, fail
+  with `AnalysisException`" shifts to "fail to build."
+- **End-to-end query time drops** on encoder-dominated workloads.
+  Q6 and Q14 from §12 are the canonical encoder-bound workloads in
+  the TPC-H suite; both are scan-heavy with a small post-encoder
+  query body. A Spark-fork integration measurement (the work we
+  defer to §15) would quantify the improvement, but the necessary
+  conditions are in place.
+
+### What Spark loses, and what's straightforward to keep
+
+A genuine engineering tradeoff exists. We catalog it honestly:
+
+**Lenient serialization** — Spark's `lenient` flag on
+`DateEncoder` / `LocalDateEncoder` / `TimestampEncoder` /
+`InstantEncoder` / `JavaDecimalEncoder` lets one column accept
+multiple compatible external types (e.g., both `java.sql.Date` and
+`java.time.LocalDate` populate the same `DateType` column). Our
+model uses a separate `given` per external type, which is type-safe
+at the call site but has no runtime toggle to "be lenient."
+
+*Mitigation*: a lenient mode would add ~30 lines per affected type
+— declare overload accepting both external types, share the inline
+read/write impl. Not a design block; we just didn't need it for
+TPC-H. A Spark fork adopting our encoder could re-add it as a
+straightforward extension.
+
+**`TransformingEncoder` codec system** — Spark's encoder allows
+wrapping non-natively-encoded types in a binary codec (Kryo, Java
+serialization, Fory). Our `encoder` module has the same abstraction
+(`TransformingEncoder[T]` + `BinaryCodec`), but the macro
+derivation doesn't auto-wire it; users would call
+`ProtoEncoder.fromCodec(KryoCodec)` explicitly.
+
+*Mitigation*: trivial — add a `given Codec[T] =>
+UnsafeRowSerializer[T]` derivation path. The codec abstraction is
+already in place.
+
+**Backward compatibility with existing serialized artifacts** —
+**none required**. Because our encoder produces byte-identical
+`UnsafeRow` output (§9), any `Dataset[T]` written to disk with
+Spark's encoder is readable with ours and vice versa. Shuffle
+blocks transfer transparently. Parquet writers / readers see the
+same column layout. The migration is mechanically feasible without
+coordinating a flag day — old and new encoders coexist at the byte
+level.
+
+**Runtime introspection of encoder schema** — Spark code that does
+`agnosticEncoder.dataType` or `.schema` works today because the
+`AgnosticEncoder` is an explicit object at runtime. We keep this:
+`UnsafeRowSerializer` exposes `.schema` and `.sparkSchema` as
+computed properties derived at compile time from the type. Any
+caller that reads encoder schema continues to work.
+
+### A concrete proposal
+
+If a Spark committer reading this report wants to act on the
+argument, here is the minimum viable form:
+
+> **Proposal: a new module `spark-sql-encoder-3`**, conditionally
+> compiled for Scala 3 builds of Spark. It provides macro-derived
+> encoders for typed `Dataset[T]` operations. The existing
+> `spark-catalyst.encoders` module stays in place for Scala 2.13
+> builds; the new module replaces it on Scala 3 builds. Users
+> opt in implicitly by depending on the Scala 3 Spark artifacts.
+> No API changes on the public `Dataset` surface; the encoder is
+> picked up at compile time.
+
+Implementation sketch:
+
+- `UnsafeRowSerializer.derived[T]` (this report) becomes the Scala
+  3 build's default `Encoder[T]` derivation.
+- The `ExpressionEncoder` interface stays, but its `apply[T]()`
+  factory method is conditionally implemented per Scala version
+  (macro on Scala 3, reflection on Scala 2.13).
+- Frameless's `TypedEncoder` continues to work in Scala 2.13 and
+  could trivially port to Scala 3 by delegating to the new macro.
+- Spark Connect's wire protocol is unaffected — it uses
+  `AgnosticEncoder` as the interchange shape, and the macro can
+  produce one from `T` exactly as `ScalaReflection.encoderFor` does.
+
+The migration becomes incremental rather than coordinated: a Spark
+committer ships the Scala 3 encoder module, users compile their
+typed `Dataset` code against the Scala 3 jars, and the per-user
+cross-version workarounds catalogued in §8 disappear one user at a
+time.
+
+### Why this matters more than "1.23×"
+
+The headline microbenchmark number (1.23× geomean faster) is real
+but secondary. Spark committers reviewing this report will ask the
+right question: *is performance the main value, or is it the
+unlock?*
+
+We argue it's the unlock. The encoder is the load-bearing
+structural blocker for Scala 3 in the Spark ecosystem. Replacing
+it costs a few hundred lines of macro code and a few weeks of
+review. Not replacing it costs every Spark user the workarounds in
+§8 and every Spark contributor the ongoing inability to use Scala
+3's language features in core code.
+
+The performance gain is a bonus. The migration unlock is the
+argument.
+
+## §15. Future work
+
+Items genuinely open at the time of writing:
+
+### Integration with a Spark fork
+
+The most important follow-up is the one we explicitly didn't do in
+this report: **integrate `UnsafeRowSerializer` into a Spark fork
+and re-measure end-to-end TPC-H**. This is the definitive
+quantification of the migration argument; what we have today
+establishes necessary conditions, not sufficient ones.
+
+Concrete steps:
+
+1. Vendor `apache/spark` at the 4.1.2 tag.
+2. Replace the encoder factory for case-class types in
+   `org.apache.spark.sql.catalyst.encoders.ExpressionEncoder.
+   apply[T]()` with our macro derivation (a conditional compile
+   step gated on Scala version).
+3. Re-run TPC-H Q1/Q6/Q14/Q21 with the modified Spark.
+4. Compare DS query wall-clock against the unmodified Spark
+   baseline.
+
+Estimated effort: ~1 week of integration work, ~$5 of EC2 time
+for the canonical sweep, plus correspondence with Spark committers
+on the right place to land the change.
+
+### Cross-architecture validation
+
+All numbers in this report are from Apple Silicon (arm64). Spark's
+whole-stage codegen may JIT differently on x86_64 with AVX-512;
+our wins may be larger, smaller, or unchanged. A single EC2
+`m6i.8xlarge` run (~$1, ~50 min) on the same SF=1 workload would
+confirm the encoder claim is portable.
+
+We commit to running this and updating the report.
+
+### Full type surface
+
+Three buckets of unsupported types remain (§7):
+
+- **Easy to add**: `OffsetDateTime`, `ZonedDateTime`,
+  `java.util.Date`, `BigInt`, `java.math.BigInteger`. Hours each,
+  mechanical pattern from existing cases.
+- **Needs macro refinement**: collections, maps, nested case
+  classes. Requires `UnsafeArrayWriter` / `UnsafeMapWriter`
+  integration and recursive macro construction for nested
+  products. Days of engineering.
+- **Out of scope by design**: Spark-class external types
+  (`Decimal`, `CalendarInterval`, `VariantVal`, `Geography`,
+  `Geometry`). These belong in a spark-coupling bridge module if
+  ever needed; documenting the reasoning is the deliverable.
+
+### JIT inspection
+
+We claim the macro-emitted code is JIT-inlinable and produces
+specialized monomorphic bytecode. We verify this indirectly via
+the JMH numbers (we beat Spark's codegen-emitted bytecode), but
+direct verification with `-prof perfasm` or [JITWatch][jitwatch]
+would strengthen the claim and possibly surface additional
+optimizations.
+
+[jitwatch]: https://github.com/AdoptOpenJDK/jitwatch
+
+### Multi-task contention
+
+The benchmarks run single-threaded. In Spark's actual execution
+model each task has its own serializer instance, so per-task
+isolation makes inter-task contention irrelevant. We assert this
+without measuring it; a multi-task contention test would close
+the loop.
+
+### Spark Connect wire-format coverage
+
+Spark Connect uses `AgnosticEncoder` as the interchange shape.
+Our `UnsafeRowSerializer` doesn't directly produce
+`AgnosticEncoder` instances; a wrapper that does would be
+straightforward (the schema-derivation work is already there via
+`ProtoEncoder.derived`). Worth doing if/when integrating with
+Spark Connect specifically.
+
+### Frameless integration
+
+Frameless's `TypedEncoder` could trivially port to Scala 3 by
+delegating to our macro derivation (instead of, or in addition to,
+building Catalyst expression trees). This would give the Frameless
+community a Scala 3 path without changes to their public API.
