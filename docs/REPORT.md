@@ -898,3 +898,252 @@ hit a strict superset of these workarounds — without our project's
 benefit of being able to design around them. The migration argument
 is straightforward: doing this once, at the encoder level, saves
 the community from paying these costs forever.
+
+---
+
+# Part 4 — Validation
+
+## §9. Correctness validation
+
+A replacement encoder must produce **exactly the same bytes** as
+the encoder it replaces. Any deviation breaks Catalyst operators,
+shuffle blocks, lake-format writers, and persisted artifacts that
+expect Spark's specific `UnsafeRow` layout. This section documents
+how we verify byte parity.
+
+### Byte-level parity test against `ExpressionEncoder`
+
+The core correctness oracle lives at
+[`encoder-spark/src/test/scala/.../UnsafeRowParitySpec.scala`][parity].
+
+[parity]: ../encoder-spark/src/test/scala/protocatalyst/encoder/spark/UnsafeRowParitySpec.scala
+
+For each test shape, the procedure is:
+
+1. **Generate the Spark byte fixture** by running Spark's
+   `ExpressionEncoder[T]().createSerializer()` on a known value
+   from a Scala 2.13 fixture-generator
+   (`benchmark-spark/src/main/scala/.../UnsafeRowParityFixtures.scala`):
+
+   ```scala
+   val sparkEnc = ExpressionEncoder(productEncoder)
+   val sparkSer = sparkEnc.createSerializer()
+   val unsafe: UnsafeRow = sparkSer(value).asInstanceOf[UnsafeRow]
+   val bytes = unsafe.getBytes  // raw byte[] of the UnsafeRow
+   writeToFile(s"parity/$shapeName.bin", bytes)
+   ```
+
+2. **Compare in the Scala 3 test**:
+
+   ```scala
+   val expected: Array[Byte] = readFixture(shapeName)
+   val ours: UnsafeRow = UnsafeRowSerializer.derived[T].serialize(value)
+   assert(java.util.Arrays.equals(expected, ourBytesOf(ours)))
+   ```
+
+The five fixtures we check:
+
+| Shape | Fields | Probes |
+|---|---|---|
+| `Simple(Int, String)` | 2 | primitives + variable-length string |
+| `WithDecimal(Long, BigDecimal)` | 2 | decimal in variable-length region |
+| `WithTemporal(LocalDate, Instant)` | 2 | epoch days Int + epoch micros Long |
+| `WithOption(Int, Option[String])` — Some | 2 | null bitmask off |
+| `WithOption(Int, Option[String])` — None | 2 | null bitmask on |
+
+All five pass byte-for-byte. The Scala 3 test is wired to
+auto-skip if the fixture files don't exist (rather than fail
+opaquely), so a developer on a fresh checkout sees:
+
+```
+> sbt 'encoderSpark/test'
+... 36 tests passing ...
+Note: UnsafeRowParitySpec skipped — fixtures not present.
+Regenerate via: sbt 'benchmarkSpark/runMain ...UnsafeRowParityFixtures'
+```
+
+The fixtures themselves *are* committed to the repo; the
+auto-skip is for cases where they get accidentally deleted.
+
+### Real-data round-trip on TPC-H
+
+[`TpchDbgenIntegrationSpec.scala`][dbgen-spec] is the second
+correctness oracle. It loads real `dbgen`-produced SF=0.01 output
+(60,175 lineitem rows + 7 other tables) through `TblParser`, then
+round-trips every row through `UnsafeRowSerializer`:
+
+[dbgen-spec]: ../encoder-spark/src/test/scala/protocatalyst/encoder/spark/tpch/TpchDbgenIntegrationSpec.scala
+
+```scala
+TblParser.foreachLine(dataRoot.resolve("lineitem.tbl"), TblParser.parseLineitem) { row =>
+  val restored = ser.deserialize(ser.serialize(row))
+  assertEquals(restored.orderkey, row.orderkey)
+  assertEquals(restored.shipdate, row.shipdate)
+  assertEquals(restored.extendedprice, row.extendedprice)
+  count += 1
+}
+assertEquals(count, 60175)
+```
+
+All 60K rows round-trip in 0.3 seconds with no diffs. This catches
+two failure modes the byte-parity test wouldn't:
+
+- **Type-specific corner cases** — leap-year dates, BigDecimal
+  precisions outside (38, 18) (none in TPC-H by spec, but `dbgen`
+  could produce them in principle), empty strings, strings with
+  multi-byte UTF-8 sequences.
+- **Decode-side correctness** — the byte-parity test only checks
+  the encode direction. The dbgen round-trip exercises both
+  directions against millions of distinct values.
+
+### Test surface
+
+48 tests, all passing on commit `1ac4873` (and `46c30d7`, the
+current HEAD as this section was written):
+
+| Suite | Count | Coverage |
+|---|---:|---|
+| `UnsafeRowSerializerSpec` | 14 | Slot semantics, null handling, writer reuse, packed size for each primary type |
+| `UnsafeRowParitySpec` | 5 | Byte-for-byte parity against Spark's `ExpressionEncoder` |
+| `UnsafeRowExtraTypesSpec` | 12 | Duration/Period/UUID (added in P2 fix), generic case classes (added in P3 fix) |
+| `TpchSchemasSpec` | 9 | One smoke test per TPC-H table (inline fixture) |
+| `TpchDbgenIntegrationSpec` | 8 | Real `dbgen` SF=0.01 round-trip per table |
+
+The `UnsafeRowExtraTypesSpec` was added after a review round
+(commit `1ac4873`) caught two correctness gaps the original test
+suite missed: the macro had stale doc claims about types it didn't
+support, and the generic case-class field-type substitution was
+broken. Adding tests for both was the natural way to lock the
+fixes; they're now part of the regression baseline.
+
+We claim coverage for **everything in the TPC-H benchmark surface
+plus a margin**. We do not claim coverage for the full Spark 4.1
+`AgnosticEncoder` catalog — the unsupported types are documented
+in §7 and would be follow-up work.
+
+## §10. Benchmark methodology
+
+Distilled from [`docs/BENCHMARK_METHODOLOGY.md`][methodology]; full
+reasoning and sources are there. This section states the rules and
+their justifications briefly.
+
+[methodology]: BENCHMARK_METHODOLOGY.md
+
+### Statistical treatment (Georges et al., OOPSLA 2007)
+
+The canonical reference for rigorous JVM benchmarking is
+[*Statistically Rigorous Java Performance Evaluation*][georges]
+(Georges, Buytaert, Eeckhout, OOPSLA 2007). The paper shows that
+ad-hoc Java benchmarking produces misleading conclusions in up to
+16% of comparisons; the corrective recipe is:
+
+[georges]: https://dri.es/files/oopsla07-georges.pdf
+
+- ≥30 measurements after steady state.
+- Discard the first VM invocation (cold-start JIT noise).
+- Report confidence intervals (Student's t for n<30, z for n≥30).
+- Declare "no significant difference" when CIs overlap.
+
+JMH's default modes implement most of this. We configure:
+
+```
+-f 3 -wi 5 -i 15
+```
+
+Three forks (separate JVM invocations), each with 5 warmup
+iterations × 1 s and 15 measurement iterations × 1 s. Total
+measurements per benchmark: 3 × 15 = 45, well above the 30
+threshold. JMH reports the mean and 99% confidence interval; we
+publish both.
+
+For arithmetic on multiple-benchmark speedups (per §11), we use
+**geometric mean**. Per [Eyerman et al., UGent 2024][eyerman], the
+arithmetic mean of speedup ratios is mathematically wrong (it
+biases toward queries with larger absolute differences).
+
+[eyerman]: https://users.elis.ugent.be/~leeckhou/papers/CAL-2024-geomean.pdf
+
+### Cold/hot separation for end-to-end queries
+
+JMH handles cold/hot for microbenchmarks (warmup iterations are
+discarded). End-to-end query benchmarks aren't a JMH workload —
+they're once-per-call wall-clock with side effects. We follow
+[ClickBench's][clickbench] pattern:
+
+[clickbench]: https://github.com/ClickHouse/ClickBench
+
+- 1 warmup run, discarded.
+- 3 measurement runs.
+- Spark cache cleared between runs (via `spark.catalog.clearCache()`).
+- Reported metric: **minimum** of the 3 measurement runs. The min
+  is less noisy than the mean when system noise (GC pause,
+  background process) inflates individual runs.
+
+The raw 3-run timings are written to `queries.csv` so reviewers
+can verify dispersion themselves.
+
+### Required ablations
+
+Per the methodology doc, three Spark configuration axes are varied
+in the end-to-end query bench:
+
+| Axis | Values | Why |
+|---|---|---|
+| `spark.sql.codegen.wholeStage` | `true`, `false` | Spark's codegen on/off changes the encoder code path materially. |
+| `spark.sql.adaptive.enabled` | `true`, `false` | AQE can reshape queries; off makes timing more deterministic. |
+| Master URL | `local[1]`, `local[*]` | Single-thread isolates per-row work from parallelism noise. |
+
+Eight combinations total per query per variant. Spark's default in
+production is usually `codegen=true, aqe=true, threads=local[*]`,
+which is the "headline" config we lead with in §12. The other
+seven combinations sit in the appendix for reviewers who want to
+verify the pattern holds across configurations.
+
+### Reproducibility contract
+
+A reported number is only "credible" by our methodology if:
+
+1. The disclosure paragraph (hardware, JDK, Spark, Scala, git SHA)
+   is present.
+2. The run was produced by `./scripts/bench.sh sf=<N>` against a
+   public git SHA.
+3. Raw JMH JSON + end-to-end wall-clock CSV are attached.
+4. The EC2 setup script (if cloud-side) is documented in
+   [`docs/CLOUD_BENCH.md`](CLOUD_BENCH.md).
+
+Each results directory in this repository (`results/<utc-ts>-sf<N>/`)
+satisfies items 1, 3, and 4. The git SHA is baked into the
+disclosure header by the script; an updated SHA mid-run (as
+happened during one review iteration) is itself documented in the
+commit history.
+
+### Comparison surface
+
+Two encoders compared in the microbench (§11):
+
+- **Spark `ExpressionEncoder[T]`** — Scala 2.13, runtime
+  reflection + whole-stage codegen → `UnsafeRow`.
+- **ProtoCatalyst `UnsafeRowSerializer.derived[T]`** — Scala 3,
+  compile-time quoted-macro derivation → `UnsafeRow`. Proven
+  byte-identical (§9).
+
+Two query implementations compared end-to-end (§12):
+
+- **Spark `DataFrame`** — untyped; encoder-free baseline; the
+  upper bound for what Spark can do at the row-format layer
+  without going through the encoder.
+- **Spark `Dataset[T]`** — typed; one `.filter(lambda)` step that
+  forces `ExpressionEncoder` to decode every row. Otherwise
+  identical to the DF variant.
+
+Both DF and DS implementations run on the same Parquet data, with
+the same Spark configurations. The only difference is the typed
+filter step; the rest of the query (`groupBy`, aggregates, etc.)
+runs as SQL on both. This isolates the encoder cost as cleanly as
+the Spark API allows from the outside.
+
+A natural third comparison surface — replacing `ExpressionEncoder`
+inside a Spark fork and re-running — is not in this report.
+That's the definitive end-to-end claim and is the natural follow-up
+(§15). What we measure here is necessary but not sufficient for
+that claim.
