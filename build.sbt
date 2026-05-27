@@ -309,7 +309,9 @@ lazy val encoderSpark = project
       "--add-opens=java.base/java.nio=ALL-UNNAMED",
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
-    Test / fork := true
+    Test / fork := true,
+    // TpchDbgenIntegrationSpec reads data/tpch/<sf>/*.tbl with project-root-relative paths.
+    Test / baseDirectory := (ThisBuild / baseDirectory).value
   )
 
 // Spark Catalyst integration module (Scala 2.13) - Convert ProtoLogicalPlan to Spark LogicalPlan

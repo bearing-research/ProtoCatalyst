@@ -16,3 +16,11 @@ project/project/
 .vscode/
 .scala-build/
 project/metals.sbt
+
+# Benchmark data + tools — generated, not committed (TPC license restricts redistribution).
+# Regenerate via ./scripts/gen-tpch.sh.
+data/tpch/
+tools/tpch-dbgen/
+
+# macOS
+.DS_Store
