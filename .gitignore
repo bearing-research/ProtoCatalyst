@@ -22,5 +22,8 @@ project/metals.sbt
 data/tpch/
 tools/tpch-dbgen/
 
+# Benchmark results — generated artifacts, not committed.
+results/
+
 # macOS
 .DS_Store

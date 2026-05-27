@@ -261,7 +261,13 @@ lazy val benchmarkSpark = project
     run / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
-      "--add-opens=java.base/java.util=ALL-UNNAMED"
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      // Spark 4.1 catalyst's SparkDateTimeUtils reflects into sun.util.calendar.ZoneInfo on
+      // JDK 17+; required for queries that touch date columns under whole-stage codegen.
+      "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+      "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
     run / fork := true
   )
