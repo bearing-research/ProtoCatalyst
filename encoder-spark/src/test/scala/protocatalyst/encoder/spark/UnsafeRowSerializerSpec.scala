@@ -163,14 +163,15 @@ class UnsafeRowSerializerSpec extends FunSuite:
     assertEquals(copy2.getUTF8String(1).toString, "two")
 
   // === Failure mode for not-yet-supported types ===
-
-  case class HasList(id: Int, tags: List[String])
-
-  test("unsupported field types throw with a clear message"):
-    val ser = UnsafeRowSerializer.derived[HasList]
-    val caught = intercept[IllegalStateException]:
-      ser.serialize(HasList(1, List("a")))
-    assert(
-      caught.getMessage.contains("UnsafeRowSerializer"),
-      s"expected guidance message, got: ${caught.getMessage}"
-    )
+  //
+  // Previously the unsupported-type path threw IllegalStateException at runtime on the first
+  // serialize() call. With the step-3 quoted-macro derivation, the rejection moved to
+  // COMPILE time — calling `UnsafeRowSerializer.derived[HasList]` for a case class with an
+  // unsupported field type (e.g. `List[String]`) produces a compile error directly. That's a
+  // strictly stronger guarantee, so the runtime-exception test is obsolete.
+  //
+  // To verify by hand:
+  //   case class HasList(id: Int, tags: List[String])
+  //   val ser = UnsafeRowSerializer.derived[HasList]
+  //   // → compile error: "UnsafeRowSerializer: unsupported field type ... List[String]
+  //   //   at index 1"
