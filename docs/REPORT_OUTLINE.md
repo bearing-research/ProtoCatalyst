@@ -27,12 +27,12 @@ derivation path.
 
 ## §1. The problem statement (~500 words)
 
-Spark's typed `Dataset[T]` API is roughly **5× slower** than the
+Spark's typed `Dataset[T]` API can be **3–5× slower** than the
 untyped `DataFrame` API on encoder-sensitive TPC-H queries at SF=1
-(measured below). The gap is the cost of `ExpressionEncoder` — the
-component that translates between JVM case-class instances and
-Spark's internal `UnsafeRow` byte layout. Every typed row read or
-written pays this tax.
+(measured below; query-dependent, see §12). The gap is the cost of
+`ExpressionEncoder` — the component that translates between JVM
+case-class instances and Spark's internal `UnsafeRow` byte layout.
+Every typed lambda forces a per-row encoder pass.
 
 A second, structural problem: `ExpressionEncoder` is built on Scala
 2.13's `TypeTag` machinery, which doesn't function from Scala 3.
@@ -170,17 +170,20 @@ optimization. **Matching it from Scala 3 is the challenge.**
 ### Where the cost lands
 
 Encoder cost varies by query shape. End-to-end measurement of TPC-H
-at SF=1 (§12):
+at SF=1, default Spark config (commit `1ac4873`, see §12):
 
-| Query | `DataFrame` (no encoder) | `Dataset[T]` (encoder) | Encoder tax |
-|---|---:|---:|---:|
-| Q1 (scan + agg) | 228 ms | 1131 ms | 5.0× |
-| Q6 (scan + sum) | 152 ms | 895 ms | 5.9× |
-| Q14 (small join) | 155 ms | 932 ms | 6.0× |
-| Q21 (4-way self-join) | 1351 ms | 1504 ms | 1.1× |
+| Query | `DataFrame` (no encoder) | `Dataset[T]` (encoder) | DS/DF | Character |
+|---|---:|---:|---:|---|
+| Q1 (scan + groupby + sort) | 2209 ms | 2668 ms | 1.21× | mixed — scan/agg dilutes encoder share |
+| Q6 (scan + filter + sum) | 173 ms | 871 ms | 5.03× | encoder-dominated |
+| Q14 (small join) | 240 ms | 944 ms | 3.93× | encoder-heavy |
+| Q21 (4-way self-join + anti-join) | 1335 ms | 1502 ms | 1.13× | shuffle-bound |
 
-The encoder dominates anything scan-heavy. Q21 is the exception
-because shuffle cost dwarfs per-row work.
+The encoder is most visible on Q6 and Q14 where the typed lambda
+forces per-row decoding for filter evaluation and the rest of the
+query is small. Q1 has substantial non-encoder work (8 aggregates +
+ORDER BY) that dilutes the encoder share. Q21 is shuffle-bound;
+encoder cost is rounding error.
 
 ### Decomposing the cost
 
@@ -195,17 +198,26 @@ Two distinct costs the report disentangles:
    pure cold-start overhead — paid once per encoder per JVM, before
    the first row of work. Discussed in §13.
 
-**Cross-checking per-row cost against end-to-end.** At SF=1, Q1
-processes 6M lineitem rows. DS-Q1 wall-clock is 1131 ms = ~188 ns/row.
-DF-Q1 is 228 ms = ~38 ns/row. The difference (~150 ns/row) is the
-encoder + JVM-object materialization cost in actual query execution.
+**Cross-checking per-row cost against end-to-end.** At SF=1, Q6
+processes 6M lineitem rows (it's the cleanest encoder-bound signal:
+filter + SUM, single-row result, no GROUP BY/ORDER BY dilution).
+DS-Q6 wall-clock is 871 ms = ~145 ns/row. DF-Q6 is 173 ms = ~29
+ns/row. The difference (~116 ns/row) is the encoder + JVM-object
+materialization cost in actual query execution.
+
 Notably this is *less* than our JMH deserialize cost in isolation
-(Spark 296 ns/op, ours 230 ns/op). The likely reason: Catalyst
-optimization (filter pushdown into Parquet via the typed lambda) means
-not every row reaches the deserialize path. So the JMH micro and the
-end-to-end numbers triangulate to "encoder cost is real and large but
-Spark's optimizer mitigates it for the rows that don't survive
-filter."
+(Spark 286 ns/op, ours 230 ns/op). Two likely contributors:
+- Catalyst optimization — the typed lambda allows Spark to push the
+  shipdate filter into Parquet column-skipping, so not every row
+  reaches the deserialize path.
+- JIT amortization across the full query loop (the JMH micro measures
+  one isolated decode; the query loop intersperses decode with the
+  filter predicate and SUM accumulation).
+
+The JMH micro and the end-to-end numbers triangulate to "encoder
+cost is real (~150 ns/row in Q6's hot path) but smaller than the
+isolated JMH deserialize suggests, because Spark optimizes around it
+for rows that don't survive filter."
 
 ---
 
@@ -654,26 +666,43 @@ and typed `Dataset[T]` (forces encoder per row via `.filter(_.field
 [Chart: per-query bar chart. 4 queries × 2 variants × 8 configs.
 Photon-style horizontal bars, log-scale where range exceeds 5×.]
 
-### The 5-6× Dataset[T] tax
+### The query-dependent Dataset[T] tax
 
-| Query | DF (ms) | DS (ms) | DS/DF | Encoder fraction of DS |
-|---|---:|---:|---:|---:|
-| Q1 | 228 | 1131 | 5.0× | **80%** |
-| Q6 | 152 | 895 | 5.9× | **83%** |
-| Q14 | 155 | 932 | 6.0× | **83%** |
-| Q21 | 1351 | 1504 | 1.1× | 10% |
+Both query variants drive their action with `.collect()` so Spark's
+optimizer can't prune unused aggregates / ORDER BY / output
+projections (an earlier version of this benchmark used `.count()` and
+the resulting Q1 numbers were materially distorted by exactly that
+pruning — see commit `1ac4873`).
+
+| Query | DF (ms) | DS (ms) | DS/DF | Encoder fraction of DS | Query character |
+|---|---:|---:|---:|---:|---|
+| Q1 | 2209 | 2668 | 1.21× | **17%** | scan + GROUP BY + 8 aggs + ORDER BY |
+| Q6 | 173 | 871 | **5.03×** | **80%** | scan + filter + single SUM |
+| Q14 | 240 | 944 | **3.93×** | 75% | scan + small JOIN + ratio aggregate |
+| Q21 | 1335 | 1502 | 1.13× | 11% | scan + 4-way self-join + anti-join |
 
 The "encoder fraction" column = `(DS - DF) / DS` — the share of
-typed-Dataset query time that's spent on encoder work (since the
-queries are otherwise identical and DF avoids the encoder entirely).
-**On scan-heavy queries, 80–83% of `Dataset[T]` query time is
-encoder work.** Q21 is shuffle-bound; encoder cost is 10% there.
+typed-Dataset query time spent on encoder work, since the two
+variants run otherwise identical queries.
 
-This is the central finding of the end-to-end side of the report.
-The microbench (§11) shows our encoder is 1.23× faster per row;
-this section shows that the *per-row* difference manifests as a
-substantial fraction of total query time on the workloads where
-typed `Dataset[T]` is actually used.
+**Encoder cost is significant but query-dependent.** Three regimes:
+
+- **Encoder-dominated (Q6: 80%, Q14: 75%)** — queries where most of
+  the query work is the per-row scan/filter the typed lambda forces.
+  These are the canonical "encoder is the whole game" cases. Q6 is
+  the cleanest signal: filter + single SUM, single-row result.
+- **Mixed (Q1: 17%)** — substantial non-encoder work (GROUP BY +
+  ORDER BY + 8 aggregate columns) dilutes the encoder share, even
+  though the absolute encoder cost (~460 ms = DS − DF) is real and
+  measurable.
+- **Shuffle-bound (Q21: 11%)** — encoder cost is rounding error
+  next to the 4-way self-join + anti-join shuffle work.
+
+The relevant point for the report's argument: typed `Dataset[T]`
+users pay a real per-row tax that varies from ~11% (shuffle-bound)
+to ~80% (filter+aggregate) of query time. The microbench (§11)
+quantifies the per-row cost; this section shows how it manifests in
+end-to-end query time depending on what the rest of the query does.
 
 ### Ablation analysis
 
