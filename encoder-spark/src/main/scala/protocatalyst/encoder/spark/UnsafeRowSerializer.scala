@@ -122,4 +122,3 @@ object UnsafeRowSerializer:
       writer.getRow
 
     def deserialize(row: UnsafeRow): T = readFn(row)
-

@@ -725,15 +725,17 @@ This report does **not** integrate our encoder into a Spark fork and
 re-run end-to-end queries. We measure two things separately: (a)
 per-row encoder cost in isolation [1.23× geomean faster than Spark],
 and (b) the encoder share of actual query time in current Spark
-[80-83% on scan-heavy queries].
+[11–80% depending on query shape; 75–80% on the encoder-dominated
+queries Q6 and Q14].
 
 A reader can reasonably infer that **replacing Spark's encoder with
-ours would reduce the DS-vs-DF tax materially**. But the exact
-end-to-end speedup depends on Catalyst optimizations we don't
-model — filter pushdown into Parquet may already mean many rows
-never reach the encoder, and the encoder share itself may be
-amortized differently in Spark's actual execution than our JMH
-micro suggests.
+ours would reduce the DS-vs-DF tax materially on encoder-dominated
+workloads**. But the exact end-to-end speedup depends on (i) what
+fraction of the query is actually encoder-bound (Q6 yes, Q1 no),
+and (ii) Catalyst optimizations we don't model — filter pushdown
+into Parquet may already mean many rows never reach the encoder, and
+the encoder share itself may be amortized differently in Spark's
+actual execution than our JMH micro suggests.
 
 Concrete, quantified next step (left for future work):
 1. Vendor a fork of Spark that swaps `ExpressionEncoder` for our
@@ -743,10 +745,13 @@ Concrete, quantified next step (left for future work):
 
 What the **current** report claims: (a) per-row encoder cost can be
 1.23× faster than Spark's via a Scala 3 macro [proven by §11], (b)
-the encoder accounts for 80-83% of scan-heavy DS query time today
-[shown by §12], (c) by combination these are strong necessary
-conditions for a meaningful end-to-end improvement — but
-"meaningful" requires the Spark-fork measurement we haven't done.
+the encoder accounts for **up to ~80% of DS query time on
+encoder-dominated workloads (Q6: 80%, Q14: 75%)** and notably less
+on mixed (Q1: 17%) or shuffle-bound (Q21: 11%) workloads [shown by
+§12], (c) by combination these are strong necessary conditions for a
+meaningful end-to-end improvement on encoder-dominated queries — but
+"meaningful" still requires the Spark-fork measurement we haven't
+done.
 
 ## §13. Cold-start cost and where Spark still wins (~700 words)
 
@@ -947,13 +952,13 @@ in the outline; resolution noted here for the record.
 | # | Gap | Resolution |
 |---|---|---|
 | 1 | §3 cost decomposition (per-row vs per-call) | Added "Decomposing the cost" subsection in §3 with arithmetic showing DS-Q1 = 188 ns/row total, DF-Q1 = 38 ns/row, gap = 150 ns/row attributable to encoder. Triangulates with JMH per-row numbers; Catalyst pushdown explains why the end-to-end gap (150 ns) is less than the JMH deserialize (296 ns). |
-| 2 | §12 extrapolation hedge | Replaced "if our encoder replaced Spark's, X% faster" with explicit hedging: we measured (a) per-row 1.23× and (b) 80-83% encoder share of DS time, but did NOT integrate into a Spark fork; that's future work. The report claims necessary conditions for end-to-end speedup, not a quantitative end-to-end prediction. |
+| 2 | §12 extrapolation hedge | Replaced "if our encoder replaced Spark's, X% faster" with explicit hedging: we measured (a) per-row 1.23× and (b) encoder share of DS time (11–80% depending on query; 75–80% on encoder-dominated Q6/Q14), but did NOT integrate into a Spark fork; that's future work. The report claims necessary conditions for end-to-end speedup, not a quantitative end-to-end prediction. |
 | 3 | §11 step-by-step progression | Added two tables: speedup geomean by step, allocation ratio by step. Shows that the three optimizations (writer cache, inline-dispatch deserialize, quoted-macro constructor) are independent and each addresses a distinct bottleneck. |
 | 4 | §13 cold-start measurement | Added "Cold-start" subsection in §13 citing Spark's own log output (`Code generated in 106.242584 ms` etc., visible during our benchmark runs). First codegen pass per encoder type is 106-128 ms; our path pays zero of this. Doesn't require a separate JMH benchmark — Spark's logs are evidence. |
 | 5 | §14 lenient serialization | Added explicit treatment: lenient mode is gone in our model but trivially restorable (~30 LOC per affected type). Not a design block. |
 | 6 | §7 binary / wire compat | Added "Binary / wire compatibility" subsection noting byte parity → automatic shuffle / Parquet / lake-format compatibility. No flag-day migration. |
 | 7 | §7 type coverage classified | Split "out of scope" list into three buckets (easy to add / needs macro refinement / out of scope by design) — readers can tell what's a real engineering gap vs intentional. |
-| 8 | §12 encoder fraction of DS time | Added "Encoder fraction of DS" column to the DS-vs-DF table: 80% Q1, 83% Q6, 83% Q14, 10% Q21. Derived from existing data, no new measurement. |
+| 8 | §12 encoder fraction of DS time | Added "Encoder fraction of DS" column to the DS-vs-DF table: **17% Q1, 80% Q6, 75% Q14, 11% Q21** (corrected after P1 fix swapped count() → collect(); the pre-fix Q1/Q14 values were inflated by Catalyst pruning under count). Derived from existing data, no new measurement. |
 
 ## What's still uncertain (real follow-up work)
 
