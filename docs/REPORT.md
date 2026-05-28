@@ -474,14 +474,52 @@ delivers concrete benefits:
   externally-cited benefit of compile-time derivation, and it's also
   the most easily over-claimed. Going slowly:
 
-  GraalVM's `native-image` is an ahead-of-time (AOT) Java compiler
-  with a **closed-world assumption**: every class, method, and
-  field that runs at runtime must be discoverable at AOT-compile
-  time. The compiler does whole-program reachability analysis,
-  emits a self-contained native binary, and discards the JVM and
-  the JIT entirely. Cold start drops from ~300 ms (JVM init +
-  classloading) to single-digit ms because there's no JVM to
-  start.
+  **First, a critical distinction.** "GraalVM + Spark" can mean two
+  very different things, and the public conversation routinely
+  conflates them:
+
+  1. **GraalVM as a JVM JIT.** Use the GraalVM JDK distribution as
+     a drop-in OpenJDK replacement; the top-tier JIT is the Graal
+     compiler instead of HotSpot's C2. The application still runs
+     on a JVM. Class-loading, reflection, dynamic bytecode
+     generation all work exactly as before. **This works fine with
+     Spark today** — Meta swapped to GraalVM JIT and reported
+     ~10% CPU reduction on Spark workloads with zero code changes
+     (https://medium.com/graalvm/graalvm-at-facebook-af09338ac519);
+     Twitter did the same for 30+ Scala microservices in 2018
+     (https://www.oracle.com/a/ocom/docs/graalvm-twitter-casestudy-constellation.pdf).
+     A reader who has seen "Meta uses GraalVM with Spark" is
+     seeing *this* — the JIT replacement.
+
+  2. **GraalVM `native-image` (AOT).** A build-time tool that does
+     whole-program static analysis and emits a standalone native
+     executable. **The JVM is gone.** No class-loading, no
+     reflection mirror initialization, no runtime bytecode
+     generation. Cold start drops from ~300 ms (JVM init +
+     classloading) to single-digit ms. This is what the rest of
+     this bullet is about, and what our compile-time encoder
+     enables (in part).
+
+  **Nobody has run full Apache Spark as a native-image executable
+  successfully**, as of writing. A 2020 graalvm-users mailing list
+  thread asking "did anyone actually succeed in making Flink or
+  Spark work with GraalVM Native Image?" got no positive replies
+  (https://oss.oracle.com/pipermail/graalvm-users/2020-June/000230.html);
+  there is no SPIP or open Spark JIRA for native-image support;
+  Spark is absent from GraalVM's official "Libraries and
+  Frameworks Ready for Native Image" list
+  (https://www.graalvm.org/native-image/libraries-and-frameworks/).
+  The Spark Connect Go client sidesteps the JVM entirely rather
+  than AOT-compiling Scala. **This report does not change that.**
+  What it changes is *one specific blocker* on the path.
+
+  ### Why runtime reflection is hostile to native-image
+
+  Native-image's **closed-world assumption** requires every class,
+  method, and field reachable at runtime to be discoverable at
+  AOT-compile time. The compiler does whole-program reachability
+  analysis, emits a self-contained native binary, and discards
+  the JVM and the JIT entirely.
 
   Runtime reflection (`Class.forName`, `Method.invoke`,
   `Constructor.newInstance`, `scala.reflect.runtime.universe`) is
@@ -507,15 +545,34 @@ delivers concrete benefits:
   other Scala 3 program, no `reflect-config.json` required.
 
   **What this does NOT mean: "Spark becomes native-image ready."**
-  Spark has other AOT blockers: SQL/Catalyst's
-  `GenerateUnsafeProjection` does runtime bytecode generation
-  (Janino compiles emitted Java strings to bytecode and loads them
-  via a custom classloader — fundamentally incompatible with
-  closed-world AOT), `UDFRegistration` accepts arbitrary lambdas
-  and reflects on them, Hive UDFs are dynamically loaded, and so
-  on. **Removing the encoder is one specific blocker among
-  several.** What we deliver is the *typed Dataset[T] read/write
-  path* — the highest-traffic per-row operation — being AOT-clean.
+  Spark has other AOT blockers, and they are well-documented:
+
+  - **SQL/Catalyst's `GenerateUnsafeProjection`** does runtime
+    bytecode generation via Janino — emits Java source as a
+    string, compiles it in-process, loads the bytecode through a
+    custom classloader. Janino is a known blocker for native-image
+    even in much simpler contexts: Spring Boot and Logback have
+    open issues for the same reason
+    (https://github.com/spring-projects/spring-boot/issues/38347,
+    https://github.com/oracle/graal/issues/2115). Setting
+    `spark.sql.codegen.wholeStage=false` + `factoryMode=NO_CODEGEN`
+    forces an interpreted path that avoids Janino but doesn't
+    rescue `ExpressionEncoder`, which generates its own
+    `UnsafeProjection`-shaped serializers independently of
+    whole-stage codegen.
+  - **`UDFRegistration`** accepts arbitrary lambdas and reflects
+    on them.
+  - **Hive UDFs** are dynamically class-loaded.
+  - **The Spark shell / REPL** is fundamentally
+    bytecode-generation-driven and can't AOT-compile.
+
+  **Removing the encoder is one specific blocker among several.**
+  What we deliver is the *typed Dataset[T] read/write path* — the
+  highest-traffic per-row operation — being AOT-clean. The
+  Catalyst codegen path requires separate work (either swapping
+  Janino for a compile-time alternative, or accepting an
+  interpreted fallback in native-image builds with a separate
+  perf tradeoff).
 
   Realistic near-term scenarios this unlocks:
   - **Spark Connect clients/workers.** Spark Connect's protocol is
