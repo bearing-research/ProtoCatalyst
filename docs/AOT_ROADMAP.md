@@ -271,21 +271,203 @@ submission. Lambda-friendly, edge-friendly, embedded-host-friendly.
 
 ### Phase 2: AOT-clean Driver (decade horizon — or never)
 
-Requires solving item #2 (Janino → AOT-clean codegen). Options:
+Requires solving item #2 of the inventory (Janino → AOT-clean
+codegen). Catalyst's whole-stage codegen is the load-bearing piece:
+for each query plan fragment, `CodeGenerator` builds a Java source
+string, `ClassBodyEvaluator` compiles it to bytecode in-process,
+and a custom classloader makes the generated class available to
+the running JVM. Each link in that chain is forbidden by
+native-image's closed-world assumption.
 
-- **Replace Janino with a Scala 3 quoted-macro codegen path.** This
-  is essentially what ProtoCatalyst's executor module is doing
-  experimentally. Requires committing to compile-time codegen for
-  all of Catalyst.
-- **Accept interpreted-mode-only under native-image builds.**
-  Massive perf regression; only viable for development tooling, not
-  production execution.
-- **Wait for a Catalyst rewrite.** The Spark community may
-  eventually re-architect codegen for reasons unrelated to AOT;
-  ride that wave.
+There is no off-the-shelf fix. The serious options:
 
-**This is not a 2026–2027 effort. Probably not a 2028–2029 effort
-either.** Realistic alternative: see Phase 3.
+#### Option A: Replace Janino with compile-time codegen (Scala 3 macros)
+
+The idea: move codegen from query-time (runtime) to compile-time
+(at `scalac`). Each query plan shape becomes a specialized,
+statically-compiled execution path emitted by a Scala 3 macro.
+This is what ProtoCatalyst's `UnsafeRowSerializer` macro already
+does for encoders; extending it to full Catalyst execution would
+mean macro-emitting the equivalent of `WholeStageCodegenExec`'s
+output.
+
+**What works for this approach:**
+- For *typed* DataFrame/Dataset operations where the query shape
+  is captured in the type (`Dataset[User].filter(_.age > 18)`),
+  the plan is a compile-time type and a macro can emit the
+  specialized code without any runtime codegen.
+- For DSL-style queries — `quote { Table[User]("users").filter
+  (_.age > 18).select(_.name) }`, the pattern ProtoCatalyst's
+  `query` module already uses — the entire plan is known at
+  scalac time. Compile-time codegen is straightforward.
+- For statically known SQL strings inlined in source code,
+  `inline def query = sql"SELECT name FROM users WHERE age > 18"`
+  could parse the SQL at compile time (the `sql-parser` module
+  in this project does this) and emit the same specialized code.
+
+**What doesn't work:**
+- Dynamic SQL — `spark.sql(userInput)` where the query string is
+  constructed at runtime. The plan isn't known at compile time, so
+  no macro can emit code for it. **This is a hard cliff**: any
+  Spark application that takes SQL from a web form, API request,
+  CLI argument, etc. can't be native-image-compiled under this
+  scheme. For analytics-platform style usage (Databricks notebooks,
+  Spark SQL CLI, Spark Connect server) this is the entire workload.
+- Plans built up incrementally by user code that branches on
+  runtime data — `if (cond) df.filter(...) else df` where `cond`
+  isn't a constant. The branch makes the final plan shape
+  unknowable at compile time.
+
+**Engineering cost.** Catalyst's expression layer alone has ~93
+expression types (Add, GreaterThan, Cast, GetStructField, Coalesce,
+SubstringIndex, …) each with its own codegen path. The plan layer
+adds another ~25 (Filter, Project, HashAggregate, SortMergeJoin,
+…). A macro-based replacement would need either:
+- One macro case per Expression / plan node (the
+  ProtoCatalyst pattern — works but is a lot of mechanical code,
+  call it 6–12 months of focused work for full coverage), or
+- A more general framework that lets each Expression declare a
+  Scala 3 `Expr[T]` recipe for its compile-time codegen, plus
+  macro infrastructure that composes them. Cleaner in principle,
+  but the framework itself is a research project.
+
+**Precedents.** ProtoCatalyst does this for the encoder. Frameless
+does something similar at typeclass-derivation level but emits
+Catalyst expression trees (which then go through Janino), not
+direct code. Microsoft's LINQ / IQueryable family does
+compile-time codegen for typed queries; the same pattern would
+apply.
+
+**Bottom line.** Achievable for typed-only Spark applications
+(typed Dataset[T] + DSL, no dynamic SQL). **Not** achievable for
+"native-image any Spark application." A 12–18 month focused
+engineering effort would yield a typed-only AOT path; converting
+all of Catalyst is a multi-year rewrite.
+
+#### Option B: Re-express Catalyst as a GraalVM Truffle language
+
+The idea: instead of generating bytecode, express Catalyst
+expressions and operators as a [Truffle](https://www.graalvm.org/latest/graalvm-as-a-platform/language-implementation-framework/)
+AST. Truffle is Oracle's framework for building self-specializing
+interpreters that get JIT-compiled at runtime via Graal's partial
+evaluation. Critically, **Truffle interpreters are designed to
+work under native-image** — it's how GraalVM ships JavaScript,
+Python, Ruby, R, and LLVM bitcode as AOT-compiled native binaries.
+
+**How this would work for Spark:**
+1. Each Catalyst `Expression` (Add, Cast, GreaterThan, …) becomes
+   a Truffle `Node` subclass with type-specialized
+   `@Specialization` methods.
+2. Each plan operator (Filter, Project, HashAggregate, …) becomes
+   a higher-level Truffle node that walks rows and delegates to
+   expression nodes.
+3. A query plan becomes a Truffle AST built at query-time from
+   user input — but the AST is composed of pre-existing Node
+   types, not freshly generated bytecode.
+4. At AOT (native-image) build time, the Truffle framework + all
+   `Node` subclasses + the Graal partial evaluator are compiled
+   into the binary. No runtime bytecode generation needed.
+5. At runtime, Graal's partial evaluator specializes the AST for
+   the observed schema. Truffle's specialization framework
+   amortizes type checks via "uninitialized → specialized →
+   generic" state machines. Resulting machine code is typically
+   within 1.5–3× of hand-tuned JIT code.
+
+**Why this is more interesting than Option A:**
+- **Preserves Catalyst's runtime flexibility.** Dynamic SQL works.
+  Runtime-built plans work. The whole Spark API surface is
+  preserved.
+- **No `scalac`-time work for users.** They just run their Spark
+  app; the difference is invisible at the API layer.
+- **Designed for AOT by construction.** No reflection, no runtime
+  bytecode generation; Truffle's specialization mechanism is
+  AOT-compatible.
+
+**Why this hasn't been done:**
+- **Nobody has applied Truffle to a big-data execution engine.**
+  Truffle's published case studies are language interpreters
+  (JavaScript, Python, etc.) where the specialization story is
+  "amortize dynamic dispatch on observed runtime types." For Spark,
+  types are *already* statically known via Catalyst's schema —
+  Truffle's specialization machinery might add overhead rather
+  than buying you anything.
+- **Performance characterization is open.** Truffle hits ~1.5–3×
+  of hand-tuned JIT code on language-interpreter workloads.
+  Spark's WSCG is at the high end of what hand-tuned JIT
+  achieves. A Truffle-based Catalyst executor might land within
+  2–3× of current Spark, which could be a 2–3× regression for
+  CPU-bound queries — unacceptable for production analytics.
+- **Strategic coupling.** Truffle is Oracle-controlled (part of
+  GraalVM). Spark adopting Truffle would tie a fundamental layer
+  of the architecture to a single vendor's framework. The Apache
+  Software Foundation typically resists such couplings.
+- **Engineering cost.** Comparable to a full Catalyst rewrite. The
+  expression layer alone is 93 types; each needs Truffle Node
+  implementations with specialization slots. Plan operators need
+  Truffle-shaped equivalents. The whole-stage-codegen optimizer's
+  effects (operator fusion, predicate pushdown into iterations)
+  would need to be re-thought in Truffle's specialization-based
+  execution model.
+
+**Closest precedents:** Trino and Apache Drill have Catalyst-like
+codegen systems with the same Janino problem; neither has tried
+Truffle. Apache Flink uses Janino similarly. Apache Calcite
+(which Drill, Hive, and other systems build on) has open
+discussions about codegen replacement but no concrete proposal
+for Truffle. DuckDB uses a different approach entirely (vectorized
+execution with template instantiation at C++ compile time) that
+avoids the Janino class of problem but isn't directly portable to
+the JVM ecosystem.
+
+**Bottom line.** Plausible research direction, no prior art for
+big-data engines, performance is the open question, and the
+strategic-coupling concern is real. If a research group with
+Truffle experience took this on (Oracle GraalVM team
+collaborating with Databricks or the Spark community), it would
+be a 2–3 year effort and the result would be the first published
+case study of Truffle for an analytics engine. Worth flagging as
+a possibility; not actionable for the Spark community in its
+current state.
+
+#### Option C: Accept interpreted-mode-only under native-image
+
+Spark already has an interpreted execution path
+(`InterpretedUnsafeProjection`, `InterpretedPredicate`,
+`InterpretedMutableProjection`). It's correctness-equivalent to
+the codegen path; just dramatically slower (typically 3–10× on
+CPU-bound queries; sometimes more).
+
+A native-image build could disable codegen entirely
+(`spark.sql.codegen.factoryMode=NO_CODEGEN` *if*
+[SPARK-44236](https://issues.apache.org/jira/browse/SPARK-44236)
+gets fixed) and ship interpreted-only. Result: a Spark binary
+that works in AOT mode but pays a large perf tax.
+
+**Viable for**: development tooling, Spark shells/REPLs that
+don't have hot performance demands, edge analytics where the
+absolute throughput is small.
+
+**Not viable for**: production analytics. The whole point of
+Tungsten was to make codegen the default; removing it is a
+half-decade regression in user-visible perf.
+
+#### Synthesis
+
+For full-Spark native-image, no option is both performant and
+generally applicable today. The realistic distribution of effort
+is probably:
+
+| Option | Effort | Coverage | Perf | Realistic? |
+|---|---|---|---|---|
+| A (compile-time codegen) | 1–2 years | Typed-only | ≈ Spark | Yes, but constrained |
+| B (Truffle) | 2–3 years | Full Spark | 2–3× regression? | Research-grade |
+| C (interpreted-only) | weeks | Full Spark | 3–10× regression | Tooling-only |
+| Wait for Catalyst rewrite | indefinite | n/a | n/a | Indefinite |
+
+This is why the recommendations in §7 of this document **don't
+prescribe full-Spark native-image** as a near-term goal. The path
+forward is Phase 1 (Connect client) and Phase 3 (Leyden); Phase 2
+remains a research direction.
 
 ### Phase 3: Leyden adoption for full Spark (~6 months)
 
