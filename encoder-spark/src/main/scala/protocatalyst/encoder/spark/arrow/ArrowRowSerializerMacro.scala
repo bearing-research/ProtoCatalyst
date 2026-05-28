@@ -168,22 +168,26 @@ object ArrowRowSerializerMacro:
             if b == null then vec.setNull($rowIdx) else vec.setSafe($rowIdx, b)
         }
       case '[BigDecimal] =>
-        // Spark's ScalaDecimalEncoder defaults to Decimal(38, 18); Arrow's DecimalVector.setSafe
-        // requires the input BigDecimal to match the vector's scale. Spark calls `setScale(scale)`
-        // before set; we mirror with the hardcoded scale 18 baked into the schema.
+        // Mirrors Spark's `setDecimal` optimization: extract the JBigDecimal first (cheap getter)
+        // then setScale only if the scale doesn't already match the vector's. Avoids (a) the
+        // Scala-BigDecimal wrapper allocation that `bd.setScale(18)` would do, and (b) the
+        // JBigDecimal setScale allocation when the input is already at scale 18.
         val v = fieldAccess.asExprOf[BigDecimal]
         '{
           val bd = $v
           val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
           if bd == null then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, bd.setScale(18).bigDecimal)
+          else
+            val jbd = bd.bigDecimal
+            vec.setSafe($rowIdx, if jbd.scale == 18 then jbd else jbd.setScale(18))
         }
       case '[JBigDecimal] =>
         val v = fieldAccess.asExprOf[JBigDecimal]
         '{
           val bd = $v
           val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
-          if bd == null then vec.setNull($rowIdx) else vec.setSafe($rowIdx, bd.setScale(18))
+          if bd == null then vec.setNull($rowIdx)
+          else vec.setSafe($rowIdx, if bd.scale == 18 then bd else bd.setScale(18))
         }
       case '[LocalDate] =>
         val v = fieldAccess.asExprOf[LocalDate]
@@ -362,14 +366,19 @@ object ArrowRowSerializerMacro:
           val o = $opt
           val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
           if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, o.get.setScale(18).bigDecimal)
+          else
+            val jbd = o.get.bigDecimal
+            vec.setSafe($rowIdx, if jbd.scale == 18 then jbd else jbd.setScale(18))
         }
       case '[JBigDecimal] =>
         val opt = fieldAccess.asExprOf[Option[JBigDecimal]]
         '{
           val o = $opt
           val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get.setScale(18))
+          if o == null || o.isEmpty then vec.setNull($rowIdx)
+          else
+            val jbd = o.get
+            vec.setSafe($rowIdx, if jbd.scale == 18 then jbd else jbd.setScale(18))
         }
       case '[LocalDate] =>
         val opt = fieldAccess.asExprOf[Option[LocalDate]]
