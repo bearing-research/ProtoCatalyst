@@ -83,9 +83,9 @@ lazy val arrow = project
     name := "protocatalyst-arrow",
     commonSettings,
     libraryDependencies ++= Seq(
-      "org.apache.arrow" % "arrow-memory-core" % "18.1.0",
-      "org.apache.arrow" % "arrow-memory-unsafe" % "18.1.0",
-      "org.apache.arrow" % "arrow-vector" % "18.1.0",
+      "org.apache.arrow" % "arrow-memory-core" % "18.3.0",
+      "org.apache.arrow" % "arrow-memory-unsafe" % "18.3.0",
+      "org.apache.arrow" % "arrow-vector" % "18.3.0",
       // Parquet I/O (uses LocalInputFile/LocalOutputFile + PlainParquetConfiguration, no Hadoop in our code)
       "org.apache.parquet" % "parquet-hadoop" % "1.17.0",
       // Hadoop runtime deps required internally by parquet-hadoop's CodecFactory
@@ -239,10 +239,13 @@ lazy val benchmarkSpark = project
       "org.apache.spark" %% "spark-sql" % "4.1.2",
       "org.apache.spark" %% "spark-catalyst" % "4.1.2",
       "org.scala-lang" % "scala-reflect" % "2.13.16",  // Required for TypeTag
-      // Arrow dependencies for Arrow benchmarks
-      "org.apache.arrow" % "arrow-memory-core" % "18.1.0",
-      "org.apache.arrow" % "arrow-memory-unsafe" % "18.1.0",
-      "org.apache.arrow" % "arrow-vector" % "18.1.0"
+      // Arrow dependencies for Arrow benchmarks (aligned with Spark 4.1.2)
+      "org.apache.arrow" % "arrow-memory-core" % "18.3.0",
+      "org.apache.arrow" % "arrow-memory-unsafe" % "18.3.0",
+      "org.apache.arrow" % "arrow-memory-netty" % "18.3.0",
+      "org.apache.arrow" % "arrow-vector" % "18.3.0",
+      // Spark Connect's ArrowSerializer/ArrowDeserializer — reference impl for parity fixtures
+      "org.apache.spark" %% "spark-connect-common" % "4.1.2"
     ),
     Jmh / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
@@ -310,7 +313,11 @@ lazy val encoderSpark = project
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
       ("org.apache.spark" %% "spark-catalyst" % "4.1.2")
         .cross(CrossVersion.for3Use2_13)
-        .exclude("org.scala-lang.modules", "scala-xml_2.13")
+        .exclude("org.scala-lang.modules", "scala-xml_2.13"),
+      // Arrow path: macro emits Arrow Schema/Field/FieldVector usage directly, no Spark runtime dep
+      "org.apache.arrow" % "arrow-memory-core" % "18.3.0",
+      "org.apache.arrow" % "arrow-memory-netty" % "18.3.0",
+      "org.apache.arrow" % "arrow-vector" % "18.3.0"
     ),
     Test / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
