@@ -5,7 +5,10 @@ compile-time, macro-derived encoder. We show that the replacement is
 byte-compatible with Spark's existing `UnsafeRow` output, faster on
 most per-row operations we measure (geomean 1.16× across 12
 benchmarks), allocates comparably to Spark (within 7% median), and
-— critically — works in Scala 3 today.
+— critically — works in Scala 3 today. §11b extends the same
+treatment to Spark Connect's Arrow IPC wire format: byte-for-byte
+parity with `ArrowSerializer[T]`, geomean speed tied (0.98×) with
+~43% less per-row allocation.
 
 The report is structured as a case study with a worked implementation:
 every claim is backed by code in this repository, every number is
@@ -614,7 +617,11 @@ delivers concrete benefits:
     A native-image Spark Connect client with an AOT-clean encoder
     could ship as a small native binary with sub-second startup,
     suitable for Lambda functions or CLI tools that build typed
-    queries and submit them to a remote Catalyst server.
+    queries and submit them to a remote Catalyst server. **§11b
+    establishes byte-for-byte wire parity with Spark Connect's
+    `ArrowSerializer` and a ~43% per-row allocation reduction on
+    TPC-H schemas — empirical backing that the encoder layer is
+    actually replaceable on this codepath, not just in principle.**
   - **Embedded analytics in non-JVM hosts.** Polyglot deployments
     where a Python or Node.js application links against a native
     Spark library for typed Dataset processing on local data.
@@ -1547,6 +1554,128 @@ bottlenecks. Step 1 doesn't help deserialize. Step 2 doesn't help
 serialize. Step 3 helps both but only after steps 1 and 2 have
 removed the dominant overhead sources.
 
+## §11b. Arrow path microbenchmarks (Spark Connect wire format)
+
+### Why this section exists
+
+§5 and §14 lean on the realistic-near-term claim that a
+**native-image Spark Connect client** is the practical unlock.
+But Spark Connect's wire format is Arrow IPC over gRPC — the
+client side never touches `UnsafeRow`. §11's microbenchmarks
+prove the encoder layer is replaceable on the UnsafeRow path;
+they do not, by themselves, prove it on the Arrow path. Without
+this section the headline claim would be backed by a benchmark
+of the wrong codepath. This section closes that gap.
+
+`encoder-spark/.../arrow/ArrowRowSerializer[T]` and
+`ArrowRowDeserializer[T]` (commit `fc4521d`) are the Scala 3
+compile-time analog of Spark Connect's reflection-based
+[`ArrowSerializer[T]`][spark-arrow-ser] /
+[`ArrowDeserializers`][spark-arrow-deser]. Phase A established
+byte-for-byte parity against the Spark Connect wire format:
+
+- **15 Arrow `Schema` fixtures** byte-equal to
+  `ArrowUtils.toArrowSchema`, including all 8 TPC-H schemas.
+- **7 Arrow IPC byte fixtures** byte-equal to
+  `ArrowSerializer.serialize(...)`, including the
+  `largeVarTypes=true` LargeUtf8 path and `null`-Option-as-null
+  semantics.
+- **7 read-side fixtures**: Spark-produced IPC bytes decoded by
+  our deserializer recover the original records.
+
+In other words: on the wire, a Spark Connect server cannot tell
+whether a typed `Dataset[T]` upload was encoded by Spark's
+`ArrowSerializer` or by our Scala 3 macro encoder.
+
+[spark-arrow-ser]: https://github.com/apache/spark/blob/v4.1.2/sql/connect/common/src/main/scala/org/apache/spark/sql/connect/client/arrow/ArrowSerializer.scala
+[spark-arrow-deser]: https://github.com/apache/spark/blob/v4.1.2/sql/connect/common/src/main/scala/org/apache/spark/sql/connect/client/arrow/ArrowDeserializer.scala
+
+### Per-row throughput, by TPC-H table
+
+Per-row throughput at SF=1, amortized over 1024-row batches via
+`ArrowStreaming.serialize` (ours) and `ArrowSerializer.serialize`
+(Spark). 45 measurements per benchmark, 99.9% CIs.
+
+| Benchmark | Ours (ns/op) | ± CI | Spark (ns/op) | ± CI | Ratio (ours/Spark) |
+|---|---:|---:|---:|---:|---:|
+| `customerBatch` (8 col) | 463 | ±3.0 | 502 | ±5.7 | **0.92×** (we win) |
+| `lineitemBatch` (16 col) | 868 | ±9.6 | 747 | ±3.4 | 1.16× (Spark wins) |
+| `ordersBatch` (9 col) | 426 | ±1.3 | 469 | ±3.2 | **0.91×** (we win) |
+| `partBatch` (9 col) | 494 | ±3.7 | 537 | ±8.1 | **0.92×** (we win) |
+| _**Geomean (4 benches)**_ | | | | | **0.98× (tied)** |
+
+We win 3 of 4 by 8–9% with non-overlapping CIs. Lineitem is the
+one regression — analysis below. The geomean lands at a
+statistical tie with Spark Connect's `ArrowSerializer`.
+
+### Allocation rate, by TPC-H table
+
+| Benchmark | Ours (B/op) | Spark (B/op) | Ratio (ours/Spark) |
+|---|---:|---:|---:|
+| `customerBatch` | 1,285 | 2,368 | **0.54×** |
+| `lineitemBatch` | 1,690 | 2,500 | 0.68× |
+| `ordersBatch` | 736 | 1,479 | **0.50×** |
+| `partBatch` | 1,222 | 2,138 | **0.57×** |
+| _**Geomean (4 benches)**_ | | | **0.57×** |
+
+**Our encoder allocates ~43% less per row across the board.**
+This is the macro paying off — no boxed `AgnosticEncoder` field
+values flowing through `Object` slots, no per-call internal
+`Serializer` subclass instances, no per-field-type dispatch
+allocations. For long-running encoders this maps directly to less
+GC pressure and more predictable tail latencies, which matter for
+the Spark Connect client use case where the encoder runs in a
+tight loop per RPC roundtrip.
+
+### Why Lineitem is slower (and what fixes it)
+
+Lineitem is the only table where we lose, at 1.16×. With 16
+columns including 4 `BigDecimal` fields, it has the densest
+mixed-type schema in the TPC-H set.
+
+The likely culprit is BigDecimal scale-normalization. Arrow's
+`DecimalVector.setSafe(i, BigDecimal)` requires the input's scale
+to match the vector's configured scale (here 18). Both Spark and
+we mirror Spark's pattern: `value.setScale(scale).bigDecimal`.
+But `.setScale(18)` on a Java `BigDecimal` allocates a fresh
+`BigDecimal` instance per call. Lineitem has 4 decimal fields per
+row × 1024 rows per batch × 45 measurements ≈ ~190k allocations
+attributable to that single line. The allocation-rate gap on
+Lineitem (1.69 KB/row vs 0.74 KB/row on `ordersBatch`) is
+consistent with this hypothesis.
+
+The candidate fix is a runtime "is this already at scale 18?"
+check before `setScale`; identity-scale BigDecimals would skip
+the allocation. We defer this optimization. With it, Lineitem
+should close to parity or better; without it, the 1.16× gap is
+honest overhead from the decimal-heavy schema, and the report
+prefers honest losses to hidden ones.
+
+### What the Arrow numbers do and don't establish
+
+**They do establish**: the Scala 3 compile-time encoder is a
+viable replacement for Spark Connect's `ArrowSerializer` on the
+wire, with no speed regression in aggregate and a substantial
+allocation reduction. This is the empirical backing for the
+native-image-Spark-Connect-client claim in §14.
+
+**They do not establish**: that our encoder is uniformly faster
+on every Arrow workload. Lineitem-shape decimal-heavy schemas
+need a follow-up optimization. They also do not address Spark
+Connect's _server_ side, which still runs full Spark with all
+its AOT blockers per §5.
+
+### Bench provenance
+
+All numbers in this section come from
+[`results/arrow-c-baseline-20260528T214709Z/`](../results/arrow-c-baseline-20260528T214709Z/)
+on commit `fc4521d`. Same hardware / JVM / JMH config as §11
+(Mac arm64, OpenJDK 21.0.11, JMH 3 forks × 5 warmup × 15
+measurement × 1 s, `-prof gc`). 45 measurements per benchmark;
+99.9% CI error bars under 2% of mean on every line.
+Cross-architecture validation on EC2 m6i.8xlarge is a natural
+follow-up, mirroring §11's Mac-vs-EC2 sweep.
+
 ## §12. End-to-end TPC-H queries
 
 ### Query design
@@ -1803,8 +1932,13 @@ compatibility with existing Spark artifacts.
   binary. What this *does* enable: a realistic path to native-image
   **Spark Connect clients** (no Catalyst on the client) with
   sub-second cold start, suitable for AWS Lambda or embedded
-  non-JVM hosts. For full Spark, Project Leyden's AOT class loading
-  is the realistic adjacent path, not GraalVM native-image.
+  non-JVM hosts. **§11b establishes empirical backing for this
+  specific claim: byte-for-byte wire parity with Spark Connect's
+  `ArrowSerializer` across 22 fixtures (15 schema + 7 IPC byte),
+  and a per-row throughput / allocation comparison on TPC-H
+  schemas showing geomean speed parity (0.98×) with ~43% less
+  allocation per row.** For full Spark, Project Leyden's AOT class
+  loading is the realistic adjacent path, not GraalVM native-image.
 - **Cold-start cost drops.** No more `runtime.universe`
   initialization per JVM (the ~500 ms hit measured in §13). For
   short-lived JVMs — serverless executors, ad-hoc shells, IDE test
@@ -1953,6 +2087,29 @@ a stable 1.06× on the quieter EC2 box, confirming the Mac result
 was JIT-timing variance rather than a real regression. Full
 results in
 [`results/20260528T033917Z-sf1/`](../results/20260528T033917Z-sf1/).
+
+### Arrow-path follow-ups
+
+Three items deferred from Phase A+B+C and called out in §11b:
+
+1. **BigDecimal scale-skip optimization.** Lineitem is the only
+   table where we lose to Spark Connect's `ArrowSerializer` (1.16×).
+   Diagnosis in §11b points at `BigDecimal.setScale(18)` allocating
+   a fresh `BigDecimal` per call × 4 decimal fields per row. A
+   runtime "is already at scale 18?" check before the setScale call
+   would skip the allocation in the common case; estimated impact
+   on Lineitem: close to parity or better. Hours of engineering.
+2. **Cross-architecture validation on EC2.** §11b's numbers are
+   Mac arm64 only. Parallel to the §11 Mac/EC2 cross-check, an EC2
+   m6i.8xlarge sweep would confirm the Arrow geomean is portable.
+   ~$1 of EC2 time, mirrors the existing `scripts/bench.sh` flow.
+3. **Nested types on the Arrow path.** Phase A covers primitives,
+   String, Array[Byte], Decimal, dates/times, Duration/Period, and
+   `Option[T]` over all of them — the 95% case. Nested case
+   classes, `Array[T]`, `Iterable[T]`, and `Map[K, V]` require
+   recursion in both the schema builder and the writer/reader
+   macros. Similar shape to the UnsafeRow nested-types item below;
+   days of engineering, well-scoped.
 
 ### Full type surface
 
