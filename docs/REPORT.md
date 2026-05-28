@@ -489,9 +489,11 @@ Replacing `TypeTag` + `runtime.universe` with compile-time macros
 delivers concrete benefits:
 
 - **GraalVM `native-image` AOT compilation becomes viable for the
-  encoder layer.** This claim needs unpacking because it's the most
-  externally-cited benefit of compile-time derivation, and it's also
-  the most easily over-claimed. Going slowly:
+  encoder layer — one of ~15 AOT blockers in Spark 4.1 (full
+  inventory in [`docs/AOT_ROADMAP.md`](AOT_ROADMAP.md)).** This
+  claim needs unpacking because it's the most externally-cited
+  benefit of compile-time derivation, and it's also the most easily
+  over-claimed. Going slowly:
 
   **First, a critical distinction.** "GraalVM + Spark" can mean two
   very different things, and the public conversation routinely
@@ -574,7 +576,9 @@ delivers concrete benefits:
   other Scala 3 program, no `reflect-config.json` required.
 
   **What this does NOT mean: "Spark becomes native-image ready."**
-  Spark has other AOT blockers, and they are well-documented:
+  The encoder is one of ~15 AOT blockers; the structurally hardest
+  one — Catalyst whole-stage codegen via Janino — is unaffected by
+  this work. Other major blockers:
 
   - **SQL/Catalyst's `GenerateUnsafeProjection`** does runtime
     bytecode generation via Janino — emits Java source as a
@@ -597,13 +601,12 @@ delivers concrete benefits:
   - **The Spark shell / REPL** is fundamentally
     bytecode-generation-driven and can't AOT-compile.
 
-  **Removing the encoder is one specific blocker among several.**
-  What we deliver is the *typed Dataset[T] read/write path* — the
-  highest-traffic per-row operation — being AOT-clean. The
-  Catalyst codegen path requires separate work (either swapping
-  Janino for a compile-time alternative, or accepting an
-  interpreted fallback in native-image builds with a separate
-  perf tradeoff).
+  **The encoder is one specific blocker among ~15.** What we
+  deliver is the *typed `Dataset[T]` read/write path* being
+  AOT-clean. The Catalyst codegen path requires separate work; see
+  [`AOT_ROADMAP.md`](AOT_ROADMAP.md) §6 for why none of the
+  candidate replacements (compile-time macros, Truffle, interpreted
+  fallback) is a near-term win.
 
   Realistic near-term scenarios this unlocks:
   - **Spark Connect clients/workers.** Spark Connect's protocol is
@@ -1792,17 +1795,16 @@ compatibility with existing Spark artifacts.
   could upgrade typed `Dataset[T]` code, and the cross-version
   workarounds catalogued in §8 disappear from every downstream
   user's build.
-- **GraalVM native-image AOT becomes viable for the encoder layer
-  specifically** (full mechanism in §5). The encoder stops blocking
-  AOT compilation because it emits only static bytecode with no
-  runtime reflection. This is a *necessary* step toward
-  native-image-deployable Spark, not a sufficient one — Spark
-  has other AOT blockers (notably `GenerateUnsafeProjection`'s
-  runtime bytecode generation via Janino) that would need separate
-  work. The realistic near-term win: native-image Spark Connect
-  clients with sub-second cold start, opening deployment
-  topologies like AWS Lambda typed-query submission or embedded
-  analytics in non-JVM hosts.
+- **One AOT blocker removed — not all of them.** The encoder is
+  one of ~15 AOT blockers in Spark 4.1
+  ([`docs/AOT_ROADMAP.md`](AOT_ROADMAP.md)); the structural one,
+  Catalyst whole-stage codegen via Janino, is unaffected by this
+  work. Full Spark is not close to running as a native-image
+  binary. What this *does* enable: a realistic path to native-image
+  **Spark Connect clients** (no Catalyst on the client) with
+  sub-second cold start, suitable for AWS Lambda or embedded
+  non-JVM hosts. For full Spark, Project Leyden's AOT class loading
+  is the realistic adjacent path, not GraalVM native-image.
 - **Cold-start cost drops.** No more `runtime.universe`
   initialization per JVM (the ~500 ms hit measured in §13). For
   short-lived JVMs — serverless executors, ad-hoc shells, IDE test
