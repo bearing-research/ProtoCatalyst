@@ -156,15 +156,20 @@ The `AgnosticEncoder` abstraction was introduced in Spark 3.5 to
 support the Spark Connect wire protocol; it decouples the type
 description from the in-process execution engine.
 
-Spark 4.1 ships ~30 concrete `AgnosticEncoder` leaf and structural
-variants: `PrimitiveBooleanEncoder`, `BoxedIntEncoder`,
-`StringEncoder`, `ScalaDecimalEncoder`, `LocalDateEncoder` (with a
-lenient flag), `InstantEncoder`, `LocalTimeEncoder` (new in 4.1),
-`BinaryEncoder`, `CalendarIntervalEncoder`, `VariantEncoder`,
-`GeographyEncoder` (4.1), `GeometryEncoder` (4.1), plus structural
-encoders: `ProductEncoder`, `OptionEncoder`, `IterableEncoder`,
-`MapEncoder`, `UDTEncoder`, `TransformingEncoder`. Our compile-time
-encoder matches this catalog at the type level; the full
+Spark 4.1.2 ships 47 concrete `AgnosticEncoder` variants (counted
+from the source: 10 structural + 14 primitive/boxed leaves + 22
+other leaves + 1 transforming encoder). The leaf side covers
+everything from primitives to geospatial types
+(`GeographyEncoder` / `GeometryEncoder`, both new in 4.1).
+Examples on the leaf side: `PrimitiveBooleanEncoder`,
+`BoxedIntEncoder`, `StringEncoder`, `ScalaDecimalEncoder`,
+`LocalDateEncoder` (with a lenient flag), `InstantEncoder`,
+`LocalTimeEncoder` (new in 4.1), `BinaryEncoder`,
+`CalendarIntervalEncoder`, `VariantEncoder`, `GeographyEncoder`,
+`GeometryEncoder`. Structural side: `ProductEncoder`,
+`OptionEncoder`, `IterableEncoder`, `MapEncoder`, `UDTEncoder`,
+`TransformingEncoder`. Our compile-time encoder matches this
+catalog at the type level for the subset we target (§7); the full
 cross-reference lives in [`docs/ENCODER_PARITY.md`](ENCODER_PARITY.md).
 
 ### The TypeTag-based derivation
@@ -180,9 +185,11 @@ def encoderFor[E: TypeTag]: AgnosticEncoder[E] = {
 `TypeTag[T]` is Scala 2's reflective handle on the structural shape
 of `T`. To access it, the JVM must initialize
 `scala.reflect.runtime.universe` — a 500+ class subsystem that walks
-the JVM's class hierarchy at first access. On JDK 21, this
-initialization takes 50–100 ms wall-clock and tens of megabytes of
-heap.
+the JVM's class hierarchy at first access. **Measured on JDK 21 /
+Apple Silicon: a Scala 2.13 main that does nothing but `val u =
+scala.reflect.runtime.universe` (and a control measurement of an
+empty main as baseline) takes ~500 ms longer than the baseline.**
+The first encoder construction in a JVM pays this cost once.
 
 It also walks the `scala.Array` companion to populate its symbol
 table. **On a Scala 3 classpath, this walk fails** — the Scala 3
@@ -265,8 +272,10 @@ make this precise.
 ## §4. Why Spark can't simply move to Scala 3
 
 The Scala community has shipped Scala 3 since May 2021. Most major
-libraries — Akka, Cats, Circe, Play, ZIO, http4s — have Scala 3
-artifacts published. Spark does not.
+libraries — Cats, Circe, Play, ZIO, http4s, Akka/Pekko (Akka under
+its post-2022 BUSL license; Pekko as the ASF fork of Akka 2.6, both
+cross-built for Scala 3.3+) — have Scala 3 artifacts published.
+Spark does not.
 
 The reason is the encoder. Specifically: `ExpressionEncoder[T]()`
 requires a `TypeTag[T]`, and `TypeTag` requires Scala 2's
@@ -349,10 +358,14 @@ that provides a typed `Dataset`-like API in Scala 2 by building
 Catalyst `Expression` trees from typed values. Avoids `TypeTag` on
 its own surface but is itself Scala 2.13 and delegates to Spark's
 codegen — so it works *in Scala 2.13* and doesn't help the Scala 3
-case. Frameless's documentation claims "identical performance" to
-`ExpressionEncoder`; this is literally true because Frameless emits
-the same Catalyst expression trees Spark would generate from a
-`TypeTag`, then runs them through the same `GenerateUnsafeProjection`.
+case. Frameless's own [documentation states][frameless-perf]: "once
+derived, reflection-based `Encoder`s and implicitly derived
+`TypeEncoder`s have identical performance." This is true because
+Frameless emits the same Catalyst expression trees Spark would
+generate from a `TypeTag`, then runs them through the same
+`GenerateUnsafeProjection`.
+
+[frameless-perf]: https://typelevel.org/frameless/TypedEncoder.html
 
 **Use [`spark-scala3`][sparkscala3].** A thin Scala 3 surface around
 Spark's Scala 2.13 jars via sbt's `CrossVersion.for3Use2_13`. Works
@@ -370,9 +383,15 @@ at jsoniter-scala, circe, Frameless, magnolia, chimney) and found
 encoder. The closest neighbors:
 
 - [`jsoniter-scala`][js] uses Scala 3 quoted macros to derive JSON
-  codecs that beat Jackson by ~1.5–2× on similar workloads. The
-  pattern is direct — but it targets JSON byte strings, not Spark's
-  `UnsafeRow` layout.
+  codecs that consistently outperform `jackson-module-scala`
+  across published benchmarks
+  ([plokhotnyuk.github.io/jsoniter-scala][js-bench]); the margins
+  vary by payload shape but the consistent direction is the same
+  one we observe in this report. The pattern is direct emission
+  of monomorphic specialized code — but it targets JSON byte
+  strings, not Spark's `UnsafeRow` layout.
+
+[js-bench]: https://plokhotnyuk.github.io/jsoniter-scala/
 - [`circe`][circe] uses Magnolia-derived encoders for JSON ASTs.
   Same family of techniques.
 - Frameless (above) — delegates to Spark, isn't independent
@@ -495,8 +514,16 @@ delivers concrete benefits:
      whole-program static analysis and emits a standalone native
      executable. **The JVM is gone.** No class-loading, no
      reflection mirror initialization, no runtime bytecode
-     generation. Cold start drops from ~300 ms (JVM init +
-     classloading) to single-digit ms. This is what the rest of
+     generation. Cold start drops by an order of magnitude on
+     real applications; published Spring Boot 3.2 REST benchmarks
+     report ~1.42 s on JDK 21 HotSpot dropping to ~407 ms with
+     GraalVM 24 native-image (71% reduction;
+     [johal.in deep-dive](https://johal.in/deep-dive-graalvm-24-native-image-internals-it/)).
+     Production migrations have reported 7 s → 80 ms in the best
+     case. The single-digit-ms numbers people quote are for
+     trivial programs (`Hello, world`); a realistic Spark Connect
+     client would land in the ~100–500 ms range. This is what the
+     rest of
      this bullet is about, and what our compile-time encoder
      enables (in part).
 
@@ -509,8 +536,10 @@ delivers concrete benefits:
   Spark is absent from GraalVM's official "Libraries and
   Frameworks Ready for Native Image" list
   (https://www.graalvm.org/native-image/libraries-and-frameworks/).
-  The Spark Connect Go client sidesteps the JVM entirely rather
-  than AOT-compiling Scala. **This report does not change that.**
+  The Spark Connect ecosystem has produced a Go client
+  (https://github.com/apache/spark-connect-go) — a different
+  language, not the JVM — but no native-image build of the Scala
+  client. **This report does not change that.**
   What it changes is *one specific blocker* on the path.
 
   ### Why runtime reflection is hostile to native-image
@@ -555,11 +584,13 @@ delivers concrete benefits:
     open issues for the same reason
     (https://github.com/spring-projects/spring-boot/issues/38347,
     https://github.com/oracle/graal/issues/2115). Setting
-    `spark.sql.codegen.wholeStage=false` + `factoryMode=NO_CODEGEN`
-    forces an interpreted path that avoids Janino but doesn't
-    rescue `ExpressionEncoder`, which generates its own
-    `UnsafeProjection`-shaped serializers independently of
-    whole-stage codegen.
+    `spark.sql.codegen.wholeStage=false` (a public config) plus
+    `spark.sql.codegen.factoryMode=NO_CODEGEN` (which Spark's own
+    SQLConf marks *"only for the internal usage, and NOT supposed
+    to be set by end users"*) forces an interpreted path that
+    avoids Janino. But even that doesn't rescue
+    `ExpressionEncoder`, which builds `UnsafeProjection`-shaped
+    serializers via Janino independently of whole-stage codegen.
   - **`UDFRegistration`** accepts arbitrary lambdas and reflects
     on them.
   - **Hive UDFs** are dynamically class-loaded.
@@ -578,7 +609,7 @@ delivers concrete benefits:
   - **Spark Connect clients/workers.** Spark Connect's protocol is
     Arrow + gRPC; the client doesn't need full Catalyst at runtime.
     A native-image Spark Connect client with an AOT-clean encoder
-    could ship as a ~30 MB binary with single-digit-ms startup,
+    could ship as a small native binary with sub-second startup,
     suitable for Lambda functions or CLI tools that build typed
     queries and submit them to a remote Catalyst server.
   - **Embedded analytics in non-JVM hosts.** Polyglot deployments
@@ -594,8 +625,10 @@ delivers concrete benefits:
   AOT-clean Scala code; the rest of Spark's AOT-readiness story is
   separate work this report doesn't address.**
 - **No `scala.reflect.runtime.universe` initialization.** The
-  ~50–100 ms JDK-21 cold-start cost we measure indirectly via
-  Spark's own codegen log lines (§13) disappears entirely.
+  ~500 ms JDK-21 cold-start cost measured directly in §13 (a
+  Scala 2.13 main that does nothing but touch the universe) is
+  paid by every JVM that ever instantiates an `ExpressionEncoder`;
+  our compile-time encoder pays zero of it.
 - **Schema validation at compile time.** A misspelled case-class
   field, a wrong type, a missing field — these become `scalac`
   errors rather than runtime "no such column" failures at first
@@ -1001,16 +1034,23 @@ when the wall comes down.
 
 Tracking concretely for this project:
 
-- **~12 lines of build.sbt** specifically for the cross-version
-  workarounds (`for3Use2_13`, exclusions,
-  `allowUnsafeScalaLibUpgrade`, the extra `--add-opens` flags).
-- **~150 lines of duplicated code** (case classes and the `.tbl`
-  parser exist in both Scala 3 and Scala 2.13 modules because they
-  can't share).
-- **~300 lines of fixture-generation infrastructure**
-  (`UnsafeRowParityFixtures`, `TpchParquetConverter`,
-  `TpchQueryBench`) — needed because we can't simply call
-  `ExpressionEncoder` from Scala 3 tests.
+- **8 lines of build.sbt** specifically for the cross-version
+  workarounds (`for3Use2_13`, scala-xml exclusions,
+  `allowUnsafeScalaLibUpgrade`, the `sun.util.calendar` /
+  `sun.security.action` opens, `userClassPathFirst`). Counted by
+  `grep -c` of the matching incantations against the committed
+  build.sbt.
+- **236 lines of duplicated code** across `Schemas.scala`,
+  `TblParser.scala`, and `TpchData.scala` — these case classes
+  and parsers exist in both the Scala 3 (`encoder-spark`) and
+  Scala 2.13 (`benchmark-spark`) modules because cross-version
+  type sharing isn't available.
+- **474 lines of fixture-generation infrastructure** —
+  `UnsafeRowParityFixtures.scala` (146 lines, the byte-parity
+  producer), `TpchParquetConverter.scala` (137), and
+  `TpchQueryBench.scala` (191). All Scala 2.13 because they call
+  Spark directly; needed *only* because we can't invoke
+  `ExpressionEncoder` from Scala 3.
 - **One additional JVM fork per cross-version round trip**, with
   the corresponding bench-orchestration complexity in
   `scripts/bench.sh`.
@@ -1552,8 +1592,12 @@ Spark's encoder construction path involves:
    `ScalaReflection.encoderFor[T]` → walk `TypeTag[T]` via
    `scala.reflect.runtime.universe`. Forces initialization of
    Scala 2's reflection runtime on first encoder construction in
-   the JVM. Per JDK 21 observations, ~50–100 ms wall-clock for
-   the universe initialization itself.
+   the JVM. **Measured directly: ~500 ms wall-clock on JDK 21 /
+   Apple Silicon.** A Scala 2.13 main whose only statement is
+   `val u = scala.reflect.runtime.universe` reports ~500 ms vs
+   a baseline empty main at ~60 ms. The cost is the symbol-table
+   walk + scala-reflect classloading; it's paid once per JVM
+   regardless of how many encoders are subsequently constructed.
 2. **Codegen build**: `createSerializer()` /
    `resolveAndBind().createDeserializer()` build a
    `UnsafeProjection` via `GenerateUnsafeProjection`. This is
@@ -1686,13 +1730,14 @@ compatibility with existing Spark artifacts.
   has other AOT blockers (notably `GenerateUnsafeProjection`'s
   runtime bytecode generation via Janino) that would need separate
   work. The realistic near-term win: native-image Spark Connect
-  clients with single-digit-ms cold start, opening deployment
+  clients with sub-second cold start, opening deployment
   topologies like AWS Lambda typed-query submission or embedded
   analytics in non-JVM hosts.
 - **Cold-start cost drops.** No more `runtime.universe`
-  initialization per JVM (the 50–100 ms hit measured in §13). For
+  initialization per JVM (the ~500 ms hit measured in §13). For
   short-lived JVMs — serverless executors, ad-hoc shells, IDE test
-  runs — this is observable user-facing latency.
+  runs — half a second of unavoidable startup latency is the
+  difference between "instant" and "noticeable."
 - **Type errors caught at compile time.** A misspelled case-class
   field, a wrong type, a missing field — these become `scalac`
   errors rather than runtime "no such column" failures at first
