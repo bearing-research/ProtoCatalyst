@@ -162,6 +162,17 @@ if [[ ${SKIP_DATA} -eq 0 ]]; then
   else
     echo "    Parquet already exists, skipping."
   fi
+
+  # The JMH micro suites read .tbl at sf=0.01 and sf=1 (their @Param values, capped at
+  # TpchData.SAMPLE_LIMIT rows) regardless of the E2E SF. Make sure those exist too.
+  if [[ ${SKIP_MICRO} -eq 0 ]]; then
+    for msf in 0.01 1; do
+      if [[ ! -f "data/tpch/sf-${msf}/lineitem.tbl" ]]; then
+        echo "==> Step 1c: generating micro TPC-H data at SF=${msf}"
+        ./scripts/gen-tpch.sh "${msf}"
+      fi
+    done
+  fi
 else
   echo "==> Step 1: skipped (--skip-data)"
 fi
@@ -169,25 +180,50 @@ fi
 # === Step 2: JMH microbenchmarks ===
 
 if [[ ${SKIP_MICRO} -eq 0 ]]; then
+  # The micro suites carry their own @Param(sf = {0.01, 1}); these are scale-invariant beyond
+  # ~10k rows (TpchData.SAMPLE_LIMIT) and are the canonical params behind report §11 (UnsafeRow)
+  # and §11b (Arrow). They run the same regardless of the E2E SF arg.
+  MICRO_SF_ARGS="-p sf=0.01 -p sf=1"
+
   echo ""
-  echo "==> Step 2a: JMH encoder microbench (ProtoCatalyst / Scala 3)"
+  echo "==> Step 2a: JMH UnsafeRow microbench (ProtoCatalyst / Scala 3)  [§11]"
   sbt "benchmarks/Jmh/run \
     -f ${JMH_FORKS} -wi ${JMH_WARMUP} -i ${JMH_MEASURE} \
-    -p sf=${SF} \
+    ${MICRO_SF_ARGS} \
     -rf json -rff ${OUT_DIR}/micro-protocatalyst.json \
     -prof gc \
     TpchUnsafeRowBenchmarks"
   echo "==> wrote ${OUT_DIR}/micro-protocatalyst.json"
 
   echo ""
-  echo "==> Step 2b: JMH encoder microbench (Spark ExpressionEncoder / Scala 2.13)"
+  echo "==> Step 2b: JMH UnsafeRow microbench (Spark ExpressionEncoder / Scala 2.13)  [§11]"
   sbt "benchmarkSpark/Jmh/run \
     -f ${JMH_FORKS} -wi ${JMH_WARMUP} -i ${JMH_MEASURE} \
-    -p sf=${SF} \
+    ${MICRO_SF_ARGS} \
     -rf json -rff ${OUT_DIR}/micro-spark.json \
     -prof gc \
     TpchSparkEncoderBenchmarks"
   echo "==> wrote ${OUT_DIR}/micro-spark.json"
+
+  echo ""
+  echo "==> Step 2c: JMH Arrow microbench (ProtoCatalyst / Scala 3)  [§11b]"
+  sbt "benchmarks/Jmh/run \
+    -f ${JMH_FORKS} -wi ${JMH_WARMUP} -i ${JMH_MEASURE} \
+    ${MICRO_SF_ARGS} \
+    -rf json -rff ${OUT_DIR}/micro-arrow-protocatalyst.json \
+    -prof gc \
+    TpchArrowRowSerializerBenchmarks"
+  echo "==> wrote ${OUT_DIR}/micro-arrow-protocatalyst.json"
+
+  echo ""
+  echo "==> Step 2d: JMH Arrow microbench (Spark Connect ArrowSerializer / Scala 2.13)  [§11b]"
+  sbt "benchmarkSpark/Jmh/run \
+    -f ${JMH_FORKS} -wi ${JMH_WARMUP} -i ${JMH_MEASURE} \
+    ${MICRO_SF_ARGS} \
+    -rf json -rff ${OUT_DIR}/micro-arrow-spark.json \
+    -prof gc \
+    TpchSparkConnectArrowBenchmarks"
+  echo "==> wrote ${OUT_DIR}/micro-arrow-spark.json"
 else
   echo "==> Step 2: skipped (--skip-micro)"
 fi

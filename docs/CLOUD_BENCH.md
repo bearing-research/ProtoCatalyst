@@ -78,6 +78,58 @@ Before publishing any number from the cloud run:
   60% cheaper, but a 90-minute run that gets killed at minute 89 is
   expensive in time. Recommend on-demand for the benchmark itself.
 
+## Cross-architecture validation (Graviton / Intel / AMD)
+
+The single-box numbers above (and the §11/§11b microbenchmarks) are produced on one
+machine. A reviewer's first objection to a microbenchmark is *"it doesn't generalize."*
+To answer that, run the same `bench.sh` on three current-generation CPU families and
+confirm the ratios hold:
+
+| Label    | Instance      | CPU                        | arch  |
+|----------|---------------|----------------------------|-------|
+| graviton | `c7g.4xlarge` | AWS Graviton3 (Neoverse V1)| arm64 |
+| intel    | `c7i.4xlarge` | Intel Sapphire Rapids      | amd64 |
+| amd      | `c7a.4xlarge` | AMD EPYC (Genoa)           | amd64 |
+
+`scripts/ec2-cross-arch.sh` provisions one instance, rsyncs the working tree (no
+private-repo clone needed), installs JDK 21 + sbt, runs the full `bench.sh`, copies the
+results back, and **always terminates the instance** (EXIT trap). It auto-creates an EC2
+key pair and a security group that allows SSH from your current public IP only.
+
+```sh
+# Credentials + region must be configured (aws configure / AWS_PROFILE).
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+
+# Dry-run first — prints the launch plan, spends nothing.
+scripts/ec2-cross-arch.sh --label graviton --instance-type c7g.4xlarge --cpu-arch arm64 \
+  --sf 1 --out results/cross-arch-$TS/graviton --dry-run
+
+# Run all three (in parallel — each is independent and self-terminating).
+scripts/ec2-cross-arch.sh --label graviton --instance-type c7g.4xlarge --cpu-arch arm64 \
+  --sf 1 --out results/cross-arch-$TS/graviton &
+scripts/ec2-cross-arch.sh --label intel    --instance-type c7i.4xlarge --cpu-arch amd64 \
+  --sf 1 --out results/cross-arch-$TS/intel &
+scripts/ec2-cross-arch.sh --label amd      --instance-type c7a.4xlarge --cpu-arch amd64 \
+  --sf 1 --out results/cross-arch-$TS/amd &
+wait
+
+# Aggregate into the cross-arch comparison tables (§11 + §11b).
+scripts/cross_arch_report.py \
+  graviton=results/cross-arch-$TS/graviton \
+  intel=results/cross-arch-$TS/intel \
+  amd=results/cross-arch-$TS/amd
+```
+
+Cost: ~$0.58–0.73/instance-hour; a full `bench.sh` (SF=1, all four micro suites at
+publication params + E2E queries) is ~60–90 min, so a three-arch sweep is roughly
+**$3–5 total**. Bump `--sf` for a larger E2E working set (needs a bigger instance for
+SF≥100). The `--no-terminate` flag leaves an instance up for debugging — you then pay
+until you kill it manually.
+
+What to look for: the §11b Arrow throughput geomean (ours/Spark) and the §11 UnsafeRow
+speedup should be stable across all three arches. Large divergence (>~15%) on one arch
+is a finding worth documenting, not hiding.
+
 ## Cross-checking with Photon-paper-style cluster runs
 
 This doc only covers single-node. A 4-node m6i.4xlarge cluster
