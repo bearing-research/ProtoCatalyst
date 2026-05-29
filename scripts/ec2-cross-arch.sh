@@ -148,6 +148,11 @@ for i in $(seq 1 40); do
   [[ $i -eq 40 ]] && { echo "[$LABEL] sshd never came up" >&2; exit 1; }
 done
 
+# --- dead-man's switch: self-terminate after 4h even if this orchestrator dies ---
+# (shutdown-behavior=terminate above turns the OS shutdown into an instance termination.)
+say "arming 4h self-termination safety net"
+"${SSH[@]}" "sudo shutdown -h +240" >/dev/null 2>&1 || true
+
 # --- provision toolchain ---
 say "installing JDK 21 + build tools + sbt (coursier)..."
 CS_ARCH="x86_64"; [[ "$CPU_ARCH" == "arm64" ]] && CS_ARCH="aarch64"
