@@ -29,6 +29,13 @@ import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
   */
 object ArrowSchemaBuilders:
 
+  /** The single point of truth for the default Decimal type. Equivalent to Spark's
+    * `DecimalType.SYSTEM_DEFAULT` — what `ScalaDecimalEncoder` / `JavaDecimalEncoder` pick when
+    * no annotation specifies precision/scale. Cached as a `val` so every Schema build reuses the
+    * same `ArrowType.Decimal` instance.
+    */
+  val defaultDecimalType: ArrowType = new ArrowType.Decimal(38, 18, 128)
+
   /** Build an Arrow Schema for case class `T` at the call site. */
   inline def schemaFor[T](inline timeZoneId: String, inline largeVarTypes: Boolean): Schema =
     ${ schemaForImpl[T]('timeZoneId, 'largeVarTypes) }
@@ -121,10 +128,12 @@ object ArrowSchemaBuilders:
             else ArrowType.Binary.INSTANCE
           }
         )
-      // Spark's Decimal default for case-class BigDecimal is precision=38, scale=18 — matches
-      // ExpressionEncoder.scalaDecimal / javaDecimal in `org.apache.spark.sql.catalyst.JavaTypeInference`.
-      case '[BigDecimal]  => (true, '{ new ArrowType.Decimal(38, 18, 128) })
-      case '[JBigDecimal] => (true, '{ new ArrowType.Decimal(38, 18, 128) })
+      // Spark's Decimal default for case-class BigDecimal is precision=38, scale=18, width=128
+      // (= `DecimalType.SYSTEM_DEFAULT`, what `ScalaDecimalEncoder` picks when no annotation
+      // narrows it). The writer macro reads the vector's scale at runtime so changing this
+      // tuple here (e.g., to add an annotation-driven path) doesn't require touching the writer.
+      case '[BigDecimal]  => (true, '{ ArrowSchemaBuilders.defaultDecimalType })
+      case '[JBigDecimal] => (true, '{ ArrowSchemaBuilders.defaultDecimalType })
       case '[LocalDate]   => (true, '{ new ArrowType.Date(DateUnit.DAY) })
       case '[jsql.Date]   => (true, '{ new ArrowType.Date(DateUnit.DAY) })
       case '[Instant] =>
