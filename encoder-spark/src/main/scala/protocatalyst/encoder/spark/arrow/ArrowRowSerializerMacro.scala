@@ -29,7 +29,7 @@ import org.apache.arrow.vector.{
   VarBinaryVector,
   VarCharVector
 }
-import org.apache.arrow.vector.complex.{ListVector, StructVector}
+import org.apache.arrow.vector.complex.{ListVector, MapVector, StructVector}
 /** Quoted-macro implementation of `ArrowRowSerializer.derived[T]`.
   *
   * Emits two pieces of code at scalac time:
@@ -104,16 +104,28 @@ object ArrowRowSerializerMacro:
     Block(stmts, '{ () }.asTerm).asExprOf[Unit]
 
   /** Element type of a non-Array collection that maps to Arrow `List` (any `Iterable` other than
-    * `Map`, which is deferred). Returns `None` otherwise.
+    * `Map`, which has its own `ArrowType.Map` handling). Returns `None` otherwise.
     */
   private def seqElementType(using
       Quotes
   )(tpe: quotes.reflect.TypeRepr): Option[quotes.reflect.TypeRepr] =
     import quotes.reflect.*
-    if tpe <:< TypeRepr.of[scala.collection.Map[Any, Any]] then None
+    // Map excluded here (own Arrow mapping); detected via symbol since Map's key is invariant.
+    if mapKeyValueType(tpe).isDefined then None
     else if tpe <:< TypeRepr.of[scala.collection.Iterable[Any]] then
       tpe.baseType(TypeRepr.of[scala.collection.Iterable].typeSymbol).typeArgs.headOption
     else None
+
+  /** `(keyType, valueType)` if `tpe` is a `scala.collection.Map`, else `None`. Uses `baseType`
+    * (symbol-based) rather than `<:<` because Map's key parameter is invariant.
+    */
+  private def mapKeyValueType(using
+      Quotes
+  )(tpe: quotes.reflect.TypeRepr): Option[(quotes.reflect.TypeRepr, quotes.reflect.TypeRepr)] =
+    import quotes.reflect.*
+    tpe.baseType(TypeRepr.of[scala.collection.Map].typeSymbol) match
+      case AppliedType(_, k :: v :: Nil) => Some((k, v))
+      case _                             => None
 
   // ---------------------------------------------------------------------------
   // Recursive per-value write. Writes a value of static type `V` into the Arrow
@@ -279,26 +291,39 @@ object ArrowRowSerializerMacro:
         buildArrayListWrite[t](vec, elemIdx, value.asExprOf[Array[t]], largeVarTypes)
       case _ =>
         val tpe = TypeRepr.of[V]
-        seqElementType(tpe) match
-          case Some(elem) =>
-            elem.asType match
-              case '[e] =>
-                buildSeqListWrite[e](
-                  vec,
-                  elemIdx,
-                  value.asExprOf[scala.collection.Iterable[e]],
-                  largeVarTypes
-                )
+        mapKeyValueType(tpe) match
+          case Some((kt, vt)) =>
+            kt.asType match
+              case '[k] =>
+                vt.asType match
+                  case '[v] =>
+                    buildMapWrite[k, v](
+                      vec,
+                      elemIdx,
+                      value.asExprOf[scala.collection.Map[k, v]],
+                      largeVarTypes
+                    )
           case None =>
-            val classSym = tpe.classSymbol
-            if classSym.isDefined && classSym.get.flags.is(Flags.Case) then
-              buildStructWrite[V](vec, elemIdx, value, largeVarTypes)
-            else
-              report.errorAndAbort(
-                s"ArrowRowSerializer: unsupported field type ${tpe.show}. Supported: primitives, " +
-                  "String, Array[Byte], BigDecimal, temporal types, nested case classes (Struct), " +
-                  "Array[T]/Seq/List/Vector (List), and Option of any of these. Map is not yet supported."
-              )
+            seqElementType(tpe) match
+              case Some(elem) =>
+                elem.asType match
+                  case '[e] =>
+                    buildSeqListWrite[e](
+                      vec,
+                      elemIdx,
+                      value.asExprOf[scala.collection.Iterable[e]],
+                      largeVarTypes
+                    )
+              case None =>
+                val classSym = tpe.classSymbol
+                if classSym.isDefined && classSym.get.flags.is(Flags.Case) then
+                  buildStructWrite[V](vec, elemIdx, value, largeVarTypes)
+                else
+                  report.errorAndAbort(
+                    s"ArrowRowSerializer: unsupported field type ${tpe.show}. Supported: primitives, " +
+                      "String, Array[Byte], BigDecimal, temporal types, nested case classes (Struct), " +
+                      "Array[T]/Seq/List/Vector (List), Map[K, V], and Option of any of these."
+                  )
 
   /** Write a nested case class into a `StructVector` at `elemIdx`. A null value marks the slot
     * null; otherwise each child recurses into its child vector and the slot is marked defined.
@@ -383,6 +408,39 @@ object ArrowRowSerializerMacro:
           ${ buildValueWrite[E]('data, '{ start + k }, 'e, largeVarTypes) }
           k += 1
         lv.endValue($elemIdx, a.length)
+    }
+
+  /** Write a `Map[K, V]` into a `MapVector` at `elemIdx`. The map is a list of `{key, value}`
+    * structs: write each entry's key/value into the entries struct's child vectors at the running
+    * element index, mark the entry struct defined, then close the list value. Entry order follows
+    * the map's own iteration order — the same order Spark's serializer sees for the same instance.
+    */
+  private def buildMapWrite[K: Type, V: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      map: Expr[scala.collection.Map[K, V]],
+      largeVarTypes: Expr[Boolean]
+  )(using Quotes): Expr[Unit] =
+    '{
+      val mv = $vec.asInstanceOf[MapVector]
+      val m = $map
+      if m == null then mv.setNull($elemIdx)
+      else
+        val start = mv.startNewValue($elemIdx)
+        val entries = mv.getDataVector.asInstanceOf[StructVector]
+        val keyVec = entries.getChildByOrdinal(0).asInstanceOf[FieldVector]
+        val valVec = entries.getChildByOrdinal(1).asInstanceOf[FieldVector]
+        val it = m.iterator
+        var k = 0
+        while it.hasNext do
+          val kv = it.next()
+          val entryKey: K = kv._1
+          val entryVal: V = kv._2
+          ${ buildValueWrite[K]('keyVec, '{ start + k }, 'entryKey, largeVarTypes) }
+          ${ buildValueWrite[V]('valVec, '{ start + k }, 'entryVal, largeVarTypes) }
+          entries.setIndexDefined(start + k)
+          k += 1
+        mv.endValue($elemIdx, k)
     }
 
   /** Write `Option[T]` into `vec` at `elemIdx`. Unboxed-primitive inner types need explicit

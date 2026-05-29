@@ -68,6 +68,9 @@ object ArrowSchemaParityFixtures {
   case class Squad(name: String, members: Seq[Point])
   case class Holder(id: Int, inner: Tagged)
   case class OptList(id: Int, maybe: Option[Seq[Int]])
+  case class Dict(id: Int, m: Map[String, Int])
+  case class DictStruct(id: Int, m: Map[String, Point])
+  case class OptDict(id: Int, m: Option[Map[Int, String]])
 
   // ---------------------------------------------------------------------------
   // Schema build helpers.
@@ -162,6 +165,14 @@ object ArrowSchemaParityFixtures {
     emit[Squad](outDir, "Squad")
     emit[Holder](outDir, "Holder")
     emit[OptList](outDir, "OptList")
+
+    implicit val encDict: ExpressionEncoder[Dict] = ExpressionEncoder[Dict]()
+    implicit val encDictStruct: ExpressionEncoder[DictStruct] = ExpressionEncoder[DictStruct]()
+    implicit val encOptDict: ExpressionEncoder[OptDict] = ExpressionEncoder[OptDict]()
+
+    emit[Dict](outDir, "Dict")
+    emit[DictStruct](outDir, "DictStruct")
+    emit[OptDict](outDir, "OptDict")
 
     println("Done.")
   }

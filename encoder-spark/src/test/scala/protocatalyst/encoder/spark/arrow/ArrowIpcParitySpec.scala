@@ -63,6 +63,9 @@ class ArrowIpcParitySpec extends FunSuite:
   case class Squad(name: String, members: Seq[Point])
   case class Holder(id: Int, inner: Tagged)
   case class OptList(id: Int, maybe: Option[Seq[Int]])
+  case class Dict(id: Int, m: Map[String, Int])
+  case class DictStruct(id: Int, m: Map[String, Point])
+  case class OptDict(id: Int, m: Option[Map[Int, String]])
 
   // ---------------------------------------------------------------------------
   // Records: MUST stay value-for-value identical to ArrowIpcParityFixtures.
@@ -155,6 +158,17 @@ class ArrowIpcParitySpec extends FunSuite:
 
   val optListRecords: List[OptList] =
     List(OptList(1, Some(Seq(1, 2, 3))), OptList(2, None), OptList(3, Some(Seq.empty)))
+
+  val dictRecords: List[Dict] =
+    List(Dict(1, Map("a" -> 1, "b" -> 2)), Dict(2, Map.empty), Dict(3, Map("k" -> 9)))
+
+  val dictStructRecords: List[DictStruct] = List(
+    DictStruct(1, Map("p" -> Point(1, 2), "q" -> Point(3, 4))),
+    DictStruct(2, Map.empty)
+  )
+
+  val optDictRecords: List[OptDict] =
+    List(OptDict(1, Some(Map(1 -> "a", 2 -> "b"))), OptDict(2, None), OptDict(3, Some(Map.empty)))
 
   // ---------------------------------------------------------------------------
   // Shared parity config — match fixture generator exactly.
@@ -365,5 +379,29 @@ class ArrowIpcParitySpec extends FunSuite:
       "OptList",
       nestedIpc(optListRecords) { (it, a) =>
         ArrowStreaming.serialize[OptList](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("Dict: IPC byte parity (map<string,int>)"):
+    assertByteParity(
+      "Dict",
+      nestedIpc(dictRecords) { (it, a) =>
+        ArrowStreaming.serialize[Dict](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("DictStruct: IPC byte parity (map<string,struct>)"):
+    assertByteParity(
+      "DictStruct",
+      nestedIpc(dictStructRecords) { (it, a) =>
+        ArrowStreaming.serialize[DictStruct](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("OptDict: IPC byte parity (nullable map via Option)"):
+    assertByteParity(
+      "OptDict",
+      nestedIpc(optDictRecords) { (it, a) =>
+        ArrowStreaming.serialize[OptDict](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
       }
     )

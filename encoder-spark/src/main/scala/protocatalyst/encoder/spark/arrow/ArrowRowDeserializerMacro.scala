@@ -29,7 +29,7 @@ import org.apache.arrow.vector.{
   VarCharVector,
   VectorSchemaRoot
 }
-import org.apache.arrow.vector.complex.{ListVector, StructVector}
+import org.apache.arrow.vector.complex.{ListVector, MapVector, StructVector}
 
 /** Quoted-macro implementation of `ArrowRowDeserializer.derived[T]`.
   *
@@ -79,16 +79,28 @@ object ArrowRowDeserializerMacro:
     structCtor[T]('{ (i: Int) => $root.getVector(i) }, rowIdx, largeVarTypes)
 
   /** Element type of a non-Array collection that maps to Arrow `List`. Returns `None` otherwise
-    * (and for Map, which is deferred).
+    * (Map has its own `ArrowType.Map` handling).
     */
   private def seqElementType(using
       Quotes
   )(tpe: quotes.reflect.TypeRepr): Option[quotes.reflect.TypeRepr] =
     import quotes.reflect.*
-    if tpe <:< TypeRepr.of[scala.collection.Map[Any, Any]] then None
+    // Map excluded here (own Arrow mapping); detected via symbol since Map's key is invariant.
+    if mapKeyValueType(tpe).isDefined then None
     else if tpe <:< TypeRepr.of[scala.collection.Iterable[Any]] then
       tpe.baseType(TypeRepr.of[scala.collection.Iterable].typeSymbol).typeArgs.headOption
     else None
+
+  /** `(keyType, valueType)` if `tpe` is a `scala.collection.Map`, else `None`. Uses `baseType`
+    * (symbol-based) rather than `<:<` because Map's key parameter is invariant.
+    */
+  private def mapKeyValueType(using
+      Quotes
+  )(tpe: quotes.reflect.TypeRepr): Option[(quotes.reflect.TypeRepr, quotes.reflect.TypeRepr)] =
+    import quotes.reflect.*
+    tpe.baseType(TypeRepr.of[scala.collection.Map].typeSymbol) match
+      case AppliedType(_, k :: v :: Nil) => Some((k, v))
+      case _                             => None
 
   // ---------------------------------------------------------------------------
   // Recursive per-value read. Reads a value of static type `V` from the Arrow
@@ -212,20 +224,27 @@ object ArrowRowDeserializerMacro:
         buildArrayListRead[t](vec, elemIdx, largeVarTypes)
       case _ =>
         val tpe = TypeRepr.of[V]
-        seqElementType(tpe) match
-          case Some(elem) =>
-            elem.asType match
-              case '[e] => buildSeqListRead[e](tpe, vec, elemIdx, largeVarTypes)
+        mapKeyValueType(tpe) match
+          case Some((kt, vt)) =>
+            kt.asType match
+              case '[k] =>
+                vt.asType match
+                  case '[v] => buildMapRead[k, v](vec, elemIdx, largeVarTypes)
           case None =>
-            val classSym = tpe.classSymbol
-            if classSym.isDefined && classSym.get.flags.is(Flags.Case) then
-              buildStructRead[V](vec, elemIdx, largeVarTypes)
-            else
-              report.errorAndAbort(
-                s"ArrowRowDeserializer: unsupported field type ${tpe.show}. Supported: primitives, " +
-                  "String, Array[Byte], BigDecimal, temporal types, nested case classes (Struct), " +
-                  "Array[T]/Seq/List/Vector (List), and Option of any of these. Map is not yet supported."
-              )
+            seqElementType(tpe) match
+              case Some(elem) =>
+                elem.asType match
+                  case '[e] => buildSeqListRead[e](tpe, vec, elemIdx, largeVarTypes)
+              case None =>
+                val classSym = tpe.classSymbol
+                if classSym.isDefined && classSym.get.flags.is(Flags.Case) then
+                  buildStructRead[V](vec, elemIdx, largeVarTypes)
+                else
+                  report.errorAndAbort(
+                    s"ArrowRowDeserializer: unsupported field type ${tpe.show}. Supported: primitives, " +
+                      "String, Array[Byte], BigDecimal, temporal types, nested case classes (Struct), " +
+                      "Array[T]/Seq/List/Vector (List), Map[K, V], and Option of any of these."
+                  )
 
   /** `Option[T]`: `None` for a null slot, else `Some(read)`. Works uniformly for every inner type
     * (primitive or reference) because `ValueVector.isNull` is defined on all of them and the inner
@@ -350,4 +369,32 @@ object ArrowRowDeserializerMacro:
           a(k) = ${ buildValueRead[E]('data, '{ start + k }, largeVarTypes).asExprOf[E] }
           k += 1
         a
+    }
+
+  /** Read a `Map[K, V]` from a `MapVector` at `elemIdx` (a list of `{key, value}` structs). Builds
+    * an immutable `Map`, which conforms to a declared `Map`/`collection.Map` field type.
+    */
+  private def buildMapRead[K: Type, V: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      largeVarTypes: Expr[Boolean]
+  )(using Quotes): Expr[Any] =
+    '{
+      val mv = $vec.asInstanceOf[MapVector]
+      if mv.isNull($elemIdx) then null
+      else
+        val off = mv.getOffsetBuffer
+        val start = off.getInt($elemIdx.toLong * 4L)
+        val end = off.getInt(($elemIdx.toLong + 1L) * 4L)
+        val entries = mv.getDataVector.asInstanceOf[StructVector]
+        val keyVec = entries.getChildByOrdinal(0).asInstanceOf[FieldVector]
+        val valVec = entries.getChildByOrdinal(1).asInstanceOf[FieldVector]
+        val b = Map.newBuilder[K, V]
+        var k = start
+        while k < end do
+          val key = ${ buildValueRead[K]('keyVec, 'k, largeVarTypes).asExprOf[K] }
+          val value = ${ buildValueRead[V]('valVec, 'k, largeVarTypes).asExprOf[V] }
+          b += (key -> value)
+          k += 1
+        b.result()
     }

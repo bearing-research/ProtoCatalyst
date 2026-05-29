@@ -24,6 +24,9 @@ class ArrowNestedRoundtripSpec extends FunSuite:
   case class OptList(id: Int, maybe: Option[Seq[Int]])
   case class Vecs(id: Int, vs: Vector[Long])
   case class Arr(id: Int, nums: Array[Long])
+  case class Dict(id: Int, m: Map[String, Int])
+  case class DictStruct(id: Int, m: Map[String, Point])
+  case class OptDict(id: Int, m: Option[Map[Int, String]])
 
   private def roundtrip[T](
       records: List[T],
@@ -127,6 +130,30 @@ class ArrowNestedRoundtripSpec extends FunSuite:
       val got = roundtrip(recs, ArrowRowSerializer.derived[Vecs](alloc), ArrowRowDeserializer.derived[Vecs])
       assertEquals(got, recs)
       assert(got.head.vs.isInstanceOf[Vector[?]])
+    finally alloc.close()
+
+  test("Dict: Map[String,Int] (empty/single/multi)"):
+    val recs = List(Dict(1, Map("a" -> 1, "b" -> 2)), Dict(2, Map.empty), Dict(3, Map("k" -> 9)))
+    val alloc = new RootAllocator(Long.MaxValue)
+    try
+      val got = roundtrip(recs, ArrowRowSerializer.derived[Dict](alloc), ArrowRowDeserializer.derived[Dict])
+      assertEquals(got, recs)
+    finally alloc.close()
+
+  test("DictStruct: Map[String,struct]"):
+    val recs = List(DictStruct(1, Map("p" -> Point(1, 2), "q" -> Point(3, 4))), DictStruct(2, Map.empty))
+    val alloc = new RootAllocator(Long.MaxValue)
+    try
+      val got = roundtrip(recs, ArrowRowSerializer.derived[DictStruct](alloc), ArrowRowDeserializer.derived[DictStruct])
+      assertEquals(got, recs)
+    finally alloc.close()
+
+  test("OptDict: nullable map (Some/None/empty)"):
+    val recs = List(OptDict(1, Some(Map(1 -> "a", 2 -> "b"))), OptDict(2, None), OptDict(3, Some(Map.empty)))
+    val alloc = new RootAllocator(Long.MaxValue)
+    try
+      val got = roundtrip(recs, ArrowRowSerializer.derived[OptDict](alloc), ArrowRowDeserializer.derived[OptDict])
+      assertEquals(got, recs)
     finally alloc.close()
 
   test("Arr: Array[Long] round-trips (compare element-wise)"):

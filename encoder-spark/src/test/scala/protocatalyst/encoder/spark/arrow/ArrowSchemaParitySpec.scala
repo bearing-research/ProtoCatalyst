@@ -65,6 +65,9 @@ class ArrowSchemaParitySpec extends FunSuite:
   case class Squad(name: String, members: Seq[Point])
   case class Holder(id: Int, inner: Tagged)
   case class OptList(id: Int, maybe: Option[Seq[Int]])
+  case class Dict(id: Int, m: Map[String, Int])
+  case class DictStruct(id: Int, m: Map[String, Point])
+  case class OptDict(id: Int, m: Option[Map[Int, String]])
 
   // ---------------------------------------------------------------------------
   // Helpers.
@@ -198,3 +201,12 @@ class ArrowSchemaParitySpec extends FunSuite:
 
   test("OptList: schema parity (nullable list via Option)"):
     assertParity("OptList", ArrowSchemaBuilders.schemaFor[OptList])
+
+  test("Dict: schema parity (map<string,int>: entries/key/value names)"):
+    assertParity("Dict", ArrowSchemaBuilders.schemaFor[Dict])
+
+  test("DictStruct: schema parity (map<string,struct>)"):
+    assertParity("DictStruct", ArrowSchemaBuilders.schemaFor[DictStruct])
+
+  test("OptDict: schema parity (nullable map via Option)"):
+    assertParity("OptDict", ArrowSchemaBuilders.schemaFor[OptDict])

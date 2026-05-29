@@ -60,6 +60,9 @@ class ArrowRowDeserializerSpec extends FunSuite:
   case class Squad(name: String, members: Seq[Point])
   case class Holder(id: Int, inner: Tagged)
   case class OptList(id: Int, maybe: Option[Seq[Int]])
+  case class Dict(id: Int, m: Map[String, Int])
+  case class DictStruct(id: Int, m: Map[String, Point])
+  case class OptDict(id: Int, m: Option[Map[Int, String]])
 
   val simpleRecords: List[Simple] = List(
     Simple(1, "alice"),
@@ -125,6 +128,12 @@ class ArrowRowDeserializerSpec extends FunSuite:
     List(Holder(1, Tagged(10, Seq("p", "q"))), Holder(2, Tagged(20, Seq.empty)))
   val optListRecords: List[OptList] =
     List(OptList(1, Some(Seq(1, 2, 3))), OptList(2, None), OptList(3, Some(Seq.empty)))
+  val dictRecords: List[Dict] =
+    List(Dict(1, Map("a" -> 1, "b" -> 2)), Dict(2, Map.empty), Dict(3, Map("k" -> 9)))
+  val dictStructRecords: List[DictStruct] =
+    List(DictStruct(1, Map("p" -> Point(1, 2), "q" -> Point(3, 4))), DictStruct(2, Map.empty))
+  val optDictRecords: List[OptDict] =
+    List(OptDict(1, Some(Map(1 -> "a", 2 -> "b"))), OptDict(2, None), OptDict(3, Some(Map.empty)))
 
   /** Canonicalize a null Option to None — the reader can't distinguish "wrote null" from
     * "wrote None" because the vector only encodes an isNull bit. The writer parity test in
@@ -359,4 +368,19 @@ class ArrowRowDeserializerSpec extends FunSuite:
   test("Spark-fixture parity: OptList (nullable list via Option)"):
     withReader(loadFixture("OptList"), ArrowRowDeserializer.derived[OptList]) { got =>
       assertEquals(got, optListRecords)
+    }
+
+  test("Spark-fixture parity: Dict (map<string,int>)"):
+    withReader(loadFixture("Dict"), ArrowRowDeserializer.derived[Dict]) { got =>
+      assertEquals(got, dictRecords)
+    }
+
+  test("Spark-fixture parity: DictStruct (map<string,struct>)"):
+    withReader(loadFixture("DictStruct"), ArrowRowDeserializer.derived[DictStruct]) { got =>
+      assertEquals(got, dictStructRecords)
+    }
+
+  test("Spark-fixture parity: OptDict (nullable map via Option)"):
+    withReader(loadFixture("OptDict"), ArrowRowDeserializer.derived[OptDict]) { got =>
+      assertEquals(got, optDictRecords)
     }

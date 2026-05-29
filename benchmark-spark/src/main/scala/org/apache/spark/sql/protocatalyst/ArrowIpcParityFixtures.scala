@@ -70,6 +70,9 @@ object ArrowIpcParityFixtures {
   case class Squad(name: String, members: Seq[Point])
   case class Holder(id: Int, inner: Tagged)
   case class OptList(id: Int, maybe: Option[Seq[Int]])
+  case class Dict(id: Int, m: Map[String, Int])
+  case class DictStruct(id: Int, m: Map[String, Point])
+  case class OptDict(id: Int, m: Option[Map[Int, String]])
 
   // ---------------------------------------------------------------------------
   // Records: hand-crafted inputs that must EXACTLY match what the Scala 3 spec re-creates.
@@ -172,6 +175,19 @@ object ArrowIpcParityFixtures {
   val optListRecords: List[OptList] =
     List(OptList(1, Some(Seq(1, 2, 3))), OptList(2, None), OptList(3, Some(Seq.empty)))
 
+  // Map shapes. Small maps (<=4 entries) are Map1..Map4, which iterate in insertion order on both
+  // Scala 2.13 and 3 — and Spark's serializer iterates the same instance, so entry order matches.
+  val dictRecords: List[Dict] =
+    List(Dict(1, Map("a" -> 1, "b" -> 2)), Dict(2, Map.empty), Dict(3, Map("k" -> 9)))
+
+  val dictStructRecords: List[DictStruct] = List(
+    DictStruct(1, Map("p" -> Point(1, 2), "q" -> Point(3, 4))),
+    DictStruct(2, Map.empty)
+  )
+
+  val optDictRecords: List[OptDict] =
+    List(OptDict(1, Some(Map(1 -> "a", 2 -> "b"))), OptDict(2, None), OptDict(3, Some(Map.empty)))
+
   // ---------------------------------------------------------------------------
   // Spark-side serialization: produce IPC bytes for the given records under fixed config.
   // ---------------------------------------------------------------------------
@@ -257,6 +273,9 @@ object ArrowIpcParityFixtures {
     writeFixture(outDir, "Squad", sparkIpcBytes(squadRecords, ExpressionEncoder[Squad]()))
     writeFixture(outDir, "Holder", sparkIpcBytes(holderRecords, ExpressionEncoder[Holder]()))
     writeFixture(outDir, "OptList", sparkIpcBytes(optListRecords, ExpressionEncoder[OptList]()))
+    writeFixture(outDir, "Dict", sparkIpcBytes(dictRecords, ExpressionEncoder[Dict]()))
+    writeFixture(outDir, "DictStruct", sparkIpcBytes(dictStructRecords, ExpressionEncoder[DictStruct]()))
+    writeFixture(outDir, "OptDict", sparkIpcBytes(optDictRecords, ExpressionEncoder[OptDict]()))
 
     println("Done.")
   }
