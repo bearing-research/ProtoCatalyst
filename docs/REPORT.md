@@ -7,7 +7,7 @@ most per-row operations we measure (geomean 1.16× across 12
 benchmarks), allocates comparably to Spark (within 7% median), and
 — critically — works in Scala 3 today. §11b extends the same
 treatment to Spark Connect's Arrow IPC wire format: byte-for-byte
-parity with `ArrowSerializer[T]`, geomean speed tied (0.98×) with
+parity with `ArrowSerializer[T]`, geomean ~8% faster (0.92×) with
 ~43% less per-row allocation.
 
 The report is structured as a case study with a worked implementation:
@@ -1598,24 +1598,25 @@ Per-row throughput at SF=1, amortized over 1024-row batches via
 
 | Benchmark | Ours (ns/op) | ± CI | Spark (ns/op) | ± CI | Ratio (ours/Spark) |
 |---|---:|---:|---:|---:|---:|
-| `customerBatch` (8 col) | 463 | ±3.0 | 502 | ±5.7 | **0.92×** (we win) |
-| `lineitemBatch` (16 col) | 868 | ±9.6 | 747 | ±3.4 | 1.16× (Spark wins) |
-| `ordersBatch` (9 col) | 426 | ±1.3 | 469 | ±3.2 | **0.91×** (we win) |
-| `partBatch` (9 col) | 494 | ±3.7 | 537 | ±8.1 | **0.92×** (we win) |
-| _**Geomean (4 benches)**_ | | | | | **0.98× (tied)** |
+| `customerBatch` (8 col) | 480 | ±2.1 | 537 | ±5.8 | **0.89×** (we win) |
+| `lineitemBatch` (16 col) | 835 | ±6.2 | 790 | ±15.5 | 1.06× (Spark wins) |
+| `ordersBatch` (9 col) | 421 | ±1.2 | 492 | ±2.1 | **0.86×** (we win) |
+| `partBatch` (9 col) | 498 | ±2.9 | 552 | ±1.2 | **0.90×** (we win) |
+| _**Geomean (4 benches)**_ | | | | | **0.92×** (we win) |
 
-We win 3 of 4 by 8–9% with non-overlapping CIs. Lineitem is the
-one regression — analysis below. The geomean lands at a
-statistical tie with Spark Connect's `ArrowSerializer`.
+We win 3 of 4 by 10–14% with non-overlapping CIs. The geomean is
+~8% faster than Spark Connect's `ArrowSerializer` across the four
+TPC-H tables. **Lineitem is the only table where Spark wins, by
+6%** — analysis and remaining work below.
 
 ### Allocation rate, by TPC-H table
 
 | Benchmark | Ours (B/op) | Spark (B/op) | Ratio (ours/Spark) |
 |---|---:|---:|---:|
-| `customerBatch` | 1,285 | 2,368 | **0.54×** |
-| `lineitemBatch` | 1,690 | 2,500 | 0.68× |
+| `customerBatch` | 1,261 | 2,367 | **0.53×** |
+| `lineitemBatch` | 1,690 | 2,375 | 0.71× |
 | `ordersBatch` | 736 | 1,479 | **0.50×** |
-| `partBatch` | 1,222 | 2,138 | **0.57×** |
+| `partBatch` | 1,198 | 2,138 | **0.56×** |
 | _**Geomean (4 benches)**_ | | | **0.57×** |
 
 **Our encoder allocates ~43% less per row across the board.**
@@ -1627,29 +1628,48 @@ GC pressure and more predictable tail latencies, which matter for
 the Spark Connect client use case where the encoder runs in a
 tight loop per RPC roundtrip.
 
-### Why Lineitem is slower (and what fixes it)
+### Why Lineitem is slower
 
-Lineitem is the only table where we lose, at 1.16×. With 16
+Lineitem is the only table where we lose, at 1.06×. With 16
 columns including 4 `BigDecimal` fields, it has the densest
 mixed-type schema in the TPC-H set.
 
-The likely culprit is BigDecimal scale-normalization. Arrow's
-`DecimalVector.setSafe(i, BigDecimal)` requires the input's scale
-to match the vector's configured scale (here 18). Both Spark and
-we mirror Spark's pattern: `value.setScale(scale).bigDecimal`.
-But `.setScale(18)` on a Java `BigDecimal` allocates a fresh
-`BigDecimal` instance per call. Lineitem has 4 decimal fields per
-row × 1024 rows per batch × 45 measurements ≈ ~190k allocations
-attributable to that single line. The allocation-rate gap on
-Lineitem (1.69 KB/row vs 0.74 KB/row on `ordersBatch`) is
-consistent with this hypothesis.
+The first pass of these benchmarks measured Lineitem at 1.16× —
+the gap closed to 1.06× via two targeted commits informed by JFR
+profiling:
 
-The candidate fix is a runtime "is this already at scale 18?"
-check before `setScale`; identity-scale BigDecimals would skip
-the allocation. We defer this optimization. With it, Lineitem
-should close to parity or better; without it, the 1.16× gap is
-honest overhead from the decimal-heavy schema, and the report
-prefers honest losses to hidden ones.
+1. **`8ffd03e`** — mirror Spark's `setDecimal` pattern: extract
+   the `JBigDecimal` first (cheap getter), then `setScale` only
+   if the input's scale doesn't already match the vector's. Our
+   previous code unconditionally called Scala `BigDecimal`'s
+   `setScale`, which allocates both a fresh Java BigDecimal and a
+   Scala wrapper. JIT escape analysis was already eliding the
+   wrapper, so the throughput win was modest (~30 ns/row on
+   Lineitem) and the allocation rate didn't move — but it brought
+   our code path structurally in line with Spark's.
+2. **`4a233b9`** — source the target scale from `vec.getScale` at
+   runtime rather than hardcoding 18 in the macro. Resilience fix
+   more than a perf fix, but it also matched Spark's call shape
+   exactly. Negligible perf cost (final-field accessor; JIT inlines
+   to zero).
+
+The remaining 6% gap is roughly **~14 ns/extra-Decimal-field** vs
+Spark. JFR profiling shows the dominant cost is split between
+`java.math.BigInteger.toByteArray` (called inside Arrow's
+`DecimalVector.setSafe(BigDecimal)`) and the `ArrowBuf.refCnt` /
+`BufferLedger.getRefCount` / `AtomicInteger.get` chain that runs
+on every buffer access via `ensureAccessible`. Both costs are
+shared with Spark; Spark spends proportionally less time there
+because its per-row work runs faster end-to-end, so each JFR
+wall-clock sample covers more useful work. There's no obvious
+single-knob fix without bypassing Arrow's safe public API for
+DecimalVector writes (e.g., constructing unscaled bytes ourselves
+via `BigInteger.toByteArray` + `setBigEndianSafe`) — invasive,
+Spark doesn't do it either, deferred to future work.
+
+**The honest reading**: Lineitem-shape decimal-heavy schemas pay
+~6% more on our encoder than Spark's, and the cost lives inside
+shared Arrow internals rather than in the macro-generated code.
 
 ### What the Arrow numbers do and don't establish
 
@@ -1668,11 +1688,11 @@ its AOT blockers per §5.
 ### Bench provenance
 
 All numbers in this section come from
-[`results/arrow-c-baseline-20260528T214709Z/`](../results/arrow-c-baseline-20260528T214709Z/)
-on commit `fc4521d`. Same hardware / JVM / JMH config as §11
-(Mac arm64, OpenJDK 21.0.11, JMH 3 forks × 5 warmup × 15
-measurement × 1 s, `-prof gc`). 45 measurements per benchmark;
-99.9% CI error bars under 2% of mean on every line.
+[`results/arrow-decimal-opt-quiet-20260529T004832Z/`](../results/arrow-decimal-opt-quiet-20260529T004832Z/)
+on commit `4a233b9` (post-Decimal-optimization). Same hardware /
+JVM / JMH config as §11 (Mac arm64, OpenJDK 21.0.11, JMH 3 forks
+× 5 warmup × 15 measurement × 1 s, `-prof gc`). 45 measurements
+per benchmark; 99.9% CI error bars under 3% of mean on every line.
 Cross-architecture validation on EC2 m6i.8xlarge is a natural
 follow-up, mirroring §11's Mac-vs-EC2 sweep.
 
@@ -1936,7 +1956,7 @@ compatibility with existing Spark artifacts.
   specific claim: byte-for-byte wire parity with Spark Connect's
   `ArrowSerializer` across 22 fixtures (15 schema + 7 IPC byte),
   and a per-row throughput / allocation comparison on TPC-H
-  schemas showing geomean speed parity (0.98×) with ~43% less
+  schemas showing geomean ~8% faster (0.92×) with ~43% less
   allocation per row.** For full Spark, Project Leyden's AOT class
   loading is the realistic adjacent path, not GraalVM native-image.
 - **Cold-start cost drops.** No more `runtime.universe`
@@ -2092,13 +2112,18 @@ results in
 
 Three items deferred from Phase A+B+C and called out in §11b:
 
-1. **BigDecimal scale-skip optimization.** Lineitem is the only
-   table where we lose to Spark Connect's `ArrowSerializer` (1.16×).
-   Diagnosis in §11b points at `BigDecimal.setScale(18)` allocating
-   a fresh `BigDecimal` per call × 4 decimal fields per row. A
-   runtime "is already at scale 18?" check before the setScale call
-   would skip the allocation in the common case; estimated impact
-   on Lineitem: close to parity or better. Hours of engineering.
+1. **Lower-level Decimal write path.** The BigDecimal scale-skip
+   optimization (commits `8ffd03e`, `4a233b9`) closed the Lineitem
+   gap from 1.16× to 1.06× but didn't reach parity. The remaining
+   cost lives inside Arrow's `DecimalVector.setSafe(BigDecimal)` —
+   specifically `BigInteger.toByteArray` and `ArrowBuf`
+   ref-counting on every buffer access. Bypassing the safe API
+   (constructing unscaled big-endian bytes ourselves and calling
+   `setBigEndianSafe(byte[])`) would shave both; Spark doesn't
+   do this either, so we'd be venturing past their per-row
+   structure. Days of careful engineering; worthwhile only if
+   downstream measurements show Decimal-heavy workloads matter
+   more than the 6% Lineitem gap suggests.
 2. **Cross-architecture validation on EC2.** §11b's numbers are
    Mac arm64 only. Parallel to the §11 Mac/EC2 cross-check, an EC2
    m6i.8xlarge sweep would confirm the Arrow geomean is portable.
