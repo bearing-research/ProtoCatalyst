@@ -57,6 +57,15 @@ class ArrowSchemaParitySpec extends FunSuite:
   )
   case class Optional(oi: Option[Int], os: Option[String], od: Option[LocalDate])
 
+  // Nested shapes (Struct + List) — mirror the Scala 2.13 fixture file.
+  case class Point(x: Int, y: Int)
+  case class Line(start: Point, end: Point)
+  case class Tagged(id: Int, tags: Seq[String])
+  case class Nums(id: Int, values: Seq[Int])
+  case class Squad(name: String, members: Seq[Point])
+  case class Holder(id: Int, inner: Tagged)
+  case class OptList(id: Int, maybe: Option[Seq[Int]])
+
   // ---------------------------------------------------------------------------
   // Helpers.
   // ---------------------------------------------------------------------------
@@ -164,3 +173,28 @@ class ArrowSchemaParitySpec extends FunSuite:
 
   test("TPC-H Lineitem: schema parity (16 columns, workhorse case)"):
     assertParity("tpch-Lineitem", ArrowSchemaBuilders.schemaFor[Lineitem])
+
+  // ---------------------------------------------------------------------------
+  // Nested shapes — Struct + List (the "element" child name + per-field nullability rules).
+  // ---------------------------------------------------------------------------
+
+  test("Point: schema parity (flat struct, nested-eligible)"):
+    assertParity("Point", ArrowSchemaBuilders.schemaFor[Point])
+
+  test("Line: schema parity (struct of struct)"):
+    assertParity("Line", ArrowSchemaBuilders.schemaFor[Line])
+
+  test("Tagged: schema parity (list<string>, containsNull element)"):
+    assertParity("Tagged", ArrowSchemaBuilders.schemaFor[Tagged])
+
+  test("Nums: schema parity (list<int>, non-null element)"):
+    assertParity("Nums", ArrowSchemaBuilders.schemaFor[Nums])
+
+  test("Squad: schema parity (list<struct>)"):
+    assertParity("Squad", ArrowSchemaBuilders.schemaFor[Squad])
+
+  test("Holder: schema parity (struct containing a list)"):
+    assertParity("Holder", ArrowSchemaBuilders.schemaFor[Holder])
+
+  test("OptList: schema parity (nullable list via Option)"):
+    assertParity("OptList", ArrowSchemaBuilders.schemaFor[OptList])

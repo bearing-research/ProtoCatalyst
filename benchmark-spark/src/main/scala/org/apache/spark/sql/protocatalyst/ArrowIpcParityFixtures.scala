@@ -62,6 +62,15 @@ object ArrowIpcParityFixtures {
 
   case class Optional(oi: Option[Int], os: Option[String], od: Option[LocalDate])
 
+  // Nested shapes (Struct + List). Mirror the Scala 3 spec field-for-field.
+  case class Point(x: Int, y: Int)
+  case class Line(start: Point, end: Point)
+  case class Tagged(id: Int, tags: Seq[String])
+  case class Nums(id: Int, values: Seq[Int])
+  case class Squad(name: String, members: Seq[Point])
+  case class Holder(id: Int, inner: Tagged)
+  case class OptList(id: Int, maybe: Option[Seq[Int]])
+
   // ---------------------------------------------------------------------------
   // Records: hand-crafted inputs that must EXACTLY match what the Scala 3 spec re-creates.
   // Any drift here breaks the byte-parity test — comment so both sides are easy to compare.
@@ -128,6 +137,40 @@ object ArrowIpcParityFixtures {
     Optional(Some(42), None, Some(LocalDate.of(2026, 12, 31))),
     Optional(null, null, null)
   )
+
+  // Nested records — must match the Scala 3 spec value-for-value.
+  val pointRecords: List[Point] = List(Point(1, 2), Point(-3, 4), Point(0, 0))
+
+  val lineRecords: List[Line] =
+    List(Line(Point(1, 2), Point(3, 4)), Line(Point(5, 6), Point(7, 8)))
+
+  // Includes an empty list and a list with a null element (containsNull element vector).
+  val taggedRecords: List[Tagged] = List(
+    Tagged(1, Seq("a", "b")),
+    Tagged(2, Seq.empty),
+    Tagged(3, Seq("x", null, "z"))
+  )
+
+  val numsRecords: List[Nums] = List(
+    Nums(1, Seq(1, 2, 3)),
+    Nums(2, Seq.empty),
+    Nums(3, Seq(Int.MinValue, 0, Int.MaxValue))
+  )
+
+  // list<struct>, including an empty list.
+  val squadRecords: List[Squad] = List(
+    Squad("a", Seq(Point(1, 1), Point(2, 2))),
+    Squad("b", Seq.empty),
+    Squad("c", Seq(Point(9, 9)))
+  )
+
+  // struct containing a list.
+  val holderRecords: List[Holder] =
+    List(Holder(1, Tagged(10, Seq("p", "q"))), Holder(2, Tagged(20, Seq.empty)))
+
+  // nullable list via Option: Some / None / empty.
+  val optListRecords: List[OptList] =
+    List(OptList(1, Some(Seq(1, 2, 3))), OptList(2, None), OptList(3, Some(Seq.empty)))
 
   // ---------------------------------------------------------------------------
   // Spark-side serialization: produce IPC bytes for the given records under fixed config.
@@ -205,6 +248,15 @@ object ArrowIpcParityFixtures {
       outDir,
       "Optional",
       sparkIpcBytes(optionalRecords, ExpressionEncoder[Optional]()))
+
+    // Nested shapes (Struct + List).
+    writeFixture(outDir, "Point", sparkIpcBytes(pointRecords, ExpressionEncoder[Point]()))
+    writeFixture(outDir, "Line", sparkIpcBytes(lineRecords, ExpressionEncoder[Line]()))
+    writeFixture(outDir, "Tagged", sparkIpcBytes(taggedRecords, ExpressionEncoder[Tagged]()))
+    writeFixture(outDir, "Nums", sparkIpcBytes(numsRecords, ExpressionEncoder[Nums]()))
+    writeFixture(outDir, "Squad", sparkIpcBytes(squadRecords, ExpressionEncoder[Squad]()))
+    writeFixture(outDir, "Holder", sparkIpcBytes(holderRecords, ExpressionEncoder[Holder]()))
+    writeFixture(outDir, "OptList", sparkIpcBytes(optListRecords, ExpressionEncoder[OptList]()))
 
     println("Done.")
   }

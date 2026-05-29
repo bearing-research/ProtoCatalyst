@@ -52,6 +52,15 @@ class ArrowRowDeserializerSpec extends FunSuite:
   // LocalTime is an extension-only type (Spark rejects it). Roundtrip test only; no parity.
   case class WithLocalTime(lt: LocalTime)
 
+  // Nested shapes (Struct + List) — mirror the Scala 2.13 fixture file.
+  case class Point(x: Int, y: Int)
+  case class Line(start: Point, end: Point)
+  case class Tagged(id: Int, tags: Seq[String])
+  case class Nums(id: Int, values: Seq[Int])
+  case class Squad(name: String, members: Seq[Point])
+  case class Holder(id: Int, inner: Tagged)
+  case class OptList(id: Int, maybe: Option[Seq[Int]])
+
   val simpleRecords: List[Simple] = List(
     Simple(1, "alice"),
     Simple(2, "bob"),
@@ -98,6 +107,24 @@ class ArrowRowDeserializerSpec extends FunSuite:
     WithLocalTime(LocalTime.of(12, 34, 56)),
     WithLocalTime(LocalTime.MIDNIGHT)
   )
+
+  // Nested records — must match ArrowIpcParityFixtures value-for-value. Empty Seq round-trips to
+  // an empty List (immutable.Seq is List at runtime), so equality holds against the originals.
+  val pointRecords: List[Point] = List(Point(1, 2), Point(-3, 4), Point(0, 0))
+  val lineRecords: List[Line] = List(Line(Point(1, 2), Point(3, 4)), Line(Point(5, 6), Point(7, 8)))
+  val taggedRecords: List[Tagged] =
+    List(Tagged(1, Seq("a", "b")), Tagged(2, Seq.empty), Tagged(3, Seq("x", null, "z")))
+  val numsRecords: List[Nums] =
+    List(Nums(1, Seq(1, 2, 3)), Nums(2, Seq.empty), Nums(3, Seq(Int.MinValue, 0, Int.MaxValue)))
+  val squadRecords: List[Squad] = List(
+    Squad("a", Seq(Point(1, 1), Point(2, 2))),
+    Squad("b", Seq.empty),
+    Squad("c", Seq(Point(9, 9)))
+  )
+  val holderRecords: List[Holder] =
+    List(Holder(1, Tagged(10, Seq("p", "q"))), Holder(2, Tagged(20, Seq.empty)))
+  val optListRecords: List[OptList] =
+    List(OptList(1, Some(Seq(1, 2, 3))), OptList(2, None), OptList(3, Some(Seq.empty)))
 
   /** Canonicalize a null Option to None — the reader can't distinguish "wrote null" from
     * "wrote None" because the vector only encodes an isNull bit. The writer parity test in
@@ -295,4 +322,41 @@ class ArrowRowDeserializerSpec extends FunSuite:
       ArrowRowDeserializer.derived[Simple]("UTC", true)
     ) { got =>
       assertEquals(got, simpleRecords)
+    }
+
+  // --- Nested shapes: decode Spark Connect's actual IPC bytes through our reader. ---
+
+  test("Spark-fixture parity: Point (flat struct)"):
+    withReader(loadFixture("Point"), ArrowRowDeserializer.derived[Point]) { got =>
+      assertEquals(got, pointRecords)
+    }
+
+  test("Spark-fixture parity: Line (struct of struct)"):
+    withReader(loadFixture("Line"), ArrowRowDeserializer.derived[Line]) { got =>
+      assertEquals(got, lineRecords)
+    }
+
+  test("Spark-fixture parity: Tagged (list<string>, empty + null element)"):
+    withReader(loadFixture("Tagged"), ArrowRowDeserializer.derived[Tagged]) { got =>
+      assertEquals(got, taggedRecords)
+    }
+
+  test("Spark-fixture parity: Nums (list<int>)"):
+    withReader(loadFixture("Nums"), ArrowRowDeserializer.derived[Nums]) { got =>
+      assertEquals(got, numsRecords)
+    }
+
+  test("Spark-fixture parity: Squad (list<struct>)"):
+    withReader(loadFixture("Squad"), ArrowRowDeserializer.derived[Squad]) { got =>
+      assertEquals(got, squadRecords)
+    }
+
+  test("Spark-fixture parity: Holder (struct containing a list)"):
+    withReader(loadFixture("Holder"), ArrowRowDeserializer.derived[Holder]) { got =>
+      assertEquals(got, holderRecords)
+    }
+
+  test("Spark-fixture parity: OptList (nullable list via Option)"):
+    withReader(loadFixture("OptList"), ArrowRowDeserializer.derived[OptList]) { got =>
+      assertEquals(got, optListRecords)
     }

@@ -55,6 +55,15 @@ class ArrowIpcParitySpec extends FunSuite:
   )
   case class Optional(oi: Option[Int], os: Option[String], od: Option[LocalDate])
 
+  // Nested shapes (Struct + List) — mirror the Scala 2.13 fixture file.
+  case class Point(x: Int, y: Int)
+  case class Line(start: Point, end: Point)
+  case class Tagged(id: Int, tags: Seq[String])
+  case class Nums(id: Int, values: Seq[Int])
+  case class Squad(name: String, members: Seq[Point])
+  case class Holder(id: Int, inner: Tagged)
+  case class OptList(id: Int, maybe: Option[Seq[Int]])
+
   // ---------------------------------------------------------------------------
   // Records: MUST stay value-for-value identical to ArrowIpcParityFixtures.
   // ---------------------------------------------------------------------------
@@ -117,6 +126,35 @@ class ArrowIpcParitySpec extends FunSuite:
     Optional(Some(42), None, Some(LocalDate.of(2026, 12, 31))),
     Optional(null, null, null)
   )
+
+  val pointRecords: List[Point] = List(Point(1, 2), Point(-3, 4), Point(0, 0))
+
+  val lineRecords: List[Line] =
+    List(Line(Point(1, 2), Point(3, 4)), Line(Point(5, 6), Point(7, 8)))
+
+  val taggedRecords: List[Tagged] = List(
+    Tagged(1, Seq("a", "b")),
+    Tagged(2, Seq.empty),
+    Tagged(3, Seq("x", null, "z"))
+  )
+
+  val numsRecords: List[Nums] = List(
+    Nums(1, Seq(1, 2, 3)),
+    Nums(2, Seq.empty),
+    Nums(3, Seq(Int.MinValue, 0, Int.MaxValue))
+  )
+
+  val squadRecords: List[Squad] = List(
+    Squad("a", Seq(Point(1, 1), Point(2, 2))),
+    Squad("b", Seq.empty),
+    Squad("c", Seq(Point(9, 9)))
+  )
+
+  val holderRecords: List[Holder] =
+    List(Holder(1, Tagged(10, Seq("p", "q"))), Holder(2, Tagged(20, Seq.empty)))
+
+  val optListRecords: List[OptList] =
+    List(OptList(1, Some(Seq(1, 2, 3))), OptList(2, None), OptList(3, Some(Seq.empty)))
 
   // ---------------------------------------------------------------------------
   // Shared parity config — match fixture generator exactly.
@@ -264,3 +302,68 @@ class ArrowIpcParitySpec extends FunSuite:
       )
     }
     assertByteParity("Optional", actual)
+
+  // ---------------------------------------------------------------------------
+  // Nested shapes — Struct + List byte parity against Spark Connect's ArrowSerializer.
+  // ---------------------------------------------------------------------------
+
+  private def nestedIpc[T](records: List[T])(
+      ser: (Iterator[T], RootAllocator) => CloseableIteratorLike[Array[Byte]]
+  ): Array[Byte] =
+    oursIpcBytes[T](alloc => ser(records.iterator, alloc))
+
+  test("Point: IPC byte parity (flat struct)"):
+    assertByteParity(
+      "Point",
+      nestedIpc(pointRecords) { (it, a) =>
+        ArrowStreaming.serialize[Point](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("Line: IPC byte parity (struct of struct)"):
+    assertByteParity(
+      "Line",
+      nestedIpc(lineRecords) { (it, a) =>
+        ArrowStreaming.serialize[Line](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("Tagged: IPC byte parity (list<string>, empty + null element)"):
+    assertByteParity(
+      "Tagged",
+      nestedIpc(taggedRecords) { (it, a) =>
+        ArrowStreaming.serialize[Tagged](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("Nums: IPC byte parity (list<int>)"):
+    assertByteParity(
+      "Nums",
+      nestedIpc(numsRecords) { (it, a) =>
+        ArrowStreaming.serialize[Nums](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("Squad: IPC byte parity (list<struct>)"):
+    assertByteParity(
+      "Squad",
+      nestedIpc(squadRecords) { (it, a) =>
+        ArrowStreaming.serialize[Squad](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("Holder: IPC byte parity (struct containing a list)"):
+    assertByteParity(
+      "Holder",
+      nestedIpc(holderRecords) { (it, a) =>
+        ArrowStreaming.serialize[Holder](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )
+
+  test("OptList: IPC byte parity (nullable list via Option)"):
+    assertByteParity(
+      "OptList",
+      nestedIpc(optListRecords) { (it, a) =>
+        ArrowStreaming.serialize[OptList](it, a, MaxRecordsPerBatch, MaxBatchSize, TimeZoneId, LargeVarTypes, BatchSizeCheckInterval)
+      }
+    )

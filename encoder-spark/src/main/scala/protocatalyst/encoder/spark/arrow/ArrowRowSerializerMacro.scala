@@ -29,15 +29,20 @@ import org.apache.arrow.vector.{
   VarBinaryVector,
   VarCharVector
 }
+import org.apache.arrow.vector.complex.{ListVector, StructVector}
 /** Quoted-macro implementation of `ArrowRowSerializer.derived[T]`.
   *
   * Emits two pieces of code at scalac time:
   *   1. The schema, via [[ArrowSchemaBuilders.schemaForImpl]].
-  *   2. A `(VectorSchemaRoot, Int, T) => Unit` lambda whose body is a Block of N field-writes,
+  *   2. A `(Array[FieldVector], Int, T) => Unit` lambda whose body is a Block of N field-writes,
   *      one per case-class field. Dispatch is fully static — each field-write expression is
   *      typed to a concrete Arrow `FieldVector` subtype.
   *
-  * Phase A4 scope: primitives + String. Other AgnosticEncoder variants come in A8.
+  * The per-field writer is recursive: leaf scalars `setSafe` into their vector; a nested case
+  * class writes each child into a `StructVector`'s child vectors then `setIndexDefined`; a
+  * collection writes its elements into a `ListVector`'s data vector between `startNewValue` and
+  * `endValue`. The recursion is keyed on `(FieldVector, elementIndex)` and is expressed entirely
+  * with `Type[_]`/`Expr[_]` (both portable across the nested `Quotes` introduced by each splice).
   */
 object ArrowRowSerializerMacro:
 
@@ -73,7 +78,9 @@ object ArrowRowSerializerMacro:
       new ArrowRowSerializerImpl[T]($schemaExpr, $allocator, $writeLambda)
     }
 
-  /** Compose the per-field write expressions into a single Unit-typed Block. */
+  /** Compose the per-field write expressions into a single Unit-typed Block. Each top-level field
+    * writes into its own pre-cached vector `vectors(i)` at the current row index.
+    */
   private def buildAllFieldWrites[T: Type](
       vectors: Expr[Array[FieldVector]],
       idx: Expr[Int],
@@ -88,377 +95,361 @@ object ArrowRowSerializerMacro:
     val caseFields = classSym.caseFields
     val stmts: List[Term] = caseFields.zipWithIndex.map { case (fieldSym, i) =>
       val fieldTpe = tpe.memberType(fieldSym)
-      val fieldAccess = Select(value.asTerm, fieldSym)
-      buildWriteExpr(fieldTpe, i, vectors, idx, fieldAccess, largeVarTypes).asTerm
+      val vecE = '{ $vectors(${ Expr(i) }) }
+      fieldTpe.asType match
+        case '[ft] =>
+          val fieldValue = Select(value.asTerm, fieldSym).asExprOf[ft]
+          buildValueWrite[ft](vecE, idx, fieldValue, largeVarTypes).asTerm
     }
     Block(stmts, '{ () }.asTerm).asExprOf[Unit]
 
+  /** Element type of a non-Array collection that maps to Arrow `List` (any `Iterable` other than
+    * `Map`, which is deferred). Returns `None` otherwise.
+    */
+  private def seqElementType(using
+      Quotes
+  )(tpe: quotes.reflect.TypeRepr): Option[quotes.reflect.TypeRepr] =
+    import quotes.reflect.*
+    if tpe <:< TypeRepr.of[scala.collection.Map[Any, Any]] then None
+    else if tpe <:< TypeRepr.of[scala.collection.Iterable[Any]] then
+      tpe.baseType(TypeRepr.of[scala.collection.Iterable].typeSymbol).typeArgs.headOption
+    else None
+
   // ---------------------------------------------------------------------------
-  // Per-field write expression. Dispatches at scalac time on the static field
-  // type to a concrete Arrow vector method.
+  // Recursive per-value write. Writes a value of static type `V` into the Arrow
+  // vector `vec` at element index `elemIdx`. Top-level fields, struct children, and
+  // list elements all funnel through here.
   // ---------------------------------------------------------------------------
 
-  private def buildWriteExpr(using Quotes)(
-      tpe: quotes.reflect.TypeRepr,
-      fieldIdx: Int,
-      vectors: Expr[Array[FieldVector]],
-      rowIdx: Expr[Int],
-      fieldAccess: quotes.reflect.Term,
+  private def buildValueWrite[V: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      value: Expr[V],
       largeVarTypes: Expr[Boolean]
-  ): Expr[Unit] =
+  )(using Quotes): Expr[Unit] =
     import quotes.reflect.*
-    val fieldIdxE = Expr(fieldIdx)
-    tpe.asType match
+    Type.of[V] match
       case '[Boolean] =>
-        val v = fieldAccess.asExprOf[Boolean]
-        '{
-          $vectors($fieldIdxE).asInstanceOf[BitVector]
-            .setSafe($rowIdx, if $v then 1 else 0)
-        }
+        val v = value.asExprOf[Boolean]
+        '{ $vec.asInstanceOf[BitVector].setSafe($elemIdx, if $v then 1 else 0) }
       case '[Byte] =>
-        val v = fieldAccess.asExprOf[Byte]
-        '{
-          $vectors($fieldIdxE).asInstanceOf[TinyIntVector]
-            .setSafe($rowIdx, $v.toInt)
-        }
+        val v = value.asExprOf[Byte]
+        '{ $vec.asInstanceOf[TinyIntVector].setSafe($elemIdx, $v.toInt) }
       case '[Short] =>
-        val v = fieldAccess.asExprOf[Short]
-        '{
-          $vectors($fieldIdxE).asInstanceOf[SmallIntVector]
-            .setSafe($rowIdx, $v.toInt)
-        }
+        val v = value.asExprOf[Short]
+        '{ $vec.asInstanceOf[SmallIntVector].setSafe($elemIdx, $v.toInt) }
       case '[Int] =>
-        val v = fieldAccess.asExprOf[Int]
-        '{ $vectors($fieldIdxE).asInstanceOf[IntVector].setSafe($rowIdx, $v) }
+        val v = value.asExprOf[Int]
+        '{ $vec.asInstanceOf[IntVector].setSafe($elemIdx, $v) }
       case '[Long] =>
-        val v = fieldAccess.asExprOf[Long]
-        '{ $vectors($fieldIdxE).asInstanceOf[BigIntVector].setSafe($rowIdx, $v) }
+        val v = value.asExprOf[Long]
+        '{ $vec.asInstanceOf[BigIntVector].setSafe($elemIdx, $v) }
       case '[Float] =>
-        val v = fieldAccess.asExprOf[Float]
-        '{ $vectors($fieldIdxE).asInstanceOf[Float4Vector].setSafe($rowIdx, $v) }
+        val v = value.asExprOf[Float]
+        '{ $vec.asInstanceOf[Float4Vector].setSafe($elemIdx, $v) }
       case '[Double] =>
-        val v = fieldAccess.asExprOf[Double]
-        '{ $vectors($fieldIdxE).asInstanceOf[Float8Vector].setSafe($rowIdx, $v) }
+        val v = value.asExprOf[Double]
+        '{ $vec.asInstanceOf[Float8Vector].setSafe($elemIdx, $v) }
       case '[String] =>
         // Schema picks Utf8 vs LargeUtf8 from largeVarTypes; root vector follows. JVM cmp+jmp
         // is essentially free per write, and the JIT folds the branch when largeVarTypes is a
         // compile-time constant on the call path.
-        val v = fieldAccess.asExprOf[String]
+        val v = value.asExprOf[String]
         '{
           val s = $v
           if $largeVarTypes then
-            val vec = $vectors($fieldIdxE).asInstanceOf[LargeVarCharVector]
-            if s == null then vec.setNull($rowIdx)
-            else vec.setSafe($rowIdx, s.getBytes(StandardCharsets.UTF_8))
+            val vc = $vec.asInstanceOf[LargeVarCharVector]
+            if s == null then vc.setNull($elemIdx)
+            else vc.setSafe($elemIdx, s.getBytes(StandardCharsets.UTF_8))
           else
-            val vec = $vectors($fieldIdxE).asInstanceOf[VarCharVector]
-            if s == null then vec.setNull($rowIdx)
-            else vec.setSafe($rowIdx, s.getBytes(StandardCharsets.UTF_8))
+            val vc = $vec.asInstanceOf[VarCharVector]
+            if s == null then vc.setNull($elemIdx)
+            else vc.setSafe($elemIdx, s.getBytes(StandardCharsets.UTF_8))
         }
       case '[Array[Byte]] =>
-        // Same Utf8/LargeUtf8 dispatch as String; Binary/LargeBinary on the vector side.
-        val v = fieldAccess.asExprOf[Array[Byte]]
+        // Binary — must precede the generic Array case. Same Utf8/LargeUtf8 dispatch as String.
+        val v = value.asExprOf[Array[Byte]]
         '{
           val b = $v
           if $largeVarTypes then
-            val vec = $vectors($fieldIdxE).asInstanceOf[LargeVarBinaryVector]
-            if b == null then vec.setNull($rowIdx) else vec.setSafe($rowIdx, b)
+            val vc = $vec.asInstanceOf[LargeVarBinaryVector]
+            if b == null then vc.setNull($elemIdx) else vc.setSafe($elemIdx, b)
           else
-            val vec = $vectors($fieldIdxE).asInstanceOf[VarBinaryVector]
-            if b == null then vec.setNull($rowIdx) else vec.setSafe($rowIdx, b)
+            val vc = $vec.asInstanceOf[VarBinaryVector]
+            if b == null then vc.setNull($elemIdx) else vc.setSafe($elemIdx, b)
         }
       case '[BigDecimal] =>
         // Mirrors Spark's `setDecimal` optimization: extract the JBigDecimal first (cheap getter)
         // then setScale only if the scale doesn't already match the vector's. Avoids (a) the
         // Scala-BigDecimal wrapper allocation that `bd.setScale(...)` would do, and (b) the
         // JBigDecimal setScale allocation when the input is already at the target scale.
-        // Reading vec.getScale at runtime (rather than hardcoding the schema's default) keeps
-        // this macro correct if the schema-builder ever picks a non-default Decimal precision.
-        val v = fieldAccess.asExprOf[BigDecimal]
+        val v = value.asExprOf[BigDecimal]
         '{
           val bd = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
-          if bd == null then vec.setNull($rowIdx)
+          val vc = $vec.asInstanceOf[DecimalVector]
+          if bd == null then vc.setNull($elemIdx)
           else
             val jbd = bd.bigDecimal
-            val target = vec.getScale
-            vec.setSafe($rowIdx, if jbd.scale == target then jbd else jbd.setScale(target))
+            val target = vc.getScale
+            vc.setSafe($elemIdx, if jbd.scale == target then jbd else jbd.setScale(target))
         }
       case '[JBigDecimal] =>
-        val v = fieldAccess.asExprOf[JBigDecimal]
+        val v = value.asExprOf[JBigDecimal]
         '{
           val bd = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
-          if bd == null then vec.setNull($rowIdx)
+          val vc = $vec.asInstanceOf[DecimalVector]
+          if bd == null then vc.setNull($elemIdx)
           else
-            val target = vec.getScale
-            vec.setSafe($rowIdx, if bd.scale == target then bd else bd.setScale(target))
+            val target = vc.getScale
+            vc.setSafe($elemIdx, if bd.scale == target then bd else bd.setScale(target))
         }
       case '[LocalDate] =>
-        val v = fieldAccess.asExprOf[LocalDate]
+        val v = value.asExprOf[LocalDate]
         '{
           val d = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[DateDayVector]
-          if d == null then vec.setNull($rowIdx) else vec.setSafe($rowIdx, d.toEpochDay.toInt)
+          val vc = $vec.asInstanceOf[DateDayVector]
+          if d == null then vc.setNull($elemIdx) else vc.setSafe($elemIdx, d.toEpochDay.toInt)
         }
       case '[jsql.Date] =>
         // Spark: DateTimeUtils.fromJavaDate → millisToDays under defaultTimeZone. j.s.Date's
         // toLocalDate also uses the JVM default zone, so the resulting epoch-day is the same.
-        val v = fieldAccess.asExprOf[jsql.Date]
+        val v = value.asExprOf[jsql.Date]
         '{
           val d = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[DateDayVector]
-          if d == null then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, d.toLocalDate.toEpochDay.toInt)
+          val vc = $vec.asInstanceOf[DateDayVector]
+          if d == null then vc.setNull($elemIdx)
+          else vc.setSafe($elemIdx, d.toLocalDate.toEpochDay.toInt)
         }
       case '[Instant] =>
-        val v = fieldAccess.asExprOf[Instant]
+        val v = value.asExprOf[Instant]
         '{
           val i = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeStampMicroTZVector]
-          if i == null then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, i.getEpochSecond * 1000000L + i.getNano / 1000L)
+          val vc = $vec.asInstanceOf[TimeStampMicroTZVector]
+          if i == null then vc.setNull($elemIdx)
+          else vc.setSafe($elemIdx, i.getEpochSecond * 1000000L + i.getNano / 1000L)
         }
       case '[jsql.Timestamp] =>
         // Spark routes through Instant for full µs precision; we do the same.
-        val v = fieldAccess.asExprOf[jsql.Timestamp]
+        val v = value.asExprOf[jsql.Timestamp]
         '{
           val ts = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeStampMicroTZVector]
-          if ts == null then vec.setNull($rowIdx)
+          val vc = $vec.asInstanceOf[TimeStampMicroTZVector]
+          if ts == null then vc.setNull($elemIdx)
           else
             val inst = ts.toInstant
-            vec.setSafe($rowIdx, inst.getEpochSecond * 1000000L + inst.getNano / 1000L)
+            vc.setSafe($elemIdx, inst.getEpochSecond * 1000000L + inst.getNano / 1000L)
         }
       case '[LocalDateTime] =>
         // Spark's localDateTimeToMicros uses ZoneOffset.UTC as the conversion anchor.
-        val v = fieldAccess.asExprOf[LocalDateTime]
+        val v = value.asExprOf[LocalDateTime]
         '{
           val ldt = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeStampMicroVector]
-          if ldt == null then vec.setNull($rowIdx)
-          else
-            vec.setSafe(
-              $rowIdx,
-              ldt.toEpochSecond(ZoneOffset.UTC) * 1000000L + ldt.getNano / 1000L
-            )
+          val vc = $vec.asInstanceOf[TimeStampMicroVector]
+          if ldt == null then vc.setNull($elemIdx)
+          else vc.setSafe($elemIdx, ldt.toEpochSecond(ZoneOffset.UTC) * 1000000L + ldt.getNano / 1000L)
         }
       case '[LocalTime] =>
         // Extension beyond Spark — Spark 4.1.2 rejects TimeType at ExpressionEncoder build time.
-        // Our encoder still supports it; no parity to assert.
-        val v = fieldAccess.asExprOf[LocalTime]
+        val v = value.asExprOf[LocalTime]
         '{
           val t = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeMicroVector]
-          if t == null then vec.setNull($rowIdx) else vec.setSafe($rowIdx, t.toNanoOfDay / 1000L)
+          val vc = $vec.asInstanceOf[TimeMicroVector]
+          if t == null then vc.setNull($elemIdx) else vc.setSafe($elemIdx, t.toNanoOfDay / 1000L)
         }
       case '[Duration] =>
-        val v = fieldAccess.asExprOf[Duration]
+        val v = value.asExprOf[Duration]
         '{
           val d = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[DurationVector]
-          if d == null then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, d.getSeconds * 1000000L + d.getNano / 1000L)
+          val vc = $vec.asInstanceOf[DurationVector]
+          if d == null then vc.setNull($elemIdx)
+          else vc.setSafe($elemIdx, d.getSeconds * 1000000L + d.getNano / 1000L)
         }
       case '[Period] =>
         // Spark uses Math.addExact/multiplyExact for overflow safety; our test values stay well
         // within Int range so the simpler arithmetic matches byte-for-byte.
-        val v = fieldAccess.asExprOf[Period]
+        val v = value.asExprOf[Period]
         '{
           val p = $v
-          val vec = $vectors($fieldIdxE).asInstanceOf[IntervalYearVector]
-          if p == null then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, p.getYears * 12 + p.getMonths)
+          val vc = $vec.asInstanceOf[IntervalYearVector]
+          if p == null then vc.setNull($elemIdx) else vc.setSafe($elemIdx, p.getYears * 12 + p.getMonths)
         }
-      case '[Option[t]] => buildOptionWriteExpr[t](fieldIdx, vectors, rowIdx, fieldAccess, largeVarTypes)
+      case '[Option[t]] =>
+        buildOptionWrite[t](vec, elemIdx, value.asExprOf[Option[t]], largeVarTypes)
+      case '[Array[t]] =>
+        buildArrayListWrite[t](vec, elemIdx, value.asExprOf[Array[t]], largeVarTypes)
       case _ =>
-        report.errorAndAbort(
-          s"ArrowRowSerializer: unsupported field type ${tpe.show} at field $fieldIdx. " +
-            "Nested types (Array[T], Map, nested Product), Variant, Enum, and Char/Varchar " +
-            "are deferred to a follow-up."
-        )
+        val tpe = TypeRepr.of[V]
+        seqElementType(tpe) match
+          case Some(elem) =>
+            elem.asType match
+              case '[e] =>
+                buildSeqListWrite[e](
+                  vec,
+                  elemIdx,
+                  value.asExprOf[scala.collection.Iterable[e]],
+                  largeVarTypes
+                )
+          case None =>
+            val classSym = tpe.classSymbol
+            if classSym.isDefined && classSym.get.flags.is(Flags.Case) then
+              buildStructWrite[V](vec, elemIdx, value, largeVarTypes)
+            else
+              report.errorAndAbort(
+                s"ArrowRowSerializer: unsupported field type ${tpe.show}. Supported: primitives, " +
+                  "String, Array[Byte], BigDecimal, temporal types, nested case classes (Struct), " +
+                  "Array[T]/Seq/List/Vector (List), and Option of any of these. Map is not yet supported."
+              )
 
-  /** Per-inner-type writer for Option[T]. Mirrors `buildWriteExpr` cases but uses
-    * `opt.isEmpty` / `opt.get` instead of null checks.
+  /** Write a nested case class into a `StructVector` at `elemIdx`. A null value marks the slot
+    * null; otherwise each child recurses into its child vector and the slot is marked defined.
     */
-  private def buildOptionWriteExpr[T: Type](using Quotes)(
-      fieldIdx: Int,
-      vectors: Expr[Array[FieldVector]],
-      rowIdx: Expr[Int],
-      fieldAccess: quotes.reflect.Term,
+  private def buildStructWrite[V: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      value: Expr[V],
       largeVarTypes: Expr[Boolean]
-  ): Expr[Unit] =
+  )(using Quotes): Expr[Unit] =
+    '{
+      val sv = $vec.asInstanceOf[StructVector]
+      val v: V = $value
+      if v == null then sv.setNull($elemIdx)
+      else
+        ${ structChildrenWrite[V]('sv, 'v, elemIdx, largeVarTypes) }
+        sv.setIndexDefined($elemIdx)
+    }
+
+  /** Write each case field of `v` into the corresponding child vector of `sv`. Runs under the
+    * splice's ambient `Quotes`, so all reflection (`memberType`, `Select`) is context-consistent.
+    */
+  private def structChildrenWrite[V: Type](
+      sv: Expr[StructVector],
+      v: Expr[V],
+      elemIdx: Expr[Int],
+      largeVarTypes: Expr[Boolean]
+  )(using Quotes): Expr[Unit] =
     import quotes.reflect.*
-    val fieldIdxE = Expr(fieldIdx)
+    val tpe = TypeRepr.of[V]
+    val caseFields = tpe.classSymbol.get.caseFields
+    val stmts = caseFields.zipWithIndex.map { case (sym, j) =>
+      val childTpe = tpe.memberType(sym)
+      childTpe.asType match
+        case '[ct] =>
+          val childVec = '{ $sv.getChildByOrdinal(${ Expr(j) }).asInstanceOf[FieldVector] }
+          val childValue = Select(v.asTerm, sym).asExprOf[ct]
+          buildValueWrite[ct](childVec, elemIdx, childValue, largeVarTypes).asTerm
+    }
+    Block(stmts, '{ () }.asTerm).asExprOf[Unit]
+
+  /** Write a `Seq`/`List`/`Vector`/… into a `ListVector` at `elemIdx`. */
+  private def buildSeqListWrite[E: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      coll: Expr[scala.collection.Iterable[E]],
+      largeVarTypes: Expr[Boolean]
+  )(using Quotes): Expr[Unit] =
+    '{
+      val lv = $vec.asInstanceOf[ListVector]
+      val c = $coll
+      if c == null then lv.setNull($elemIdx)
+      else
+        val start = lv.startNewValue($elemIdx)
+        val data = lv.getDataVector
+        val it = c.iterator
+        var k = 0
+        while it.hasNext do
+          val e: E = it.next()
+          ${ buildValueWrite[E]('data, '{ start + k }, 'e, largeVarTypes) }
+          k += 1
+        lv.endValue($elemIdx, k)
+    }
+
+  /** Write an `Array[E]` (E != Byte) into a `ListVector` at `elemIdx`. */
+  private def buildArrayListWrite[E: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      arr: Expr[Array[E]],
+      largeVarTypes: Expr[Boolean]
+  )(using Quotes): Expr[Unit] =
+    '{
+      val lv = $vec.asInstanceOf[ListVector]
+      val a = $arr
+      if a == null then lv.setNull($elemIdx)
+      else
+        val start = lv.startNewValue($elemIdx)
+        val data = lv.getDataVector
+        var k = 0
+        while k < a.length do
+          val e: E = a(k)
+          ${ buildValueWrite[E]('data, '{ start + k }, 'e, largeVarTypes) }
+          k += 1
+        lv.endValue($elemIdx, a.length)
+    }
+
+  /** Write `Option[T]` into `vec` at `elemIdx`. Unboxed-primitive inner types need explicit
+    * `setNull` because their leaf writer doesn't null-check; every reference inner type (String,
+    * BigDecimal, temporal, Array[Byte], nested struct, collection) already null-checks, so we
+    * collapse the Option to a possibly-null T and delegate to the generic writer.
+    */
+  private def buildOptionWrite[T: Type](
+      vec: Expr[FieldVector],
+      elemIdx: Expr[Int],
+      opt: Expr[Option[T]],
+      largeVarTypes: Expr[Boolean]
+  )(using Quotes): Expr[Unit] =
     Type.of[T] match
       case '[Boolean] =>
-        val opt = fieldAccess.asExprOf[Option[Boolean]]
+        val o = opt.asExprOf[Option[Boolean]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[BitVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, if o.get then 1 else 0)
+          val oo = $o
+          val vc = $vec.asInstanceOf[BitVector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx)
+          else vc.setSafe($elemIdx, if oo.get then 1 else 0)
         }
       case '[Byte] =>
-        val opt = fieldAccess.asExprOf[Option[Byte]]
+        val o = opt.asExprOf[Option[Byte]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[TinyIntVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get.toInt)
+          val oo = $o
+          val vc = $vec.asInstanceOf[TinyIntVector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx) else vc.setSafe($elemIdx, oo.get.toInt)
         }
       case '[Short] =>
-        val opt = fieldAccess.asExprOf[Option[Short]]
+        val o = opt.asExprOf[Option[Short]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[SmallIntVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get.toInt)
+          val oo = $o
+          val vc = $vec.asInstanceOf[SmallIntVector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx) else vc.setSafe($elemIdx, oo.get.toInt)
         }
       case '[Int] =>
-        val opt = fieldAccess.asExprOf[Option[Int]]
+        val o = opt.asExprOf[Option[Int]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[IntVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get)
+          val oo = $o
+          val vc = $vec.asInstanceOf[IntVector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx) else vc.setSafe($elemIdx, oo.get)
         }
       case '[Long] =>
-        val opt = fieldAccess.asExprOf[Option[Long]]
+        val o = opt.asExprOf[Option[Long]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[BigIntVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get)
+          val oo = $o
+          val vc = $vec.asInstanceOf[BigIntVector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx) else vc.setSafe($elemIdx, oo.get)
         }
       case '[Float] =>
-        val opt = fieldAccess.asExprOf[Option[Float]]
+        val o = opt.asExprOf[Option[Float]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[Float4Vector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get)
+          val oo = $o
+          val vc = $vec.asInstanceOf[Float4Vector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx) else vc.setSafe($elemIdx, oo.get)
         }
       case '[Double] =>
-        val opt = fieldAccess.asExprOf[Option[Double]]
+        val o = opt.asExprOf[Option[Double]]
         '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[Float8Vector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get)
-        }
-      case '[String] =>
-        val opt = fieldAccess.asExprOf[Option[String]]
-        '{
-          val o = $opt
-          if $largeVarTypes then
-            val vec = $vectors($fieldIdxE).asInstanceOf[LargeVarCharVector]
-            if o == null || o.isEmpty then vec.setNull($rowIdx)
-            else vec.setSafe($rowIdx, o.get.getBytes(StandardCharsets.UTF_8))
-          else
-            val vec = $vectors($fieldIdxE).asInstanceOf[VarCharVector]
-            if o == null || o.isEmpty then vec.setNull($rowIdx)
-            else vec.setSafe($rowIdx, o.get.getBytes(StandardCharsets.UTF_8))
-        }
-      case '[Array[Byte]] =>
-        val opt = fieldAccess.asExprOf[Option[Array[Byte]]]
-        '{
-          val o = $opt
-          if $largeVarTypes then
-            val vec = $vectors($fieldIdxE).asInstanceOf[LargeVarBinaryVector]
-            if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get)
-          else
-            val vec = $vectors($fieldIdxE).asInstanceOf[VarBinaryVector]
-            if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get)
-        }
-      case '[BigDecimal] =>
-        val opt = fieldAccess.asExprOf[Option[BigDecimal]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else
-            val jbd = o.get.bigDecimal
-            val target = vec.getScale
-            vec.setSafe($rowIdx, if jbd.scale == target then jbd else jbd.setScale(target))
-        }
-      case '[JBigDecimal] =>
-        val opt = fieldAccess.asExprOf[Option[JBigDecimal]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[DecimalVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else
-            val jbd = o.get
-            val target = vec.getScale
-            vec.setSafe($rowIdx, if jbd.scale == target then jbd else jbd.setScale(target))
-        }
-      case '[LocalDate] =>
-        val opt = fieldAccess.asExprOf[Option[LocalDate]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[DateDayVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, o.get.toEpochDay.toInt)
-        }
-      case '[jsql.Date] =>
-        val opt = fieldAccess.asExprOf[Option[jsql.Date]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[DateDayVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, o.get.toLocalDate.toEpochDay.toInt)
-        }
-      case '[Instant] =>
-        val opt = fieldAccess.asExprOf[Option[Instant]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeStampMicroTZVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else
-            val i = o.get
-            vec.setSafe($rowIdx, i.getEpochSecond * 1000000L + i.getNano / 1000L)
-        }
-      case '[jsql.Timestamp] =>
-        val opt = fieldAccess.asExprOf[Option[jsql.Timestamp]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeStampMicroTZVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else
-            val inst = o.get.toInstant
-            vec.setSafe($rowIdx, inst.getEpochSecond * 1000000L + inst.getNano / 1000L)
-        }
-      case '[LocalDateTime] =>
-        val opt = fieldAccess.asExprOf[Option[LocalDateTime]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeStampMicroVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else
-            val ldt = o.get
-            vec.setSafe($rowIdx, ldt.toEpochSecond(ZoneOffset.UTC) * 1000000L + ldt.getNano / 1000L)
-        }
-      case '[LocalTime] =>
-        val opt = fieldAccess.asExprOf[Option[LocalTime]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[TimeMicroVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx) else vec.setSafe($rowIdx, o.get.toNanoOfDay / 1000L)
-        }
-      case '[Duration] =>
-        val opt = fieldAccess.asExprOf[Option[Duration]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[DurationVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else
-            val d = o.get
-            vec.setSafe($rowIdx, d.getSeconds * 1000000L + d.getNano / 1000L)
-        }
-      case '[Period] =>
-        val opt = fieldAccess.asExprOf[Option[Period]]
-        '{
-          val o = $opt
-          val vec = $vectors($fieldIdxE).asInstanceOf[IntervalYearVector]
-          if o == null || o.isEmpty then vec.setNull($rowIdx)
-          else vec.setSafe($rowIdx, o.get.getYears * 12 + o.get.getMonths)
+          val oo = $o
+          val vc = $vec.asInstanceOf[Float8Vector]
+          if oo == null || oo.isEmpty then vc.setNull($elemIdx) else vc.setSafe($elemIdx, oo.get)
         }
       case _ =>
-        report.errorAndAbort(
-          s"ArrowRowSerializer: unsupported Option inner type ${TypeRepr.of[T].show} at field $fieldIdx."
-        )
+        // Reference inner type: collapse to a (possibly null) T and let the generic writer's own
+        // null-handling mark the slot. T is a reference type here (primitives handled above).
+        val inner: Expr[T] =
+          '{ val o = $opt; if o == null || o.isEmpty then null.asInstanceOf[T] else o.get }
+        buildValueWrite[T](vec, elemIdx, inner, largeVarTypes)

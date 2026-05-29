@@ -60,6 +60,15 @@ object ArrowSchemaParityFixtures {
       per: Period)
   case class Optional(oi: Option[Int], os: Option[String], od: Option[LocalDate])
 
+  // Nested shapes (Struct + List). Mirror the Scala 3 spec field-for-field.
+  case class Point(x: Int, y: Int)
+  case class Line(start: Point, end: Point)
+  case class Tagged(id: Int, tags: Seq[String])
+  case class Nums(id: Int, values: Seq[Int])
+  case class Squad(name: String, members: Seq[Point])
+  case class Holder(id: Int, inner: Tagged)
+  case class OptList(id: Int, maybe: Option[Seq[Int]])
+
   // ---------------------------------------------------------------------------
   // Schema build helpers.
   // ---------------------------------------------------------------------------
@@ -136,6 +145,23 @@ object ArrowSchemaParityFixtures {
     emit[Customer](outDir, "tpch-Customer")
     emit[Orders](outDir, "tpch-Orders")
     emit[Lineitem](outDir, "tpch-Lineitem")
+
+    // Nested shapes.
+    implicit val encPoint: ExpressionEncoder[Point] = ExpressionEncoder[Point]()
+    implicit val encLine: ExpressionEncoder[Line] = ExpressionEncoder[Line]()
+    implicit val encTagged: ExpressionEncoder[Tagged] = ExpressionEncoder[Tagged]()
+    implicit val encNums: ExpressionEncoder[Nums] = ExpressionEncoder[Nums]()
+    implicit val encSquad: ExpressionEncoder[Squad] = ExpressionEncoder[Squad]()
+    implicit val encHolder: ExpressionEncoder[Holder] = ExpressionEncoder[Holder]()
+    implicit val encOptList: ExpressionEncoder[OptList] = ExpressionEncoder[OptList]()
+
+    emit[Point](outDir, "Point")
+    emit[Line](outDir, "Line")
+    emit[Tagged](outDir, "Tagged")
+    emit[Nums](outDir, "Nums")
+    emit[Squad](outDir, "Squad")
+    emit[Holder](outDir, "Holder")
+    emit[OptList](outDir, "OptList")
 
     println("Done.")
   }
