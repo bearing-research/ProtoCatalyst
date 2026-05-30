@@ -12,6 +12,38 @@ baseline** (its Scala 2.13 jars, callable from Scala 3 via `CrossVersion.for3Use
 
 ---
 
+## 0. Decisions (resolved 2026-05-30)
+
+- **D1 — lowering approach = (A).** Expose `ProtoEncoder`'s Option/Collection/Map inner encoders
+  (sealed ADT / accessors); the bridge is a Spark-side recursive function. Refinement: every
+  `ProtoEncoder` node carries `clsTag`, which disambiguates normalized leaves (`BigInt` vs
+  `Decimal`, `UUID` vs `String`, `OffsetDateTime` vs `Instant`), so **only those three composite
+  kinds need exposing** — leaves (`clsTag` + `catalystType`), products (`fields`), and sums
+  (`variants`) are already public.
+- **D2 — parity target = structural.** The lowered `AgnosticEncoder` must `==` Spark's on the
+  **Spark-supported corpus** (primary bar); round-trip is the backstop. We construct Spark's actual
+  `spark-sql-api` case classes, so `==` is genuinely structural.
+  - **Corpus split:** extension types Spark's `encoderFor` *rejects* (`UUID`, `OffsetDateTime`,
+    `ZonedDateTime`, `java.util.Date`, `LocalTime`/`TimeType`, data-carrying sum types) have no
+    golden — excluded from structural parity, validated by round-trip only. A "beyond Spark" beat
+    for the report.
+  - **Sharp edges to tune in M3:** corpus is **top-level types only** (`outerPointerGetter` is
+    `None` for non-inner classes; inner-class `() => AnyRef` getters won't compare equal);
+    collection `clsTag` must match Spark's `createIterableEncoder` runtimeClass choice; defaults
+    (Decimal 38/18, strict dates, `lenientSerialization=false`) must align.
+- **D3 — extension-mismatch:** bridge errors (compile-time) on Spark-unrepresentable nodes; the
+  structural-parity corpus excludes them.
+- **D4 — bridge form/placement:** a plain recursive **runtime function** `ProtoEncoder[T] →
+  AgnosticEncoder[T]` (no macro), in **`encoder-spark`** (already has Spark deps +
+  `CrossVersion.for3Use2_13` + `SparkTypeMapping`).
+- **D5 — derivation scope:** case classes + tuples + existing `ProtoEncoder` givens; **concrete
+  types only** (abstract `T` → compile error); non-case-class `DefinedByConstructorParams`
+  deferred; **Scala 3 `enum` + Java enum in, `scala.Enumeration#Value` out**.
+- **D6 — parity oracle:** goldens from a Scala 2.13 helper (`encoderFor[T: TypeTag]`), structural
+  compare (case-class `==`; `ClassTag` by `runtimeClass`).
+
+---
+
 ## 1. We already have most of the engine — `encoder/`
 
 A substantial compile-time encoder framework exists in the `encoder` module. It is **engine
@@ -87,8 +119,9 @@ them. Three ways to fix that:
 - **(C) `def toAgnostic` on `ProtoEncoder`** — co-locate the lowering with each node (total, minimal),
   but couples the engine-independent module to Spark, breaking the IR layering.
 
-Recommendation: **(A)** — it preserves the engine-independent thesis and mirrors how `ProtoType` +
-`SparkTypeMapping` already work. This is the main thing to confirm before M0.
+**Resolved: (A)** (see §0) — preserves the engine-independent thesis and mirrors how `ProtoType` +
+`SparkTypeMapping` already work. The `clsTag` refinement bounds it to exposing the three composite
+kinds only.
 
 ---
 
@@ -185,10 +218,9 @@ inner-class `outerPointerGetter`.
 
 ---
 
-## 10. Open questions
+## 10. Residual questions (post-decisions)
 
-- Confirm §3 (A vs B vs C) — the load-bearing decision.
-- `ClassTag` for generic/abstract `T` (`Expr.summon`/`summonInline` — concrete types only).
-- Non-case-class `DefinedByConstructorParams` — Mirror covers case classes; how far beyond?
-- Scala 3 `enum` vs `scala.Enumeration#Value` parent-`Class` capture.
-- Parity oracle is Scala 2.13-only (`encoderFor[T: TypeTag]`) → goldens from a 2.13 helper module.
+All load-bearing decisions are resolved in §0. Remaining details to settle during implementation:
+- Exact collection `clsTag` Spark's `createIterableEncoder` produces per declared type (Seq/List/
+  Vector/Set) — align `ProtoEncoder`'s collection givens to match (M3).
+- Scala 3 `enum` → `ScalaEnumEncoder` parent-`Class` capture specifics (M4).
