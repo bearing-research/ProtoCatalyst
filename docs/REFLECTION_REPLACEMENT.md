@@ -31,11 +31,17 @@ baseline** (its Scala 2.13 jars, callable from Scala 3 via `CrossVersion.for3Use
     `None` for non-inner classes; inner-class `() => AnyRef` getters won't compare equal);
     collection `clsTag` must match Spark's `createIterableEncoder` runtimeClass choice; defaults
     (Decimal 38/18, strict dates, `lenientSerialization=false`) must align.
-- **D3 — extension-mismatch:** bridge errors (compile-time) on Spark-unrepresentable nodes; the
-  structural-parity corpus excludes them.
+- **D3 — extension-mismatch (two layers).** Types neither `ProtoEncoder` nor Spark supports already
+  fail at **compile time** via `ProtoEncoder.derived`'s `inline error`. Types `ProtoEncoder`
+  supports but Spark cannot represent are handled by the **runtime** bridge: lowered through a real
+  Spark `TransformingEncoder` + `Codec` when a sound conversion exists (e.g. `UUID ↔ String`), or
+  **rejected at bridge invocation** (a runtime `IllegalArgumentException`) otherwise — never mapped
+  directly onto a leaf encoder whose serializer expects a different runtime type. The
+  structural-parity corpus excludes all of these.
 - **D4 — bridge form/placement:** a plain recursive **runtime function** `ProtoEncoder[T] →
   AgnosticEncoder[T]` (no macro), in **`encoder-spark`** (already has Spark deps +
-  `CrossVersion.for3Use2_13` + `SparkTypeMapping`).
+  `CrossVersion.for3Use2_13` + `SparkTypeMapping`). Rejection is therefore *runtime* (D3); a
+  later `inline` wrapper could surface it at compile time if the report wants that claim.
 - **D5 — derivation scope:** case classes + tuples + existing `ProtoEncoder` givens; **concrete
   types only** (abstract `T` → compile error); non-case-class `DefinedByConstructorParams`
   deferred; **Scala 3 `enum` + Java enum in, `scala.Enumeration#Value` out**.
@@ -63,7 +69,7 @@ Spark types. It deliberately mirrors Spark's `AgnosticEncoder` surface.
 | `JavaBeanEncoder` | `JavaBeanEncoder` |
 | `TransformingEncoder` + `codec/` (Fory/Java/Kryo) | `TransformingEncoder` (+ Kryo/Java codecs) |
 | `InlineRowSerializer` / `InlineSumRowSerializer` | the object↔row serializer functions |
-| `SparkTypeMapping` (**bidirectional** `ProtoType ↔ DataType`) | `schemaFor` / `toArrowType`-style lowering |
+| `SparkTypeMapping` (`ProtoType → Spark DataType`) | `schemaFor` / `toArrowType`-style lowering |
 
 **Implication:** the compile-time *derivation* that replaces `ScalaReflection.encoderFor`'s
 reflection **already exists** (`ProtoEncoder.derived`), and the **schema** half of the bridge
@@ -101,7 +107,7 @@ This is the encoder-level analog of what `SparkTypeMapping` already does at the 
 
 ---
 
-## 3. The key design decision (needs your call)
+## 3. The key design decision (resolved — see §0, D1)
 
 A faithful `AgnosticEncoder` cannot be rebuilt from `ProtoType` alone — Spark's nodes need a
 `ClassTag` at every level (`ProductEncoder`/`IterableEncoder`/`MapEncoder`) and need to preserve
@@ -144,11 +150,21 @@ Rules to match exactly (source-verified): **dispatch order** (Null → primitive
 defaults **Decimal (38,18)**, **strict** date encoders, collections `lenientSerialization = false`;
 cycles → compile error.
 
-**Extension mismatches to handle in the bridge:** `ProtoEncoder` has nodes Spark lacks — UUID
-(→ `StringEncoder`), OffsetDateTime/ZonedDateTime (→ `InstantEncoder`), java.util.Date
-(→ `TimestampEncoder`), `LocalTime`/`TimeType` (Spark 4.1 rejects — no `AgnosticEncoder`; bridge
-must error or omit), and the data-carrying **sum-type** encoder (no Spark equivalent — must lower to
-a struct or be rejected, as `SparkTypeMapping` already notes for `ProtoType.SumType`).
+**Extension mismatches (per D3 — no naive leaf substitution).** `ProtoEncoder` has nodes Spark
+lacks. A direct map like `UUID → StringEncoder` is **unsafe**: Spark's `StringEncoder` serializer
+expects a `String` at runtime and would fail on a `UUID` field. So each extension is either:
+- **lowered via a real `TransformingEncoder(leafEnc, Codec[Ext, Spark])`** when a sound bijective
+  conversion exists — `UUID ↔ String`, `OffsetDateTime/ZonedDateTime ↔ Instant` (micros),
+  `java.util.Date ↔ Timestamp`. The project's existing `TransformingEncoder` + `codec/` machinery
+  is the natural vehicle; the codec performs the runtime conversion the leaf serializer needs. *(A
+  `TransformingEncoder` golden has no `ScalaReflection` counterpart, so these are validated by
+  round-trip, not structural parity.)*
+- **or rejected** (D3 runtime error) when no faithful Spark representation exists — `LocalTime`/
+  `TimeType` (Spark 4.1 rejects it outright) and the data-carrying **sum-type** encoder (no
+  `AgnosticEncoder` equivalent; `SparkTypeMapping` already flags `ProtoType.SumType` as un-lowerable).
+
+Whether to *implement* the codec-wrapped extensions or simply reject all extensions in M1 is an
+implementation choice; the corpus and structural-parity claim are unaffected either way.
 
 ---
 
@@ -183,9 +199,13 @@ inner-class `outerPointerGetter`.
 
 ## 7. Benchmark plan
 
-- **Headline — derivation latency.** Reflective `ScalaReflection.encoderFor[T]()` /
+- **Headline — derivation cost.** Reflective `ScalaReflection.encoderFor[T]()` /
   `ExpressionEncoder[T]()` first-call cost and **global `ScalaReflectionLock` contention** under N
-  threads, vs compile-time derivation (**0 runtime**).
+  threads, vs our path. The honest claim is **no Scala reflection, no `TypeTag`, no
+  `ScalaReflectionLock`** — *not* "zero runtime": `ProtoEncoder.derived` + the bridge still do
+  plain object construction at runtime (cheap, allocation-bounded, lock-free, and amortized to once
+  per type when held in a `given`/`val`, exactly as Spark caches `ExpressionEncoder`). Benchmark
+  that exact path (first-call and cached) rather than claiming it away.
 - **Support — serialization throughput/allocation.** The existing §11 (UnsafeRow) / §11b (Arrow)
   microbenchmarks (the lambda encoders), cross-arch (EC2 work) for credibility.
 - **Corpus.** TPC-H schemas + nested fixtures (Struct/List/Map/Option) + primitives/boxed/temporal/
