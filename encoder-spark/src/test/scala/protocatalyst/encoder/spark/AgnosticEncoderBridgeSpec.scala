@@ -54,6 +54,15 @@ case class Wrapped(id: Int, nums: Seq[Option[Int]])
 case class Deep(id: Int, tags: Seq[Address], lookup: Map[String, Address], maybe: Option[Address])
 case class HasTuple(id: Int, pair: (String, Int), triple: (Long, Boolean, Double))
 
+// Scala 3 enums — a feature Spark's reflection cannot encode (no oracle). The bridge DEFINES
+// behavior: a simple enum round-trips via a TransformingEncoder over String; a data-carrying ADT
+// is rejected (Spark's AgnosticEncoder has no sum-type representation).
+enum Color:
+  case Red, Green, Blue
+enum Shape:
+  case Circle(r: Double)
+  case Square(s: Double)
+
 /** M0 spike for the reflection-replacement initiative (see docs/REFLECTION_REPLACEMENT.md):
   *
   *   1. **Structural parity** — `AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[T])`
@@ -92,7 +101,9 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
     case e: InstantEncoder      => s"Instant(len=${e.lenientSerialization})"
     case c: CharEncoder         => s"Char(${c.length})"
     case v: VarcharEncoder      => s"Varchar(${v.length})"
-    case leaf                   => leaf.getClass.getSimpleName.stripSuffix("$")
+    case t: TransformingEncoder[?, ?] =>
+      s"Transforming[${t.clsTag.runtimeClass.getSimpleName},${canonical(t.transformed)}]"
+    case leaf => leaf.getClass.getSimpleName.stripSuffix("$")
 
   private def loadGolden(name: String): String =
     val path = Paths.get("encoder-spark/src/test/resources/agnostic-parity", s"$name.agnostic")
@@ -149,6 +160,18 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
 
   test("structural parity: HasTuple (tuple-of-leaves fields)"):
     assertParity[HasTuple]("HasTuple")
+
+  // --- Scala-3 superset: defined behavior, not Spark parity (no oracle for Scala 3 enums). ---
+
+  test("Scala 3 enum (simple) → TransformingEncoder over String"):
+    val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Color])
+    assertEquals(canonical(ours), "Transforming[Color,StringEncoder]")
+
+  test("Scala 3 data-carrying ADT → clean rejection (Spark has no sum-type encoder)"):
+    val ex = intercept[IllegalArgumentException] {
+      AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Shape])
+    }
+    assert(ex.getMessage.contains("sum-type"), ex.getMessage)
 
   test("ExpressionEncoder builds from our AgnosticEncoder; schema is reflection-free & Spark-correct"):
     val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Person])

@@ -1,6 +1,8 @@
 package protocatalyst.encoder.spark
 
-import org.apache.spark.sql.catalyst.encoders.AgnosticEncoder
+import scala.reflect.ClassTag
+
+import org.apache.spark.sql.catalyst.encoders.{AgnosticEncoder, Codec}
 import org.apache.spark.sql.catalyst.encoders.AgnosticEncoders.*
 import org.apache.spark.sql.types.{DecimalType, Metadata}
 
@@ -56,9 +58,10 @@ object AgnosticEncoderBridge:
         if isUnboxed(enc) then PrimitiveDoubleEncoder else BoxedDoubleEncoder
 
       case ProtoType.StringType =>
-        // String normalizes here, as do extensions Spark lacks (UUID, boxed Character). clsTag splits them.
+        // String normalizes here, as do enums and extensions Spark lacks; clsTag splits them.
         if rc == classOf[String] then StringEncoder
-        else reject(enc, "Spark has no String-backed encoder for this type (UUID/Character)")
+        else if classOf[scala.reflect.Enum].isAssignableFrom(rc) then scala3EnumEncoder(enc)
+        else reject(enc, "Spark has no String-backed encoder for this type (UUID/Character/Java enum)")
       case ProtoType.BinaryType => BinaryEncoder
       case ProtoType.NullType   => NullEncoder
 
@@ -114,10 +117,41 @@ object AgnosticEncoderBridge:
         val valE = lower(v)
         MapEncoder(enc.clsTag, keyE, valE, valE.nullable)
 
-      // SumType/UDTType/UnresolvedType are out of the confirmed scope (sum types have no
-      // AgnosticEncoder; UDT is deferred).
+      case ProtoType.SumType(_, _) =>
+        // A data-carrying Scala 3 enum / sealed-trait ADT. Spark's AgnosticEncoder model has NO
+        // sum-type representation — this is a genuine Scala-3 capability Spark's encoders lack, not
+        // a bridge limitation. Reject cleanly (see doc: "Scala-3 superset" beyond parity).
+        reject(
+          enc,
+          "data-carrying Scala 3 enum / sealed-trait ADT — Spark's AgnosticEncoder has no sum-type " +
+            "representation (a Scala-3 capability Spark's encoder model would need to grow)"
+        )
+
       case other =>
-        reject(enc, s"no lowering for ProtoType $other (sum types / UDT out of scope)")
+        reject(enc, s"no lowering for ProtoType $other (UDT/Unresolved out of scope)")
+
+  /** Faithful encoding for a *simple* Scala 3 `enum` (all-singleton). Spark has no Scala-3-enum
+    * encoder, so we DEFINE the behavior (not parity): a `TransformingEncoder` over `StringEncoder`
+    * whose codec round-trips the case name via `toString` / the companion's `valueOf`. The codec
+    * uses *Java* reflection (not the `scala.reflect.runtime` we replace), and runs only at ser/deser
+    * time. A bare `StringEncoder` would be lossy (deserialize would yield a `String`, not the enum).
+    */
+  private def scala3EnumEncoder(enc: ProtoEncoder[?]): AgnosticEncoder[?] =
+    val enumClass = enc.clsTag.runtimeClass
+    val codecProvider: () => Codec[Any, String] = () =>
+      new Codec[Any, String]:
+        // Lazy: resolved only when the codec actually runs, via the enum companion's `valueOf`.
+        private lazy val companion = Class.forName(enumClass.getName + "$")
+        private lazy val module = companion.getField("MODULE$").get(null)
+        private lazy val valueOfM = companion.getMethod("valueOf", classOf[String])
+        def encode(in: Any): String = in.toString
+        def decode(out: String): Any = valueOfM.invoke(module, out)
+    TransformingEncoder(
+      enc.clsTag.asInstanceOf[ClassTag[Any]],
+      StringEncoder,
+      codecProvider,
+      nullable = true
+    )
 
   /** True when the encoder's runtime class is a JVM primitive (unboxed) — distinguishes
     * `PrimitiveXEncoder` from `BoxedXEncoder` for ProtoTypes that both normalize to (e.g.) IntegerType.

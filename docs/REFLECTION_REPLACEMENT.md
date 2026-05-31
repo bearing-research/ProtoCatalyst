@@ -291,7 +291,18 @@ inner-class `outerPointerGetter`.
   `encoder-spark` 158, `arrow` 158, `query` 166. *(Tuple-of-case-class has the same latent limitation
   in the 21 tuple givens — deferred; rarer than collections.)*
 - **M3 — Parity harness:** structural + schema parity vs `ScalaReflection.encoderFor` over the corpus.
-- **M4 — Tail:** enums, `TransformingEncoder`. (UDT, JavaBean explicitly out/deferred.)
+- **M4 — Tail / Scala-3 superset — partial.** Total parity was never the bar: we reproduce Spark
+  *where Spark has an encoder*, and **define** sensible behavior where it doesn't (a Scala-3
+  capability Spark's reflection lacks) — validated by self-consistency, not a Spark golden.
+  - ✅ **Scala 3 `enum` (simple, all-singleton)** → `TransformingEncoder(clsTag, StringEncoder,
+    valueOf-codec, nullable=true)` — faithful (round-trips the case name via the companion's
+    `valueOf`, Java reflection only; a bare `StringEncoder` would be lossy). Test asserts
+    `Transforming[Color,StringEncoder]`.
+  - ✅ **Data-carrying Scala 3 enum / sealed-trait ADT** → clean rejection: Spark's `AgnosticEncoder`
+    has **no** sum-type representation (a genuine Scala-3 gap in Spark's model, not a bridge limit).
+  - Deferred: Java enums (`JavaEnumEncoder` — parity-testable but needs a `.java` enum shared across
+    `benchmark-spark`/`encoder-spark`), and the `TransformingEncoder`-wrapped extensions (UUID,
+    OffsetDateTime, …) — no oracle, not Scala-3-specific.
 - **M5 — Benchmark + report section:** derivation-latency + lock-contention numbers; fold into the
   report next to §11/§11b.
 
