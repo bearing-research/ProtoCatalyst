@@ -1,18 +1,41 @@
 # Compile-Time Encoders for Spark: A Scala 3 Path Forward
 
-A technical report on replacing Spark's `ExpressionEncoder` with a
-compile-time, macro-derived encoder. We show that the replacement is
-byte-compatible with Spark's existing `UnsafeRow` output, faster on
-most per-row operations we measure (geomean 1.16× across 12
-benchmarks), allocates comparably to Spark (within 7% median), and
-— critically — works in Scala 3 today. §11b extends the same
-treatment to Spark Connect's Arrow IPC wire format: byte-for-byte
-parity with `ArrowSerializer[T]`, geomean ~8% faster (0.92×) with
-~43% less per-row allocation.
+Spark's typed-`Dataset` encoder is the structural reason Spark is
+stuck on Scala 2.13. `ExpressionEncoder` is derived by
+`ScalaReflection.encoderFor[T: TypeTag]`, built on Scala 2's runtime
+reflection — which does not work for Scala 3 types, and which
+serializes *all* encoder derivation in a JVM on a single global lock
+(because Scala 2's `<:<` is not thread-safe). This report's primary
+result is that this reflective derivation can be replaced wholesale by
+**compile-time Scala 3 `Mirror` derivation that produces Spark's own
+`AgnosticEncoder`** — leaving the rest of Spark's encoder pipeline
+untouched:
 
-The report is structured as a case study with a worked implementation:
-every claim is backed by code in this repository, every number is
-reproducible via the one-command harness in
+- **Faithful.** The derived `AgnosticEncoder` is byte-identical to
+  `ScalaReflection.encoderFor`'s across the common type surface
+  (primitives, decimals, temporal, `Option`, collections, `Map`,
+  nested case classes, tuples, collection-of-case-class).
+- **Far cheaper to derive.** ~391× faster single-threaded and ~2,595×
+  at 8 threads — and Spark's derivation *degrades* under concurrency
+  (the global lock) while compile-time derivation scales with cores
+  (§13).
+- **Strictly more capable.** It encodes Scala 3 features Spark's
+  reflection cannot (`enum`s and sealed-trait ADTs), and cleanly marks
+  where Spark's encoder model would need to grow.
+
+A **secondary** result, on a different axis: compile-time-*specialized
+serializers* (a macro-derived `UnsafeRow` encoder, §11; and an Arrow
+IPC encoder for Spark Connect, §11b) also beat Spark on the per-row
+hot path (geomean 1.16× / 0.92×, comparable-to-less allocation). That
+is a *more ambitious* change than the derivation replacement — it does
+**not** follow from it (the replacement reuses Spark's own serializer
+codegen, so per-row is identical to Spark) — and is presented as the
+achievable *ceiling*, not the migration's headline.
+
+Every claim is backed by code in this repository. The reflection,
+parity, and derivation results are reproducible from the
+`encoder-spark` test suite and the `*EncoderDerivationBenchmarks` JMH
+suites; the per-row microbenchmarks via
 [`scripts/bench.sh`](../scripts/bench.sh).
 
 ---
@@ -21,43 +44,45 @@ reproducible via the one-command harness in
 
 ## §1. The problem statement
 
-Apache Spark's typed `Dataset[T]` API is, on the workloads where users
-choose it, **3–5× slower than the untyped `DataFrame` API** (measured
-at TPC-H SF=1; precise figures in §12). The gap is the cost of
-`ExpressionEncoder` — the component that translates between JVM
-case-class instances and Spark's internal `UnsafeRow` byte layout.
-Every typed lambda forces a per-row encoder pass.
+The **primary** problem is structural: Apache Spark cannot run on
+Scala 3, and the typed-`Dataset` encoder is why. `ExpressionEncoder`
+is derived by `ScalaReflection.encoderFor[T: TypeTag]`, built on Scala
+2.13's `TypeTag` / `scala.reflect.runtime` reflection — which does not
+function for Scala 3 types. Spark is therefore locked to Scala 2.13
+not because the rest of the codebase couldn't migrate, but because the
+encoder forces it (§4). Worse, that reflective derivation takes a
+single global lock on *every* subtype check (Scala 2's `<:<` is not
+thread-safe), so all encoder derivation in a JVM serializes (§13).
 
-There is a second, structural problem with the same root cause:
-`ExpressionEncoder` is built on Scala 2.13's `TypeTag` runtime
-reflection, which doesn't function from Scala 3. Spark itself is
-therefore locked to Scala 2.13 — not because the rest of the codebase
-couldn't migrate, but because the encoder forces it. Any community
-attempt to use Spark from Scala 3 hits this wall.
+There is a **separate** motivation for caring about the encoder at
+all: on the workloads where users choose it, the typed `Dataset[T]`
+API is **3–5× slower than the untyped `DataFrame` API** (TPC-H SF=1,
+§12), and the gap is the per-row cost of `ExpressionEncoder`
+translating case-class instances ↔ `UnsafeRow`.
 
-Both problems share a solution: replace the runtime-reflection
-derivation with a compile-time macro. The per-row cost drops because
-the JIT sees specialized, monomorphic code instead of megamorphic
-dispatch through Catalyst's `DataType` machinery. The Scala 3 lock
-comes down because no runtime reflection is needed at all — the
-encoder is generated at `scalac` time, exactly like
-[`jsoniter-scala`'s][js] codecs.
+It is tempting to claim one change fixes both — but it does not, and
+this report is careful to keep them apart:
 
-This report presents that replacement. We implement
-`UnsafeRowSerializer[T]` — a Scala 3 macro-derived encoder targeting
-Spark's exact `UnsafeRow` byte layout — and validate it three ways:
+- **Replacing the *derivation*** (the reflective `encoderFor`) with a
+  compile-time Scala 3 `Mirror` derivation that emits Spark's own
+  `AgnosticEncoder` removes the Scala-3 blocker and the global lock,
+  and is *byte-faithful* to Spark. It does **not** change per-row
+  speed — Spark's own serializer codegen still runs from the same
+  `AgnosticEncoder`. This is the report's headline.
+- **Replacing the *serializer*** as well — emitting specialized,
+  monomorphic `UnsafeRow`/Arrow code instead of going through
+  Catalyst's `DataType` machinery — is what drops the per-row cost
+  (geomean 1.16× / 0.92×). It is a larger, separate change, shown here
+  as the achievable *ceiling* (§11, §11b), not as a consequence of the
+  derivation replacement.
 
-1. **Byte-level parity** with `ExpressionEncoder`'s output, on every
-   fixture we test (§9).
-2. **JMH microbenchmarks** at TPC-H SF=1, where our encoder geomean
-   beats Spark by 1.16× across 12 benchmarks (§11).
-3. **End-to-end TPC-H queries** quantifying where the encoder cost
-   lands in real Spark workloads (§12).
-
-We do not integrate our encoder into a Spark fork; that is left as
-the natural quantified-end-to-end follow-up. What we do prove is that
-**the encoder layer is the structural blocker for Scala 3, and that
-replacing it can be done without changing anything else in Spark.**
+We implement and validate both, and (in the spirit of
+[`jsoniter-scala`][js]) generate everything at `scalac` time. We do
+not fork Spark; stock Spark serves as the correctness oracle and the
+benchmark baseline. What we prove is that **the encoder's *derivation*
+is the structural Scala-3 blocker, that it can be replaced faithfully
+and far more cheaply without touching the rest of Spark, and that
+compile-time encoders can additionally beat Spark on the hot path.**
 
 [js]: https://github.com/plokhotnyuk/jsoniter-scala
 
@@ -1077,13 +1102,35 @@ the community from paying these costs forever.
 
 ## §9. Correctness validation
 
-A replacement encoder must produce **exactly the same bytes** as
-the encoder it replaces. Any deviation breaks Catalyst operators,
-shuffle blocks, lake-format writers, and persisted artifacts that
-expect Spark's specific `UnsafeRow` layout. This section documents
-how we verify byte parity.
+Correctness is validated at the two levels that match the two
+contributions:
 
-### Byte-level parity test against `ExpressionEncoder`
+1. **Derivation parity (primary).** The compile-time–derived
+   `AgnosticEncoder` must be *structurally identical* to the one
+   Spark's reflective `ScalaReflection.encoderFor` produces — same
+   nodes, field names, nullability, decimal precision/scale,
+   `lenientSerialization` flags, `clsTag`s — so that Spark's
+   unchanged downstream (`ExpressionEncoder` → codegen) behaves
+   identically.
+2. **Serializer byte parity (secondary).** The specialized `UnsafeRow`
+   encoder must emit *exactly the same bytes* as `ExpressionEncoder`.
+
+### Structural parity of the derived `AgnosticEncoder` (primary)
+
+`ScalaReflection.encoderFor[T: TypeTag]` exists only in Scala 2.13, so
+goldens are generated there (`AgnosticParityFixtures`) and compared on
+the Scala 3 side (`AgnosticEncoderBridgeSpec`) via a canonical,
+class-name-normalized structural dump — the cross-compile fixture
+pattern this project uses throughout. The corpus spans the common
+surface: flat case classes, the 7 unboxed + 7 boxed primitives,
+`String`/`Binary`, Scala/Java `BigDecimal`/`BigInt` (with exact
+`DecimalType(38,18)`/`(38,0)`), all temporal (with `lenient=false`),
+`Option`, `Seq`/`List`/`Vector`/`Set`/`Array`, `Map`, nested case
+classes, tuples, and collection/map/option *of* a case class. Every
+case is byte-identical to Spark's. (Design and the full corpus:
+[`docs/REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md).)
+
+### Byte-level parity test against `ExpressionEncoder` (serializer)
 
 The core correctness oracle lives at
 [`encoder-spark/src/test/scala/.../UnsafeRowParitySpec.scala`][parity].
@@ -1340,7 +1387,35 @@ variance is large enough that a reviewer should be cautious, we
 flag it explicitly. A more rigorous re-run with more iterations is
 listed as §15 future work.*
 
-## §11. Encoder microbenchmarks
+**How to read this part.** The report's two contributions are
+measured on different axes, so the results split accordingly:
+
+- **Primary — replacing the *derivation*.** Compile-time `Mirror`
+  derivation produces Spark's own `AgnosticEncoder` *byte-faithfully*
+  (§9) and *far more cheaply* — ~391–2,595× faster, and lock-free
+  where Spark's reflective derivation serializes on a global lock and
+  degrades under concurrency (§13). It also encodes Scala 3 features
+  Spark cannot (§13, and `docs/SCALA3_SUPERSET.md`). This is the
+  Scala-3 migration result and reuses Spark's serializer codegen
+  unchanged.
+- **Secondary — replacing the *serializer* too (the ceiling).** §11,
+  §11b, and §12 measure the *more ambitious* change of emitting
+  specialized per-row code: an `UnsafeRow` encoder (§11, geomean
+  1.16×), an Arrow IPC encoder for Spark Connect (§11b, 0.92×), and
+  the end-to-end query tax that motivates why encoders matter (§12).
+  These do **not** follow from the derivation replacement — they are
+  the achievable upper bound if one also replaces Spark's serializer
+  codegen.
+
+## §11. Per-row encoder speed — UnsafeRow (the ceiling, secondary)
+
+*This measures the more ambitious change: a macro-derived
+`UnsafeRowSerializer[T]` that replaces Spark's serializer codegen with
+specialized, monomorphic per-row code (not just the derivation). It is
+byte-identical to `ExpressionEncoder`'s output (§9) and faster per row.
+The reflection-elimination result (§13) does **not** depend on any of
+this — it reuses Spark's serializer unchanged; these numbers are the
+upper bound if one replaces that too.*
 
 ### Hardware and configuration
 
@@ -1499,93 +1574,39 @@ replacing the encoder alone.
 
 ### Step-by-step progression
 
-The current geomean speedup didn't arrive in a single commit. We
-optimized in three independent steps, each addressing a distinct
-bottleneck. The progression illustrates which engineering choices
-mattered.
+The geomean didn't arrive in one commit — three independent
+optimizations, each on a distinct bottleneck. Geomean speedup vs
+Spark by step:
 
-#### Geomean speedup vs Spark, by step
+| Step | Serialize | Deserialize | Roundtrip |
+|---|---:|---:|---:|
+| Baseline | 0.95× | 0.52× | 0.71× |
+| + writer cache | 1.28× | 0.52× | 0.79× |
+| + inline-dispatch deserialize | 1.29× | 1.04× | 1.19× |
+| + quoted-macro direct ctor | 1.38× | 1.12× | 1.19× |
 
-| Operation | Baseline (orig) | Step 1 (+cache) | Step 2 (+inline) | Step 3 (+macro) |
-|---|---:|---:|---:|---:|
-| Serialize | 0.95× | 1.28× | 1.29× | 1.38× |
-| Deserialize | 0.52× | 0.52× | 1.04× | 1.12× |
-| Roundtrip | 0.71× | 0.79× | 1.19× | 1.19× |
+Step 1 caches the `UnsafeRowWriter` (fixes serialize); step 2
+replaces megamorphic `row.get(i, dataType)` with type-specialized
+`row.getLong(i)` etc. (fixes deserialize); step 3 constructs the
+case class directly, removing the last `Array[Any]` /
+`Mirror.fromProduct` intermediate (helps both, and pulls allocation
+to within 1.02–1.08× of Spark — the jsoniter-scala pattern).
+Trajectory from earlier-snapshot JMH data; final numbers are the
+per-row table above.
 
-#### Allocation ratio (ours / Spark), by step
+## §11b. Arrow path — the ceiling on a second codepath (secondary)
 
-| Operation | Baseline (orig) | Step 1 (+cache) | Step 2 (+inline) | Step 3 (+macro) |
-|---|---:|---:|---:|---:|
-| Serialize | 2.54× | 1.11× | 1.10× | 1.02× |
-| Deserialize | 1.93× | 1.93× | 1.23× | 1.08× |
-| Roundtrip | 2.09× | 1.61× | 1.10× | 1.08× |
-
-(These step-progression tables use the earlier-snapshot JMH data
-from `/tmp/micro-step{1,2,3}.json` and
-`results/20260527T040510Z-sf1/`, captured during the optimization
-work. They show the *trajectory* across the three engineering
-steps; the canonical "final" numbers are in the per-row table
-above.)
-
-Interpretation of the progression:
-
-1. **Step 1 (writer cache)** flipped serialize from 0.95× (slight
-   loss) to ~1.28× by caching the `UnsafeRowWriter` instance
-   rather than allocating per call. Closes 4 per-call object
-   allocations (writer, UnsafeRow, BufferHolder, byte[64]).
-   Deserialize unchanged because it touches a different code path.
-   Allocation rate on serialize dropped from 2.54× to 1.11×.
-2. **Step 2 (inline-dispatch deserialize)** flipped deserialize
-   from 0.52× to ~1.04× by replacing `row.get(i, dataType)`
-   megamorphic dispatch with type-specialized
-   `row.getLong(i)`/`row.getInt(i)`/etc. per field. Same pattern
-   Spark's codegen uses internally. Allocation rate on deserialize
-   dropped from 1.93× to 1.23× via eliminating one of the two
-   `Array[Any]` intermediates.
-3. **Step 3 (quoted-macro direct constructor)** added another ~8%
-   on speed and pulled allocation rate to within 1.02–1.08× of
-   Spark by eliminating the remaining `Array[Any]` +
-   `Mirror.fromProduct` intermediate. Primitives now flow unboxed
-   straight into the case-class constructor (the jsoniter-scala
-   pattern).
-
-All three are **independent optimizations** addressing distinct
-bottlenecks. Step 1 doesn't help deserialize. Step 2 doesn't help
-serialize. Step 3 helps both but only after steps 1 and 2 have
-removed the dominant overhead sources.
-
-## §11b. Arrow path microbenchmarks (Spark Connect wire format)
-
-### Why this section exists
-
-§5 and §14 lean on the realistic-near-term claim that a
-**native-image Spark Connect client** is the practical unlock.
-But Spark Connect's wire format is Arrow IPC over gRPC — the
-client side never touches `UnsafeRow`. §11's microbenchmarks
-prove the encoder layer is replaceable on the UnsafeRow path;
-they do not, by themselves, prove it on the Arrow path. Without
-this section the headline claim would be backed by a benchmark
-of the wrong codepath. This section closes that gap.
-
-`encoder-spark/.../arrow/ArrowRowSerializer[T]` and
-`ArrowRowDeserializer[T]` (commit `fc4521d`) are the Scala 3
-compile-time analog of Spark Connect's reflection-based
+The §11 result specializes the serializer on the Catalyst/`UnsafeRow`
+path. The same holds on Spark Connect's **Arrow IPC** wire format:
+`ArrowRowSerializer[T]` / `ArrowRowDeserializer[T]` (Scala 3,
+compile-time) are the analog of Spark Connect's reflection-based
 [`ArrowSerializer[T]`][spark-arrow-ser] /
-[`ArrowDeserializers`][spark-arrow-deser]. Phase A established
-byte-for-byte parity against the Spark Connect wire format:
-
-- **15 Arrow `Schema` fixtures** byte-equal to
-  `ArrowUtils.toArrowSchema`, including all 8 TPC-H schemas.
-- **7 Arrow IPC byte fixtures** byte-equal to
-  `ArrowSerializer.serialize(...)`, including the
-  `largeVarTypes=true` LargeUtf8 path and `null`-Option-as-null
-  semantics.
-- **7 read-side fixtures**: Spark-produced IPC bytes decoded by
-  our deserializer recover the original records.
-
-In other words: on the wire, a Spark Connect server cannot tell
-whether a typed `Dataset[T]` upload was encoded by Spark's
-`ArrowSerializer` or by our Scala 3 macro encoder.
+[`ArrowDeserializers`][spark-arrow-deser], and are **byte-for-byte
+identical on the wire**: 15 Arrow `Schema` fixtures byte-equal to
+`ArrowUtils.toArrowSchema` (all 8 TPC-H schemas), 7 IPC byte fixtures
+byte-equal to `ArrowSerializer.serialize` (incl. the `largeVarTypes`
+LargeUtf8 path and null-Option semantics), and 7 read-side fixtures. A
+Spark Connect server cannot tell which encoder produced the bytes.
 
 [spark-arrow-ser]: https://github.com/apache/spark/blob/v4.1.2/sql/connect/common/src/main/scala/org/apache/spark/sql/connect/client/arrow/ArrowSerializer.scala
 [spark-arrow-deser]: https://github.com/apache/spark/blob/v4.1.2/sql/connect/common/src/main/scala/org/apache/spark/sql/connect/client/arrow/ArrowDeserializer.scala
@@ -1619,84 +1640,35 @@ TPC-H tables. **Lineitem is the only table where Spark wins, by
 | `partBatch` | 1,198 | 2,138 | **0.56×** |
 | _**Geomean (4 benches)**_ | | | **0.57×** |
 
-**Our encoder allocates ~43% less per row across the board.**
-This is the macro paying off — no boxed `AgnosticEncoder` field
-values flowing through `Object` slots, no per-call internal
-`Serializer` subclass instances, no per-field-type dispatch
-allocations. For long-running encoders this maps directly to less
-GC pressure and more predictable tail latencies, which matter for
-the Spark Connect client use case where the encoder runs in a
-tight loop per RPC roundtrip.
+**~43% less allocation per row across the board** — the macro paying
+off (no boxed `AgnosticEncoder` field values through `Object` slots,
+no per-call `Serializer` subclass instances, no per-field-type
+dispatch allocations), which maps to less GC pressure in a
+tight-loop encoder.
 
-### Why Lineitem is slower
-
-Lineitem is the only table where we lose, at 1.06×. With 16
-columns including 4 `BigDecimal` fields, it has the densest
-mixed-type schema in the TPC-H set.
-
-The first pass of these benchmarks measured Lineitem at 1.16× —
-the gap closed to 1.06× via two targeted commits informed by JFR
-profiling:
-
-1. **`8ffd03e`** — mirror Spark's `setDecimal` pattern: extract
-   the `JBigDecimal` first (cheap getter), then `setScale` only
-   if the input's scale doesn't already match the vector's. Our
-   previous code unconditionally called Scala `BigDecimal`'s
-   `setScale`, which allocates both a fresh Java BigDecimal and a
-   Scala wrapper. JIT escape analysis was already eliding the
-   wrapper, so the throughput win was modest (~30 ns/row on
-   Lineitem) and the allocation rate didn't move — but it brought
-   our code path structurally in line with Spark's.
-2. **`4a233b9`** — source the target scale from `vec.getScale` at
-   runtime rather than hardcoding 18 in the macro. Resilience fix
-   more than a perf fix, but it also matched Spark's call shape
-   exactly. Negligible perf cost (final-field accessor; JIT inlines
-   to zero).
-
-The remaining 6% gap is roughly **~14 ns/extra-Decimal-field** vs
-Spark. JFR profiling shows the dominant cost is split between
-`java.math.BigInteger.toByteArray` (called inside Arrow's
-`DecimalVector.setSafe(BigDecimal)`) and the `ArrowBuf.refCnt` /
-`BufferLedger.getRefCount` / `AtomicInteger.get` chain that runs
-on every buffer access via `ensureAccessible`. Both costs are
-shared with Spark; Spark spends proportionally less time there
-because its per-row work runs faster end-to-end, so each JFR
-wall-clock sample covers more useful work. There's no obvious
-single-knob fix without bypassing Arrow's safe public API for
-DecimalVector writes (e.g., constructing unscaled bytes ourselves
-via `BigInteger.toByteArray` + `setBigEndianSafe`) — invasive,
-Spark doesn't do it either, deferred to future work.
-
-**The honest reading**: Lineitem-shape decimal-heavy schemas pay
-~6% more on our encoder than Spark's, and the cost lives inside
-shared Arrow internals rather than in the macro-generated code.
-
-### What the Arrow numbers do and don't establish
-
-**They do establish**: the Scala 3 compile-time encoder is a
-viable replacement for Spark Connect's `ArrowSerializer` on the
-wire, with no speed regression in aggregate and a substantial
-allocation reduction. This is the empirical backing for the
-native-image-Spark-Connect-client claim in §14.
-
-**They do not establish**: that our encoder is uniformly faster
-on every Arrow workload. Lineitem-shape decimal-heavy schemas
-need a follow-up optimization. They also do not address Spark
-Connect's _server_ side, which still runs full Spark with all
-its AOT blockers per §5.
-
-### Bench provenance
-
-All numbers in this section come from
+We win 3 of 4 tables by 10–14% (~8% geomean) with non-overlapping CIs.
+**Lineitem (16 cols, 4 `BigDecimal`s) is the one loss, at 1.06×**; the
+residual ~6% lives inside *shared* Arrow internals —
+`java.math.BigInteger.toByteArray` and the `ArrowBuf` ref-counting
+chain inside `DecimalVector.setSafe` — not in the macro-generated code
+(Spark pays the same costs; closing it would mean bypassing Arrow's
+safe API, which Spark doesn't do either). Provenance:
 [`results/arrow-decimal-opt-quiet-20260529T004832Z/`](../results/arrow-decimal-opt-quiet-20260529T004832Z/)
-on commit `4a233b9` (post-Decimal-optimization). Same hardware /
-JVM / JMH config as §11 (Mac arm64, OpenJDK 21.0.11, JMH 3 forks
-× 5 warmup × 15 measurement × 1 s, `-prof gc`). 45 measurements
-per benchmark; 99.9% CI error bars under 3% of mean on every line.
-Cross-architecture validation on EC2 m6i.8xlarge is a natural
-follow-up, mirroring §11's Mac-vs-EC2 sweep.
+on `4a233b9`, §11 hardware/JMH config.
 
-## §12. End-to-end TPC-H queries
+These numbers originally backed a native-image Spark Connect client;
+that use case is now *secondary* to the reflection-elimination result
+(§13). The Arrow parity + speed stand as a second, independent
+demonstration of the per-row ceiling — on a wire format that never
+touches `UnsafeRow`.
+
+## §12. End-to-end TPC-H queries (why the encoder matters)
+
+*This section motivates *why* the per-row encoder is worth optimizing
+at all — the typed-`Dataset` tax in real queries — and is the
+empirical grounding for the §11/§11b "ceiling." It is about the
+serializer cost, not the derivation; the reflection-elimination result
+(§13) does not change these numbers.*
 
 ### Query design
 
@@ -1798,7 +1770,14 @@ micro suggests.
 The definitive measurement — Spark fork integration — is §15
 future work.
 
-## §13. Cold-start cost and where Spark still wins
+## §13. Derivation cost — the primary result
+
+*This is the report's headline. Replacing Spark's reflective
+`encoderFor` with compile-time `Mirror` derivation is byte-faithful
+(its `AgnosticEncoder` is structurally identical to Spark's — §9) and
+removes two costs Spark cannot avoid in Scala 2.13: a one-time
+reflection cold-start, and a global lock that serializes all
+derivation. It also encodes Scala 3 types Spark can't.*
 
 ### Cold-start: Spark pays a one-time cost per encoder; we don't
 
@@ -1920,6 +1899,28 @@ cannot encode at all are documented in
 [`REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md) and
 [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
 
+### Strictly more capable: Scala 3 types Spark cannot encode
+
+Parity is only the *subset* where Spark has an encoder. Because the
+derivation is Scala 3 native, it also handles types Spark's 2.13
+reflection cannot — and the bridge to `AgnosticEncoder` defines
+honest behavior for each:
+
+- **Simple `enum`** (`enum Color { case Red, Green, Blue }`) →
+  `TransformingEncoder` over `String` with a `valueOf` codec — a
+  faithful round-trip Spark cannot derive at all (it has no
+  Scala-3-enum encoder).
+- **Data-carrying `enum` / sealed-trait ADT**
+  (`enum Shape { case Circle(r); case Square(s) }`) → a **clean
+  rejection**: Spark's `AgnosticEncoder` model has *no sum-type
+  representation*. This is a concrete gap in Spark's encoder model
+  that a Scala-3 port would grow — surfaced, not hidden.
+
+Validated by self-consistency (there can be no Spark golden for a type
+Spark cannot encode). The full catalog of these behaviors and their
+implementations is in
+[`docs/SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
+
 ### Where Spark still wins — honest accounting
 
 A complete report acknowledges where the alternative is
@@ -1984,17 +1985,28 @@ requires that integration.
 
 ## §14. The migration argument
 
-The numbers in §11 and §12 establish two facts:
+The migration argument is narrower and stronger than "our encoder is
+faster." The load-bearing claim is about the *derivation*:
 
-1. A Scala 3 compile-time-derived encoder can match Spark's
-   `ExpressionEncoder` byte-for-byte and beat it on per-row
-   throughput.
-2. The encoder accounts for a significant fraction of typed
-   `Dataset[T]` query time on real-world workloads.
+1. Spark's `ExpressionEncoder` derivation
+   (`ScalaReflection.encoderFor`) is the structural reason Spark is
+   stuck on Scala 2.13 (§4), and — separately — a globally-locked
+   bottleneck that degrades under concurrency (§13).
+2. That derivation can be replaced, at compile time via Scala 3
+   `Mirror`, with one that produces Spark's *own* `AgnosticEncoder`
+   **byte-faithfully** (§9), far more cheaply and lock-free
+   (~391–2,595×, §13), while changing **nothing else in Spark** — and
+   it encodes Scala 3 types Spark cannot (§13).
 
-The migration argument follows directly from those facts plus the
-properties established in §5–§8: no runtime reflection, compile-time
-schema validation, GraalVM compatibility, automatic binary
+A second, independent claim — that compile-time *serializers* also
+beat Spark on the per-row hot path (§11/§11b, geomean 1.16× / 0.92×;
+§12 shows that cost is real) — is the achievable ceiling if one also
+replaces Spark's serializer codegen. It is **not** required for the
+Scala-3 unlock, and the unlock does not depend on it.
+
+The migration follows from the first claim plus §5–§8: no runtime
+reflection in derivation, compile-time schema validation, GraalVM
+compatibility for the derivation step, and automatic binary
 compatibility with existing Spark artifacts.
 
 ### What changes for Spark if compile-time encoders are adopted
@@ -2005,21 +2017,16 @@ compatibility with existing Spark artifacts.
   could upgrade typed `Dataset[T]` code, and the cross-version
   workarounds catalogued in §8 disappear from every downstream
   user's build.
-- **One AOT blocker removed — not all of them.** The encoder is
-  one of ~15 AOT blockers in Spark 4.1
+- **One AOT blocker removed — not all of them.** The encoder is one
+  of ~15 AOT blockers in Spark 4.1
   ([`docs/AOT_ROADMAP.md`](AOT_ROADMAP.md)); the structural one,
   Catalyst whole-stage codegen via Janino, is unaffected by this
-  work. Full Spark is not close to running as a native-image
-  binary. What this *does* enable: a realistic path to native-image
-  **Spark Connect clients** (no Catalyst on the client) with
-  sub-second cold start, suitable for AWS Lambda or embedded
-  non-JVM hosts. **§11b establishes empirical backing for this
-  specific claim: byte-for-byte wire parity with Spark Connect's
-  `ArrowSerializer` across 22 fixtures (15 schema + 7 IPC byte),
-  and a per-row throughput / allocation comparison on TPC-H
-  schemas showing geomean ~8% faster (0.92×) with ~43% less
-  allocation per row.** For full Spark, Project Leyden's AOT class
-  loading is the realistic adjacent path, not GraalVM native-image.
+  work, so full Spark is not close to a native-image binary. (A
+  narrower spin-off — a native-image **Spark Connect client**, no
+  Catalyst on the client — is enabled by the Arrow-path parity in
+  §11b, but that is now a secondary use case behind the Scala-3
+  unlock itself.) For full Spark, Project Leyden's AOT class loading
+  is the realistic adjacent path, not GraalVM native-image.
 - **Cold-start cost drops.** No more `runtime.universe`
   initialization per JVM (the ~500 ms hit measured in §13). For
   short-lived JVMs — serverless executors, ad-hoc shells, IDE test
