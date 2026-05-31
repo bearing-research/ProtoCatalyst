@@ -303,6 +303,8 @@ inner-class `outerPointerGetter`.
   - Deferred: Java enums (`JavaEnumEncoder` — parity-testable but needs a `.java` enum shared across
     `benchmark-spark`/`encoder-spark`), and the `TransformingEncoder`-wrapped extensions (UUID,
     OffsetDateTime, …) — no oracle, not Scala-3-specific.
+  - The full superset catalog (every Scala-3-unique behavior + its implementation) lives in
+    [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
 - **M5 — Benchmark + report section:** derivation-latency + lock-contention numbers; fold into the
   report next to §11/§11b.
 
