@@ -19,9 +19,35 @@ import org.apache.spark.sql.catalyst.encoders.AgnosticEncoders._
   *
   * Re-run: `sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.AgnosticParityFixtures'`
   */
-// Top-level (not nested in the object) so Spark derives it with `outerPointerGetter = None`,
-// matching the Scala 3 spec's top-level Person. Structural mirror of the spec's case class.
+// Top-level (not nested in the object) so Spark derives them with `outerPointerGetter = None`,
+// matching the Scala 3 spec. Structural mirrors of the spec's case classes.
 case class Person(id: Int, name: String, active: Boolean, score: Double)
+
+// M1 leaf-coverage corpus.
+case class Primitives(b: Boolean, by: Byte, sh: Short, i: Int, l: Long, f: Float, d: Double)
+case class Boxed(
+    b: java.lang.Boolean,
+    by: java.lang.Byte,
+    sh: java.lang.Short,
+    i: java.lang.Integer,
+    l: java.lang.Long,
+    f: java.lang.Float,
+    d: java.lang.Double)
+case class Scalars(
+    s: String,
+    bin: Array[Byte],
+    dec: BigDecimal,
+    jdec: java.math.BigDecimal,
+    bi: BigInt,
+    jbi: java.math.BigInteger)
+case class Temporal(
+    ld: java.time.LocalDate,
+    sd: java.sql.Date,
+    inst: java.time.Instant,
+    ts: java.sql.Timestamp,
+    ldt: java.time.LocalDateTime,
+    dur: java.time.Duration,
+    per: java.time.Period)
 
 object AgnosticParityFixtures {
 
@@ -42,7 +68,18 @@ object AgnosticParityFixtures {
     case m: MapEncoder[_, _, _] =>
       "Map[" + canonical(m.keyEncoder) + "," + canonical(m.valueEncoder) +
         ",vcn=" + m.valueContainsNull + "]"
-    case leaf => leaf.getClass.getSimpleName.stripSuffix("$")
+    // Parametric leaves: capture precision/scale and lenientSerialization so the dump is rigorous.
+    case d: ScalaDecimalEncoder => "ScalaDecimal(" + d.dt.precision + "," + d.dt.scale + ")"
+    case d: JavaDecimalEncoder =>
+      "JavaDecimal(" + d.dt.precision + "," + d.dt.scale + ",len=" + d.lenientSerialization + ")"
+    case d: SparkDecimalEncoder => "SparkDecimal(" + d.dt.precision + "," + d.dt.scale + ")"
+    case e: DateEncoder         => "Date(len=" + e.lenientSerialization + ")"
+    case e: LocalDateEncoder    => "LocalDate(len=" + e.lenientSerialization + ")"
+    case e: TimestampEncoder    => "Timestamp(len=" + e.lenientSerialization + ")"
+    case e: InstantEncoder      => "Instant(len=" + e.lenientSerialization + ")"
+    case c: CharEncoder         => "Char(" + c.length + ")"
+    case v: VarcharEncoder      => "Varchar(" + v.length + ")"
+    case leaf                   => leaf.getClass.getSimpleName.stripSuffix("$")
   }
 
   private def write(dir: File, name: String, dump: String): Unit = {
@@ -59,6 +96,10 @@ object AgnosticParityFixtures {
       if (args.nonEmpty) new File(args(0))
       else new File("encoder-spark/src/test/resources/agnostic-parity")
     write(outDir, "Person", canonical(ExpressionEncoder[Person]().encoder))
+    write(outDir, "Primitives", canonical(ExpressionEncoder[Primitives]().encoder))
+    write(outDir, "Boxed", canonical(ExpressionEncoder[Boxed]().encoder))
+    write(outDir, "Scalars", canonical(ExpressionEncoder[Scalars]().encoder))
+    write(outDir, "Temporal", canonical(ExpressionEncoder[Temporal]().encoder))
     println("Done.")
   }
 }

@@ -261,8 +261,15 @@ inner-class `outerPointerGetter`.
   leaves (so `String` came out non-nullable) — the bridge takes nullability from the lowered child's
   `.nullable` (Spark's `!isPrimitive` rule) instead; the `ProtoEncoder` bug should be fixed at source
   in M1. (b) the §2.1 secondary-surface / no-in-process-execution finding.
-- **M1 — Leaf coverage:** map every leaf/boxed/temporal/decimal node; handle the extension mismatches
-  (§4). `schemaFor` falls out (reuse `SparkTypeMapping`).
+- **M1 — Leaf coverage — ✅ DONE.** All leaf nodes lowered with `clsTag` disambiguation, structural
+  parity green for `Primitives` (7 unboxed), `Boxed` (7 boxed), `Scalars` (String/Binary/Scala+Java
+  Decimal at `(38,18)`/BigInt), `Temporal` (Date/LocalDate/Timestamp/Instant/LocalDateTime/Duration/
+  Period, all `lenient=false`). The canonical dump now captures decimal precision/scale and
+  `lenientSerialization`. Extensions (UUID, OffsetDateTime, ZonedDateTime, java.util.Date,
+  LocalTime, boxed Char) are rejected (D3); TransformingEncoder-wrapping deferred to M4.
+  *Deferred:* fixing `ProtoEncoder.PrimitiveEncoder.nullable` at source — the bridge takes
+  nullability from the lowered child's `.nullable` (Spark-correct) regardless, and changing the core
+  `encoder/` module carries UnsafeRow/Arrow regression risk; tracked as a separate follow-up.
 - **M2 — Recursive:** Option/Array/Iterable/Map/Product/tuple lowering; cycle check; sum-type policy.
 - **M3 — Parity harness:** structural + schema parity vs `ScalaReflection.encoderFor` over the corpus.
 - **M4 — Tail:** enums, `TransformingEncoder`. (UDT, JavaBean explicitly out/deferred.)

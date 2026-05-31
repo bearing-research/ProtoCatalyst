@@ -1,0 +1,1 @@
+Product[Temporal](ld:LocalDate(len=false)?,sd:Date(len=false)?,inst:Instant(len=false)?,ts:Timestamp(len=false)?,ldt:LocalDateTimeEncoder?,dur:DayTimeIntervalEncoder?,per:YearMonthIntervalEncoder?)

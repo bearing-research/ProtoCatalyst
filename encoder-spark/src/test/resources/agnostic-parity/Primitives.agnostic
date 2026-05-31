@@ -1,0 +1,1 @@
+Product[Primitives](b:PrimitiveBooleanEncoder!,by:PrimitiveByteEncoder!,sh:PrimitiveShortEncoder!,i:PrimitiveIntEncoder!,l:PrimitiveLongEncoder!,f:PrimitiveFloatEncoder!,d:PrimitiveDoubleEncoder!)

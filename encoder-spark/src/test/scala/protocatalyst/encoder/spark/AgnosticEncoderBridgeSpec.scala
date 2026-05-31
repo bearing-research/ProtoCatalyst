@@ -13,6 +13,35 @@ import protocatalyst.encoder.ProtoEncoder
 // mirror of AgnosticParityFixtures.Person.
 case class Person(id: Int, name: String, active: Boolean, score: Double)
 
+// M1 leaf-coverage corpus — structural mirrors of AgnosticParityFixtures.
+case class Primitives(b: Boolean, by: Byte, sh: Short, i: Int, l: Long, f: Float, d: Double)
+case class Boxed(
+    b: java.lang.Boolean,
+    by: java.lang.Byte,
+    sh: java.lang.Short,
+    i: java.lang.Integer,
+    l: java.lang.Long,
+    f: java.lang.Float,
+    d: java.lang.Double
+)
+case class Scalars(
+    s: String,
+    bin: Array[Byte],
+    dec: BigDecimal,
+    jdec: java.math.BigDecimal,
+    bi: BigInt,
+    jbi: java.math.BigInteger
+)
+case class Temporal(
+    ld: java.time.LocalDate,
+    sd: java.sql.Date,
+    inst: java.time.Instant,
+    ts: java.sql.Timestamp,
+    ldt: java.time.LocalDateTime,
+    dur: java.time.Duration,
+    per: java.time.Period
+)
+
 /** M0 spike for the reflection-replacement initiative (see docs/REFLECTION_REPLACEMENT.md):
   *
   *   1. **Structural parity** — `AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[T])`
@@ -40,7 +69,18 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
     case m: MapEncoder[?, ?, ?] =>
       "Map[" + canonical(m.keyEncoder) + "," + canonical(m.valueEncoder) +
         ",vcn=" + m.valueContainsNull + "]"
-    case leaf => leaf.getClass.getSimpleName.stripSuffix("$")
+    // Parametric leaves: capture precision/scale and lenientSerialization so the dump is rigorous.
+    case d: ScalaDecimalEncoder => s"ScalaDecimal(${d.dt.precision},${d.dt.scale})"
+    case d: JavaDecimalEncoder  =>
+      s"JavaDecimal(${d.dt.precision},${d.dt.scale},len=${d.lenientSerialization})"
+    case d: SparkDecimalEncoder => s"SparkDecimal(${d.dt.precision},${d.dt.scale})"
+    case e: DateEncoder         => s"Date(len=${e.lenientSerialization})"
+    case e: LocalDateEncoder    => s"LocalDate(len=${e.lenientSerialization})"
+    case e: TimestampEncoder    => s"Timestamp(len=${e.lenientSerialization})"
+    case e: InstantEncoder      => s"Instant(len=${e.lenientSerialization})"
+    case c: CharEncoder         => s"Char(${c.length})"
+    case v: VarcharEncoder      => s"Varchar(${v.length})"
+    case leaf                   => leaf.getClass.getSimpleName.stripSuffix("$")
 
   private def loadGolden(name: String): String =
     val path = Paths.get("encoder-spark/src/test/resources/agnostic-parity", s"$name.agnostic")
@@ -51,9 +91,28 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
       )
     new String(Files.readAllBytes(path)).trim
 
-  test("structural parity: our AgnosticEncoder == Spark's ScalaReflection golden (Person)"):
-    val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Person])
-    assertEquals(canonical(ours), loadGolden("Person"))
+  /** Derive `T` at compile time, lower via the bridge, assert the canonical dump matches the
+    * Scala 2.13 golden. `inline` because `ProtoEncoder.derived` needs the `Mirror` at the call site.
+    */
+  private inline def assertParity[T](name: String)(using
+      m: scala.deriving.Mirror.Of[T]
+  ): Unit =
+    assertEquals(canonical(AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[T])), loadGolden(name))
+
+  test("structural parity: Person (flat)"):
+    assertParity[Person]("Person")
+
+  test("structural parity: Primitives (7 unboxed, non-nullable)"):
+    assertParity[Primitives]("Primitives")
+
+  test("structural parity: Boxed (7 boxed, nullable)"):
+    assertParity[Boxed]("Boxed")
+
+  test("structural parity: Scalars (String/Binary/Scala+Java Decimal/BigInt)"):
+    assertParity[Scalars]("Scalars")
+
+  test("structural parity: Temporal (Date/LocalDate/Timestamp/Instant/LocalDateTime/Duration/Period)"):
+    assertParity[Temporal]("Temporal")
 
   test("ExpressionEncoder builds from our AgnosticEncoder; schema is reflection-free & Spark-correct"):
     val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Person])

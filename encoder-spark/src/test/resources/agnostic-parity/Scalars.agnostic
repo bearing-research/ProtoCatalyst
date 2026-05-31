@@ -1,0 +1,1 @@
+Product[Scalars](s:StringEncoder?,bin:BinaryEncoder?,dec:ScalaDecimal(38,18)?,jdec:JavaDecimal(38,18,len=false)?,bi:ScalaBigIntEncoder?,jbi:JavaBigIntEncoder?)
