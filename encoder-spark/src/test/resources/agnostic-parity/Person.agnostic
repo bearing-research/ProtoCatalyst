@@ -1,0 +1,1 @@
+Product[Person](id:PrimitiveIntEncoder!,name:StringEncoder?,active:PrimitiveBooleanEncoder!,score:PrimitiveDoubleEncoder!)
