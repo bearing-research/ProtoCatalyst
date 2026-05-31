@@ -277,13 +277,19 @@ inner-class `outerPointerGetter`.
   needed), Map→`MapEncoder`, nested Product, and combinations (`Seq[Option[Int]]`). containsNull/
   valueContainsNull taken from the lowered child's `.nullable`. Structural parity green for
   Opts/Colls/Maps/Nested/Wrapped.
-  **Limitation found (tracked):** `ProtoEncoder` cannot derive a *collection/option/map of a
-  case class* (`Seq[Address]`, `Map[String,Address]`, `Option[Address]`) — its collection givens
-  need a `using ProtoEncoder[element]`, which doesn't exist for case-class elements (they derive via
-  `derived`, not as a summonable given; a blanket auto-derive given collides with the tuple/
-  collection givens). This is a `ProtoEncoder` (engine) gap, not a bridge gap — the bridge handles
-  these shapes once derivation produces them. Spark supports `Seq[CaseClass]` heavily, so this needs
-  a proper fix before the corpus is complete.
+  **Engine gap — ✅ FIXED.** `ProtoEncoder` now derives *collection/option/map of a case class*
+  (`Seq[Address]`, `Map[String,Address]`, `Option[Address]`). The collection/option/map givens were
+  changed from `given X(using ProtoEncoder[element])` to **`inline given`** that resolve the element
+  via the existing inline `summonEncoder` — which already handles case classes through its
+  `Mirror.ProductOf → derived` branch (a plain `using` can't reach that, since case classes have no
+  summonable given). The previous design only worked when the element used `derives ProtoEncoder`
+  (companion given); the bridge derives via `ProtoEncoder.derived[T]` (no companion givens), so it
+  hit the gap. Because the inline givens construct private encoder classes, construction is routed
+  through public `makeOptionEncoder`/`makeCollectionEncoder`/`makeMapEncoder` factories (else the
+  private class isn't accessible when the given inlines at an external call site). `Deep`
+  (Seq/Map/Option of `Address`) now passes structural parity. No regressions: `encoder` 268,
+  `encoder-spark` 158, `arrow` 158, `query` 166. *(Tuple-of-case-class has the same latent limitation
+  in the 21 tuple givens — deferred; rarer than collections.)*
 - **M3 — Parity harness:** structural + schema parity vs `ScalaReflection.encoderFor` over the corpus.
 - **M4 — Tail:** enums, `TransformingEncoder`. (UDT, JavaBean explicitly out/deferred.)
 - **M5 — Benchmark + report section:** derivation-latency + lock-contention numbers; fold into the

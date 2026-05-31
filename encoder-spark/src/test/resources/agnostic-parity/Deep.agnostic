@@ -1,0 +1,1 @@
+Product[Deep](id:PrimitiveIntEncoder!,tags:Iterable[Seq,Product[Address](street:StringEncoder?,zip:PrimitiveIntEncoder!),cn=true]?,lookup:Map[StringEncoder,Product[Address](street:StringEncoder?,zip:PrimitiveIntEncoder!),vcn=true]?,maybe:Option[Product[Address](street:StringEncoder?,zip:PrimitiveIntEncoder!)]?)

@@ -321,8 +321,12 @@ object ProtoEncoder:
 
   // === Option encoder ===
 
-  given optionEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Option[T]] =
-    OptionEncoder(enc)
+  // `inline given` resolving the element via `summonEncoder` (not a `using ProtoEncoder[T]`), so a
+  // case-class element is derived through summonEncoder's `Mirror.ProductOf` branch. A plain
+  // `using ProtoEncoder[T]` can't reach that (case classes have no summonable given), which is why
+  // Option/collection/Map *of a case class* previously failed to derive.
+  inline given optionEncoder[T]: ProtoEncoder[Option[T]] =
+    makeOptionEncoder(summonEncoder[T])
 
   private class OptionEncoder[T](enc: ProtoEncoder[T]) extends ProtoEncoder[Option[T]]:
     val schema: ProtoSchema = enc.schema
@@ -330,6 +334,10 @@ object ProtoEncoder:
     val nullable: Boolean = true
     val clsTag: ClassTag[Option[T]] = ClassTag(classOf[Option[?]])
     override def optionElement: Option[ProtoEncoder[?]] = Some(enc)
+
+  /** Public factory so the `inline given optionEncoder` can construct the private encoder when its
+    * body is inlined at an external call site. */
+  def makeOptionEncoder[T](enc: ProtoEncoder[T]): ProtoEncoder[Option[T]] = OptionEncoder(enc)
 
   // === Tuple encoders ===
   // Tuples are Products in Scala 3, but we provide explicit given instances
@@ -1018,23 +1026,21 @@ object ProtoEncoder:
 
   // === Collection encoders ===
 
-  given seqEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Seq[T]] =
-    CollectionEncoder(enc, ClassTag(classOf[Seq[?]]))
+  // inline + summonEncoder so the element may be a case class (derived) as well as a leaf (given).
+  inline given seqEncoder[T]: ProtoEncoder[Seq[T]] =
+    makeCollectionEncoder(summonEncoder[T], ClassTag(classOf[Seq[?]]))
 
-  given listEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[List[T]] =
-    CollectionEncoder(enc, ClassTag(classOf[List[?]]))
+  inline given listEncoder[T]: ProtoEncoder[List[T]] =
+    makeCollectionEncoder(summonEncoder[T], ClassTag(classOf[List[?]]))
 
-  given vectorEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Vector[T]] =
-    CollectionEncoder(enc, ClassTag(classOf[Vector[?]]))
+  inline given vectorEncoder[T]: ProtoEncoder[Vector[T]] =
+    makeCollectionEncoder(summonEncoder[T], ClassTag(classOf[Vector[?]]))
 
-  given setEncoder[T](using enc: ProtoEncoder[T]): ProtoEncoder[Set[T]] =
-    CollectionEncoder(enc, ClassTag(classOf[Set[?]]))
+  inline given setEncoder[T]: ProtoEncoder[Set[T]] =
+    makeCollectionEncoder(summonEncoder[T], ClassTag(classOf[Set[?]]))
 
-  given arrayEncoder[T](using
-      enc: ProtoEncoder[T],
-      ct: ClassTag[Array[T]]
-  ): ProtoEncoder[Array[T]] =
-    CollectionEncoder(enc, ct)
+  inline given arrayEncoder[T](using ct: ClassTag[Array[T]]): ProtoEncoder[Array[T]] =
+    makeCollectionEncoder(summonEncoder[T], ct)
 
   private class CollectionEncoder[C, T](enc: ProtoEncoder[T], val clsTag: ClassTag[C])
       extends ProtoEncoder[C]:
@@ -1043,11 +1049,12 @@ object ProtoEncoder:
     val nullable: Boolean = false
     override def collectionElement: Option[ProtoEncoder[?]] = Some(enc)
 
-  given mapEncoder[K, V](using
-      keyEnc: ProtoEncoder[K],
-      valEnc: ProtoEncoder[V]
-  ): ProtoEncoder[Map[K, V]] =
-    MapEncoder(keyEnc, valEnc)
+  /** Public factory for the `inline given` collection encoders (see `makeOptionEncoder`). */
+  def makeCollectionEncoder[C, T](enc: ProtoEncoder[T], ct: ClassTag[C]): ProtoEncoder[C] =
+    CollectionEncoder(enc, ct)
+
+  inline given mapEncoder[K, V]: ProtoEncoder[Map[K, V]] =
+    makeMapEncoder(summonEncoder[K], summonEncoder[V])
 
   private class MapEncoder[K, V](keyEnc: ProtoEncoder[K], valEnc: ProtoEncoder[V])
       extends ProtoEncoder[Map[K, V]]:
@@ -1057,6 +1064,12 @@ object ProtoEncoder:
     val nullable: Boolean = false
     val clsTag: ClassTag[Map[K, V]] = ClassTag(classOf[Map[?, ?]])
     override def mapKeyValue: Option[(ProtoEncoder[?], ProtoEncoder[?])] = Some((keyEnc, valEnc))
+
+  /** Public factory for the `inline given mapEncoder` (see `makeOptionEncoder`). */
+  def makeMapEncoder[K, V](
+      keyEnc: ProtoEncoder[K],
+      valEnc: ProtoEncoder[V]
+  ): ProtoEncoder[Map[K, V]] = MapEncoder(keyEnc, valEnc)
 
   // === Java enum encoder ===
 

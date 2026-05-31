@@ -56,6 +56,12 @@ case class Colls(ints: Seq[Int], strs: List[String], vec: Vector[Long], set: Set
 case class Maps(m1: Map[String, Int], m2: Map[Int, String])
 case class Nested(id: Int, addr: Address)
 case class Wrapped(id: Int, nums: Seq[Option[Int]])
+// Collection/map/option OF a case class — the M2 ProtoEncoder gap fixed by the inline-given change.
+case class Deep(
+    id: Int,
+    tags: Seq[Address],
+    lookup: Map[String, Address],
+    maybe: Option[Address])
 
 object AgnosticParityFixtures {
 
@@ -113,6 +119,7 @@ object AgnosticParityFixtures {
     write(outDir, "Maps", canonical(ExpressionEncoder[Maps]().encoder))
     write(outDir, "Nested", canonical(ExpressionEncoder[Nested]().encoder))
     write(outDir, "Wrapped", canonical(ExpressionEncoder[Wrapped]().encoder))
+    write(outDir, "Deep", canonical(ExpressionEncoder[Deep]().encoder))
     println("Done.")
   }
 }

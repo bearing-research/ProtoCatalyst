@@ -50,6 +50,8 @@ case class Maps(m1: Map[String, Int], m2: Map[Int, String])
 case class Nested(id: Int, addr: Address)
 // `nums: Seq[Option[Int]]` exercises a collection of a nullable wrapper (still leaf-backed).
 case class Wrapped(id: Int, nums: Seq[Option[Int]])
+// Collection/map/option OF a case class — derivable after the inline-given ProtoEncoder fix.
+case class Deep(id: Int, tags: Seq[Address], lookup: Map[String, Address], maybe: Option[Address])
 
 /** M0 spike for the reflection-replacement initiative (see docs/REFLECTION_REPLACEMENT.md):
   *
@@ -137,6 +139,9 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
 
   test("structural parity: Wrapped (Seq[Option[Int]])"):
     assertParity[Wrapped]("Wrapped")
+
+  test("structural parity: Deep (Seq/Map/Option of a case class — engine-gap fix)"):
+    assertParity[Deep]("Deep")
 
   test("ExpressionEncoder builds from our AgnosticEncoder; schema is reflection-free & Spark-correct"):
     val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Person])
