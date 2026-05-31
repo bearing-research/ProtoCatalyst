@@ -1,0 +1,1 @@
+Product[Tuple3](_1:PrimitiveIntEncoder!,_2:StringEncoder?,_3:PrimitiveDoubleEncoder!)

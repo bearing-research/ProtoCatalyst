@@ -1,0 +1,1 @@
+Product[HasTuple](id:PrimitiveIntEncoder!,pair:Product[Tuple2](_1:StringEncoder?,_2:PrimitiveIntEncoder!)?,triple:Product[Tuple3](_1:PrimitiveLongEncoder!,_2:PrimitiveBooleanEncoder!,_3:PrimitiveDoubleEncoder!)?)

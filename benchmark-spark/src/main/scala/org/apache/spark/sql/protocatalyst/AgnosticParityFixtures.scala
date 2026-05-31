@@ -62,6 +62,8 @@ case class Deep(
     tags: Seq[Address],
     lookup: Map[String, Address],
     maybe: Option[Address])
+// Tuples (Spark ProductEncoder with _1/_2/… fields): top-level and as fields.
+case class HasTuple(id: Int, pair: (String, Int), triple: (Long, Boolean, Double))
 
 object AgnosticParityFixtures {
 
@@ -120,6 +122,8 @@ object AgnosticParityFixtures {
     write(outDir, "Nested", canonical(ExpressionEncoder[Nested]().encoder))
     write(outDir, "Wrapped", canonical(ExpressionEncoder[Wrapped]().encoder))
     write(outDir, "Deep", canonical(ExpressionEncoder[Deep]().encoder))
+    write(outDir, "Tuple3", canonical(ExpressionEncoder[(Int, String, Double)]().encoder))
+    write(outDir, "HasTuple", canonical(ExpressionEncoder[HasTuple]().encoder))
     println("Done.")
   }
 }
