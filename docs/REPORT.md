@@ -1859,6 +1859,67 @@ rows, the cold-start delta dominates. Quantified separately from
 the per-row claim because it's a different axis of the migration
 benefit.
 
+### Derivation throughput and the global subtype lock
+
+The cold-start figures above are *one-time* costs. There is a
+second, sharper axis: the **steady-state cost of deriving an
+encoder**, and how it behaves under concurrency. Spark's
+`ScalaReflection.encoderFor[T]` dispatches through a long chain of
+subtype checks — `case t if isSubtype(t, localTypeOf[X])`, repeated
+for every leaf type — and **every one of those checks takes a
+single global lock**:
+
+```scala
+// org.apache.spark.sql.catalyst.ScalaReflection
+private[catalyst] def isSubtype(tpe1: Type, tpe2: Type): Boolean =
+  ScalaSubtypeLock.synchronized { tpe1 <:< tpe2 }
+//   ^ "This operator is not thread safe in any current version of
+//      scala" — scala/bug#10766
+```
+
+Because Scala 2's `<:<` is not thread-safe, Spark must serialize
+*all* encoder derivation in the JVM on one monitor. Scala 3
+compile-time derivation has no runtime `<:<` at all — the type
+analysis happened at compile time — so there is no lock.
+
+We measured this directly with two JMH suites (Throughput mode):
+`SparkEncoderDerivationBenchmarks` (Scala 2.13) times
+`ScalaReflection.encoderFor[Lineitem]`; `EncoderDerivationBenchmarks`
+(Scala 3) times `AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Lineitem])`
+— both produce the *same* `AgnosticEncoder[Lineitem]` (16 fields),
+so it is an apples-to-apples "type → encoder description" comparison.
+
+| Threads | Spark `encoderFor` (ops/s) | Compile-time (ops/s) | Speedup |
+|---:|---:|---:|---:|
+| 1 | 2,309 ± 69 | 902,906 ± 11k | **~391×** |
+| 8 | **1,580 ± 65** | 4,099,836 ± 144k | **~2,595×** |
+| scaling 1→8 | **0.68× (slower)** | 4.5× | — |
+
+Two things stand out. First, single-threaded, compile-time
+derivation is ~400× faster — no reflection walk, just object
+construction. Second, and more telling: **Spark's derivation gets
+*slower* with more threads** (2,309 → 1,580 ops/s as contention on
+`ScalaSubtypeLock` rises), while ours scales with cores (4.5× on
+this 4-performance-core machine). On a many-core server the gap
+only widens — Spark stays flat or degrades; the compile-time path
+keeps scaling.
+
+**Honest scope.** These are local Apple-M1 numbers at directional
+fidelity (`-f1 -wi3 -i5`; a publication run is `-f3` plus the
+cross-arch EC2 sweep). They measure *derivation* (building the
+encoder description), not execution, and the compile-time side is
+*not* "zero runtime" — it is lock-free object construction,
+amortized to once per type when the encoder is held in a `given`/
+`val` (exactly as Spark caches `ExpressionEncoder`). The lock thus
+bites hardest where many encoders are derived concurrently and
+uncached — multi-tenant Spark Connect servers, REPL/notebook
+sessions, and jobs touching many distinct case classes — rather
+than in a steady per-row inner loop. The full reflection-replacement
+design, the broader parity surface, and the Scala-3 features Spark
+cannot encode at all are documented in
+[`REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md) and
+[`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
+
 ### Where Spark still wins — honest accounting
 
 A complete report acknowledges where the alternative is
