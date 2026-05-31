@@ -250,6 +250,29 @@ inner-class `outerPointerGetter`.
 - **Corpus.** TPC-H schemas + nested fixtures (Struct/List/Map/Option) + primitives/boxed/temporal/
   decimal/enum.
 
+### 7.1 Results (M5) — derivation throughput, `Lineitem` (16 fields)
+
+The exact lock is `ScalaSubtypeLock.synchronized { t1 <:< t2 }` in `ScalaReflection.isSubtype`,
+taken on **every** subtype check in `encoderFor`'s dispatch — because Scala 2's `<:<` is not
+thread-safe (scala/bug#10766). So Spark serializes all encoder derivation on one global lock;
+compile-time Scala 3 derivation has no runtime `<:<` and no lock.
+
+`SparkEncoderDerivationBenchmarks` (`ScalaReflection.encoderFor[Lineitem]`, Scala 2.13) vs
+`EncoderDerivationBenchmarks` (`toAgnostic(ProtoEncoder.derived[Lineitem])`, Scala 3), Throughput:
+
+| Threads | Spark (reflective) ops/s | Ours (compile-time) ops/s | Speedup |
+|---:|---:|---:|---:|
+| 1 | 2,309 ± 69 | 902,906 ± 11k | **~391×** |
+| 8 | **1,580 ± 65** | 4,099,836 ± 144k | **~2,595×** |
+| scaling 1→8 | **0.68× (degrades)** | 4.5× | |
+
+**Spark's derivation gets *slower* with more threads** (lock contention); ours scales with cores.
+*Caveats:* local M1 (8-core: 4 perf + 4 efficiency, hence ~4.5× not 8×), directional fidelity
+(`-f1 -wi3 -i5` — a publication run is `-f3` + cross-arch EC2). This measures **derivation**
+(building the encoder), not execution; and it's *not* "zero runtime" — ours is plain lock-free
+object construction (amortized to once per type via a `given`/`val`). On a many-core server the gap
+widens: Spark stays flat/degrades, ours keeps scaling.
+
 ---
 
 ## 8. Milestones (each independently reviewable)
@@ -305,8 +328,10 @@ inner-class `outerPointerGetter`.
     OffsetDateTime, …) — no oracle, not Scala-3-specific.
   - The full superset catalog (every Scala-3-unique behavior + its implementation) lives in
     [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
-- **M5 — Benchmark + report section:** derivation-latency + lock-contention numbers; fold into the
-  report next to §11/§11b.
+- **M5 — Benchmark — ✅ DONE (local, directional).** `SparkEncoderDerivationBenchmarks` (2.13) +
+  `EncoderDerivationBenchmarks` (Scala 3). Result (§7.1): ~391× single-threaded, ~2,595× at 8
+  threads; Spark *degrades* under concurrency (`ScalaSubtypeLock`), ours scales 4.5×. Remaining:
+  publication run (`-f3` + cross-arch EC2) and folding into the main report next to §11/§11b.
 
 ---
 
