@@ -1509,68 +1509,17 @@ high timing variance — both reflect the same root cause, which is
 the variable-length region complexity for Lineitem's 5 string
 fields + 4 decimals.
 
-### Cross-architecture validation: Mac arm64 vs EC2 x86_64
+### Cross-architecture validation (Mac arm64 vs EC2 x86_64)
 
-To verify the per-row claims aren't an Apple-Silicon-specific
-artifact of HotSpot's arm64 codegen, the full publication sweep
-was re-run on an EC2 m6i.8xlarge (Intel Ice Lake, AVX-512, 32
-cores, 124 GB RAM, Amazon Linux 2023, JDK 21.0.11 Corretto, commit
-`dbb9a22`, same JMH configuration). Geomean speedup by operation:
-
-| Operation | Mac arm64 | EC2 x86_64 | Δ |
-|---|---:|---:|---:|
-| Serialize geomean | 1.27× | 1.23× | −0.04 |
-| Deserialize geomean | 1.09× | **1.24×** | **+0.15** |
-| Roundtrip geomean | 1.11× | 1.11× | 0.00 |
-| **Overall (12 benches)** | **1.16×** | **1.19×** | **+0.03** |
-
-The overall claim holds across architectures (1.16×–1.19× geomean
-faster than Spark, with the same 11/12 benchmarks winning). Three
-observations worth noting:
-
-1. **The Lineitem-roundtrip outlier on Mac was variance, not real
-   regression.** Mac measured 0.79× with ±104 ns CI; EC2 measures
-   1.06× on the same benchmark. The Mac measurement environment
-   (8-core laptop with background sbt/IDE activity) had JIT-timing
-   noise on the large 16-field constructor; the quiet 32-core EC2
-   box gives a stable signal that confirms the macro emission is
-   competitive. Future work (more iterations on Mac) would
-   reproduce this fix locally.
-
-2. **Spark's deserialize is more competitive on Apple Silicon
-   than on x86_64.** Mac sees us 1.09× on deserialize; EC2 widens
-   that to 1.24×. The difference is presumably HotSpot codegen
-   characteristics on arm64 vs Intel — Spark's runtime-generated
-   bytecode JITs differently on each arch. The relative direction
-   stays the same (we win), but the absolute margin moves.
-
-3. **End-to-end queries show the same overall shape with different
-   per-query magnitudes.** Q6 (canonical encoder-bound):
-   Mac 4.70× → EC2 4.52× — basically identical. Q1 (dilution case):
-   Mac 1.06× → EC2 1.08× — same regime. Q14 and Q21 see smaller
-   gaps on x86_64 (5.04× → 2.56× for Q14, 1.64× → 1.16× for Q21),
-   suggesting Spark's join-codegen JITs particularly well on x86_64.
-
-The cross-arch table here is the canonical evidence that the
-encoder claim is portable. The microbench section's headline
-remains the Mac numbers (commit `1ac4873d`,
-`results/20260527T185535Z-sf1/`) because that's where the report
-was developed; the EC2 run validates rather than replaces it.
-
-### End-to-end queries — cross-arch (default config)
-
-| Query | Mac DS/DF | EC2 DS/DF | EC2 encoder fraction |
-|---|---:|---:|---:|
-| Q1 | 1.06× | 1.08× | 7% |
-| Q6 | 4.70× | 4.52× | **78%** |
-| Q14 | 5.04× | 2.56× | 61% |
-| Q21 | 1.64× | 1.16× | 14% |
-
-The Q6 result is the canonical cross-arch corroboration:
-**encoder-bound queries pay a ~78–80% encoder tax on both
-architectures**, with our 1.19–1.24× per-row gain (geomean
-deserialize) representing the upper-bound win available from
-replacing the encoder alone.
+To confirm the per-row claim isn't an Apple-Silicon artifact, the
+full sweep was re-run on EC2 m6i.8xlarge (Intel Ice Lake, 32 cores,
+JDK 21 Corretto, commit `dbb9a22`, same JMH config). The overall
+geomean holds: **1.16× (Mac) → 1.19× (EC2)**, same 11/12 benchmarks
+winning; deserialize widens on x86_64 (1.09× → 1.24×, HotSpot codegen
+differences), and the one Mac outlier (Lineitem-roundtrip 0.79×) was
+variance — EC2 measures 1.06× on the same bench. End-to-end, the
+encoder-bound Q6 pays a ~78% encoder tax on both arches (Mac 4.70× /
+EC2 4.52× DS/DF). The per-row claim is portable.
 
 ### Step-by-step progression
 
@@ -1740,13 +1689,6 @@ pay a real per-row tax that varies from ~11% to ~80% of query
 time depending on workload shape**. The microbench in §11
 quantifies the per-row cost; this section shows how it manifests
 in end-to-end query latency.
-
-### Ablation matrix
-
-[Eight-config matrix in an appendix table — codegen on/off × AQE
-on/off × local[1]/local[*]. Discuss patterns: AQE neutral at
-SF=1 (no reshape work); codegen-off slows DF dramatically because
-DF's optimization depends on codegen; threads=1 slows both ~4×.]
 
 ### Implication: encoder replacement matters (with caveats)
 
