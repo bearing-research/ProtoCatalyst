@@ -35,6 +35,20 @@ trait ProtoEncoder[T]:
   /** For sum types (sealed traits), the variant encoders. Empty for non-sum types. */
   def variants: Vector[VariantEncoder[?]] = Vector.empty
 
+  // Structural accessors for composite encoders, so engine-facing consumers (e.g. the Spark
+  // `AgnosticEncoder` bridge) can traverse the recursive shape that `catalystType` alone hides —
+  // notably `Option`, whose `catalystType` delegates to its inner type. Default `None`/empty.
+
+  /** Inner encoder if this is an `Option[X]` encoder (its `catalystType` is `X`'s, so it is
+    * otherwise indistinguishable from a nullable `X`). */
+  def optionElement: Option[ProtoEncoder[?]] = None
+
+  /** Element encoder if this is a collection (`Seq`/`List`/`Vector`/`Set`/`Array`). */
+  def collectionElement: Option[ProtoEncoder[?]] = None
+
+  /** Key/value encoders if this is a `Map`. */
+  def mapKeyValue: Option[(ProtoEncoder[?], ProtoEncoder[?])] = None
+
 object ProtoEncoder:
 
   // === Derivation entry point ===
@@ -315,6 +329,7 @@ object ProtoEncoder:
     val catalystType: ProtoType = enc.catalystType
     val nullable: Boolean = true
     val clsTag: ClassTag[Option[T]] = ClassTag(classOf[Option[?]])
+    override def optionElement: Option[ProtoEncoder[?]] = Some(enc)
 
   // === Tuple encoders ===
   // Tuples are Products in Scala 3, but we provide explicit given instances
@@ -1026,6 +1041,7 @@ object ProtoEncoder:
     val schema: ProtoSchema = ProtoSchema(Vector.empty)
     val catalystType: ProtoType = ProtoType.ArrayType(enc.catalystType, enc.nullable)
     val nullable: Boolean = false
+    override def collectionElement: Option[ProtoEncoder[?]] = Some(enc)
 
   given mapEncoder[K, V](using
       keyEnc: ProtoEncoder[K],
@@ -1040,6 +1056,7 @@ object ProtoEncoder:
       ProtoType.MapType(keyEnc.catalystType, valEnc.catalystType, valEnc.nullable)
     val nullable: Boolean = false
     val clsTag: ClassTag[Map[K, V]] = ClassTag(classOf[Map[?, ?]])
+    override def mapKeyValue: Option[(ProtoEncoder[?], ProtoEncoder[?])] = Some((keyEnc, valEnc))
 
   // === Java enum encoder ===
 

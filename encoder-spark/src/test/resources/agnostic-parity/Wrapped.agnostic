@@ -1,0 +1,1 @@
+Product[Wrapped](id:PrimitiveIntEncoder!,nums:Iterable[Seq,Option[PrimitiveIntEncoder],cn=true]?)

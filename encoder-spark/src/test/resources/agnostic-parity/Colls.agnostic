@@ -1,0 +1,1 @@
+Product[Colls](ints:Iterable[Seq,PrimitiveIntEncoder,cn=false]?,strs:Iterable[List,StringEncoder,cn=true]?,vec:Iterable[Vector,PrimitiveLongEncoder,cn=false]?,set:Iterable[Set,PrimitiveIntEncoder,cn=false]?,arr:Array[PrimitiveDoubleEncoder,cn=false]?)

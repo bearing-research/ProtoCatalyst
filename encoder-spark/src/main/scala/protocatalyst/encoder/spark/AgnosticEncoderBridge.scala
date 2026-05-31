@@ -31,6 +31,13 @@ object AgnosticEncoderBridge:
     lower(enc).asInstanceOf[AgnosticEncoder[T]]
 
   private def lower(enc: ProtoEncoder[?]): AgnosticEncoder[?] =
+    // Option is handled first: its `catalystType` delegates to the inner type, so it is invisible to
+    // the `catalystType` dispatch below (`Option[X]` looks like a nullable `X`).
+    enc.optionElement match
+      case Some(inner) => OptionEncoder(lower(inner))
+      case None        => lowerNonOption(enc)
+
+  private def lowerNonOption(enc: ProtoEncoder[?]): AgnosticEncoder[?] =
     val rc = enc.clsTag.runtimeClass
     enc.catalystType match
       case ProtoType.BooleanType =>
@@ -93,10 +100,24 @@ object AgnosticEncoderBridge:
           EncoderField(fe.name, child, child.nullable, Metadata.empty)
         }
         ProductEncoder(enc.clsTag, encoderFields, None)
-      // ArrayType/MapType (collections) land in M2; SumType/UDTType/UnresolvedType are out of the
-      // confirmed scope (sum types have no AgnosticEncoder; UDT is deferred).
+
+      case ProtoType.ArrayType(_, _) =>
+        // Array[T] → ArrayEncoder; Seq/List/Vector/Set → IterableEncoder. clsTag distinguishes.
+        // containsNull = the element encoder's nullability (Spark's rule), not ProtoType's flag.
+        val elem = lower(enc.collectionElement.get)
+        if rc.isArray then ArrayEncoder(elem, elem.nullable)
+        else IterableEncoder(enc.clsTag, elem, elem.nullable, lenientSerialization = false)
+
+      case ProtoType.MapType(_, _, _) =>
+        val (k, v) = enc.mapKeyValue.get
+        val keyE = lower(k)
+        val valE = lower(v)
+        MapEncoder(enc.clsTag, keyE, valE, valE.nullable)
+
+      // SumType/UDTType/UnresolvedType are out of the confirmed scope (sum types have no
+      // AgnosticEncoder; UDT is deferred).
       case other =>
-        reject(enc, s"no lowering yet for ProtoType $other (M2: Array/Map/Option; UDT/Sum out of scope)")
+        reject(enc, s"no lowering for ProtoType $other (sum types / UDT out of scope)")
 
   /** True when the encoder's runtime class is a JVM primitive (unboxed) — distinguishes
     * `PrimitiveXEncoder` from `BoxedXEncoder` for ProtoTypes that both normalize to (e.g.) IntegerType.

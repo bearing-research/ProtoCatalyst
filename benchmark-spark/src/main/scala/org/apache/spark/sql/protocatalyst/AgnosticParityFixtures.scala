@@ -49,6 +49,14 @@ case class Temporal(
     dur: java.time.Duration,
     per: java.time.Period)
 
+// M2 recursive corpus.
+case class Address(street: String, zip: Int)
+case class Opts(oi: Option[Int], os: Option[String], od: Option[java.time.LocalDate])
+case class Colls(ints: Seq[Int], strs: List[String], vec: Vector[Long], set: Set[Int], arr: Array[Double])
+case class Maps(m1: Map[String, Int], m2: Map[Int, String])
+case class Nested(id: Int, addr: Address)
+case class Wrapped(id: Int, nums: Seq[Option[Int]])
+
 object AgnosticParityFixtures {
 
   /** Canonical, class-name-normalized structural dump of an AgnosticEncoder. Kept in sync with the
@@ -100,6 +108,11 @@ object AgnosticParityFixtures {
     write(outDir, "Boxed", canonical(ExpressionEncoder[Boxed]().encoder))
     write(outDir, "Scalars", canonical(ExpressionEncoder[Scalars]().encoder))
     write(outDir, "Temporal", canonical(ExpressionEncoder[Temporal]().encoder))
+    write(outDir, "Opts", canonical(ExpressionEncoder[Opts]().encoder))
+    write(outDir, "Colls", canonical(ExpressionEncoder[Colls]().encoder))
+    write(outDir, "Maps", canonical(ExpressionEncoder[Maps]().encoder))
+    write(outDir, "Nested", canonical(ExpressionEncoder[Nested]().encoder))
+    write(outDir, "Wrapped", canonical(ExpressionEncoder[Wrapped]().encoder))
     println("Done.")
   }
 }

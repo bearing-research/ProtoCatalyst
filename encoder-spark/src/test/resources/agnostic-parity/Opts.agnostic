@@ -1,0 +1,1 @@
+Product[Opts](oi:Option[PrimitiveIntEncoder]?,os:Option[StringEncoder]?,od:Option[LocalDate(len=false)]?)

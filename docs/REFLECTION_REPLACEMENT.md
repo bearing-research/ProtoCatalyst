@@ -270,7 +270,20 @@ inner-class `outerPointerGetter`.
   *Deferred:* fixing `ProtoEncoder.PrimitiveEncoder.nullable` at source — the bridge takes
   nullability from the lowered child's `.nullable` (Spark-correct) regardless, and changing the core
   `encoder/` module carries UnsafeRow/Arrow regression risk; tracked as a separate follow-up.
-- **M2 — Recursive:** Option/Array/Iterable/Map/Product/tuple lowering; cycle check; sum-type policy.
+- **M2 — Recursive — ✅ DONE (partial).** D1=A landed: `ProtoEncoder` now exposes `optionElement`/
+  `collectionElement`/`mapKeyValue` (additive; no regressions — `encoder` 268, `encoder-spark` 157).
+  Bridge lowers Option (checked first — its `catalystType` hides it), Array→`ArrayEncoder`,
+  Seq/List/Vector/Set→`IterableEncoder` (clsTag simple names matched Spark's with no alignment
+  needed), Map→`MapEncoder`, nested Product, and combinations (`Seq[Option[Int]]`). containsNull/
+  valueContainsNull taken from the lowered child's `.nullable`. Structural parity green for
+  Opts/Colls/Maps/Nested/Wrapped.
+  **Limitation found (tracked):** `ProtoEncoder` cannot derive a *collection/option/map of a
+  case class* (`Seq[Address]`, `Map[String,Address]`, `Option[Address]`) — its collection givens
+  need a `using ProtoEncoder[element]`, which doesn't exist for case-class elements (they derive via
+  `derived`, not as a summonable given; a blanket auto-derive given collides with the tuple/
+  collection givens). This is a `ProtoEncoder` (engine) gap, not a bridge gap — the bridge handles
+  these shapes once derivation produces them. Spark supports `Seq[CaseClass]` heavily, so this needs
+  a proper fix before the corpus is complete.
 - **M3 — Parity harness:** structural + schema parity vs `ScalaReflection.encoderFor` over the corpus.
 - **M4 — Tail:** enums, `TransformingEncoder`. (UDT, JavaBean explicitly out/deferred.)
 - **M5 — Benchmark + report section:** derivation-latency + lock-contention numbers; fold into the

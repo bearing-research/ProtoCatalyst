@@ -42,6 +42,15 @@ case class Temporal(
     per: java.time.Period
 )
 
+// M2 recursive corpus — mirrors AgnosticParityFixtures.
+case class Address(street: String, zip: Int)
+case class Opts(oi: Option[Int], os: Option[String], od: Option[java.time.LocalDate])
+case class Colls(ints: Seq[Int], strs: List[String], vec: Vector[Long], set: Set[Int], arr: Array[Double])
+case class Maps(m1: Map[String, Int], m2: Map[Int, String])
+case class Nested(id: Int, addr: Address)
+// `nums: Seq[Option[Int]]` exercises a collection of a nullable wrapper (still leaf-backed).
+case class Wrapped(id: Int, nums: Seq[Option[Int]])
+
 /** M0 spike for the reflection-replacement initiative (see docs/REFLECTION_REPLACEMENT.md):
   *
   *   1. **Structural parity** — `AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[T])`
@@ -113,6 +122,21 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
 
   test("structural parity: Temporal (Date/LocalDate/Timestamp/Instant/LocalDateTime/Duration/Period)"):
     assertParity[Temporal]("Temporal")
+
+  test("structural parity: Opts (Option of leaves)"):
+    assertParity[Opts]("Opts")
+
+  test("structural parity: Colls (Seq/List/Vector/Set/Array)"):
+    assertParity[Colls]("Colls")
+
+  test("structural parity: Maps (Map[String,Int], Map[Int,String])"):
+    assertParity[Maps]("Maps")
+
+  test("structural parity: Nested (struct of struct)"):
+    assertParity[Nested]("Nested")
+
+  test("structural parity: Wrapped (Seq[Option[Int]])"):
+    assertParity[Wrapped]("Wrapped")
 
   test("ExpressionEncoder builds from our AgnosticEncoder; schema is reflection-free & Spark-correct"):
     val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Person])

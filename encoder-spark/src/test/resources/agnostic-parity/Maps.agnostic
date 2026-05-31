@@ -1,0 +1,1 @@
+Product[Maps](m1:Map[StringEncoder,PrimitiveIntEncoder,vcn=false]?,m2:Map[PrimitiveIntEncoder,StringEncoder,vcn=true]?)
