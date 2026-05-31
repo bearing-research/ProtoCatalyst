@@ -2047,22 +2047,60 @@ argument, here is the minimum viable form:
 
 Implementation sketch:
 
-- `UnsafeRowSerializer.derived[T]` (this report) becomes the Scala
-  3 build's default `Encoder[T]` derivation.
-- The `ExpressionEncoder` interface stays, but its `apply[T]()`
-  factory method is conditionally implemented per Scala version
-  (macro on Scala 3, reflection on Scala 2.13).
+- The macro derives Spark's **own `AgnosticEncoder[T]`** at compile
+  time (the `deriveAgnosticEncoder` path of this report), so
+  `ExpressionEncoder` and all of Spark's downstream serializer codegen
+  are reused **unchanged** — the minimal, byte-faithful change. The
+  specialized `UnsafeRow`/Arrow serializers are *not* part of this
+  minimum (see "Which artifacts Spark could take," below).
+- `ExpressionEncoder`'s `apply[T]()` factory is conditionally
+  implemented per Scala version: `ScalaReflection.encoderFor` on
+  2.13, the `Mirror`-based `deriveAgnosticEncoder` on Scala 3 — same
+  return type, same downstream.
 - Frameless's `TypedEncoder` continues to work in Scala 2.13 and
-  could trivially port to Scala 3 by delegating to the new macro.
+  could port to Scala 3 by delegating to the new macro.
 - Spark Connect's wire protocol is unaffected — it uses
-  `AgnosticEncoder` as the interchange shape, and the macro can
-  produce one from `T` exactly as `ScalaReflection.encoderFor` does.
+  `AgnosticEncoder` as the interchange shape, which the macro produces
+  from `T` exactly as `ScalaReflection.encoderFor` does.
 
 The migration becomes incremental rather than coordinated: a Spark
 committer ships the Scala 3 encoder module, users compile their
 typed `Dataset` code against the Scala 3 jars, and the per-user
 cross-version workarounds catalogued in §8 disappear one user at a
 time.
+
+### Which artifacts Spark could take
+
+This report produces three encoder artifacts; their adoptability for
+Spark differs sharply, and conflating them overstates the case:
+
+- **The compile-time `AgnosticEncoder` derivation** is the vehicle
+  for the migration above. It replaces *only*
+  `ScalaReflection.encoderFor`, is byte-faithful (§9), and leaves
+  Spark's serializer codegen untouched. This is the part Spark would
+  actually adopt for the Scala-3 unlock.
+- **The Arrow encoder (§11b) is directly adoptable by Spark
+  Connect.** The Connect *client's* `ArrowSerializer` /
+  `ArrowDeserializers` are closure-based — *not* fused into Catalyst
+  codegen — so a compile-time Arrow serializer drops in as a
+  byte-identical, ~8%-faster, ~43%-lower-allocation, AOT-friendly
+  replacement on the client. This is the one lambda serializer that
+  matches a shape Spark already uses.
+- **The `UnsafeRow` serializer (§11) is *not* a core drop-in.**
+  Spark's `UnsafeRow` path is fused into whole-stage codegen, and a
+  hand-emitted lambda does not fuse — substituting it would break the
+  fused pipeline. Its value is (a) *evidence* that compile-time
+  specialization matches or beats Spark's runtime codegen per row,
+  and (b) the *interpreted-fallback* path (wide schemas above
+  `spark.sql.codegen.maxFields`, where Spark already abandons
+  codegen). Capturing its per-row win *inside* fused Dataset codegen
+  would mean replacing whole-stage codegen itself — a separate, far
+  larger AOT project (§5), not part of this migration.
+
+In short: the derivation replacement is the adoptable migration; the
+Arrow encoder is an adoptable Connect-client bonus; the `UnsafeRow`
+encoder earns its place as the "ceiling" evidence, not as code Spark
+takes as-is.
 
 ### Why this matters more than "1.16×"
 
