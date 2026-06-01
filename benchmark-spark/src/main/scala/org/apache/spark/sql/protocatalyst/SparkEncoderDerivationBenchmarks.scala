@@ -35,4 +35,23 @@ class SparkEncoderDerivationBenchmarks {
 
   @Benchmark
   def deriveOrders: AnyRef = ScalaReflection.encoderFor[Orders]
+
+  // A "multi-tenant driver" snapshot: derive all 8 *distinct* TPC-H encoders in one op. No type ever
+  // repeats, so even a hypothetical per-type derivation cache could not help here — the ONLY thing
+  // shared across threads is the JVM-global `ScalaSubtypeLock`. This is the exact work the driver does
+  // when a Connect/Thrift server (one shared JVM) services concurrent typed requests over different
+  // case classes via `import spark.implicits._` (`newProductEncoder` -> `Encoders.product` ->
+  // `ScalaReflection.encoderFor`, uncached on every summon). Throughput-vs-threads here is the pure
+  // cost of that lock, independent of type identity.
+  @Benchmark
+  def deriveMixed: Array[AnyRef] = Array[AnyRef](
+    ScalaReflection.encoderFor[Region],
+    ScalaReflection.encoderFor[Nation],
+    ScalaReflection.encoderFor[Part],
+    ScalaReflection.encoderFor[Supplier],
+    ScalaReflection.encoderFor[PartSupp],
+    ScalaReflection.encoderFor[Customer],
+    ScalaReflection.encoderFor[Orders],
+    ScalaReflection.encoderFor[Lineitem]
+  )
 }

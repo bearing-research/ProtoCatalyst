@@ -134,7 +134,8 @@ Because Scala 2's `<:<` is not thread-safe, Spark must serialize *all* encoder d
 on one monitor. This is invisible in a single-threaded micro but devastating under concurrency —
 multi-tenant Spark Connect servers, REPL/notebook sessions, jobs touching many distinct case
 classes. Compile-time Scala 3 derivation does the type analysis at `scalac` time; there is no
-runtime `<:<` and no lock. §9 measures exactly what that is worth.
+runtime `<:<` and no lock. §9 measures exactly what that is worth; §9b shows the lock is on a real,
+uncached code path — every typed `.as[T]`/`.map`/`createDataset` re-derives — not just a micro.
 
 ---
 
@@ -263,12 +264,55 @@ on this 4-performance-core machine). On a many-core server the gap only widens.
 **Honest scope.** These are local Apple-M1 numbers at directional fidelity (`-f1 -wi3 -i5`; a
 publication run is `-f3` plus a cross-architecture sweep). They measure *derivation* (building the
 encoder description), not execution, and the compile-time side is *not* "zero runtime" — it is
-lock-free object construction, amortized to once per type when the encoder is held in a `given`/`val`
-(exactly as Spark caches `ExpressionEncoder`). The lock thus bites hardest where many encoders are
-derived concurrently and uncached. There is also a one-time cold-start the replacement avoids: the
+lock-free object construction. A user who hoists the encoder into a `val` amortizes either path to
+once per type; the lock bites in the paths that *can't* hoist — which, as §9b shows, are the
+realistic concurrent ones. There is also a one-time cold-start the replacement avoids: the
 first `scala.reflect.runtime.universe` initialization in a JVM is ~500 ms (measured), and Spark's
 first per-encoder codegen pass is ~100 ms — both paid once per JVM, both zero for compile-time
 derivation.
+
+## §9b. This is a real code path, not a micro — and it is uncached
+
+The natural objection to §9 is "encoders are cached, so derivation runs once and the lock never
+matters." At the level of a single held `val`, true. But the *typed-API surface* re-derives on every
+call, with no cache anywhere in Spark. The chain is short and verifiable (Spark 4.0.0):
+
+```scala
+// SQLImplicits.scala:306 — an implicit *def*, so it materializes fresh on every summon
+implicit def newProductEncoder[T <: Product: TypeTag]: Encoder[T] = Encoders.product[T]
+// Encoders.scala:319
+def product[T <: Product: TypeTag]: Encoder[T] = ScalaReflection.encoderFor[T]   // → the global lock
+```
+
+Every context-bound `Encoder[T]` on the public typed ops is satisfied by that `def`, uncached:
+`Dataset.as[U: Encoder]` (`Dataset.scala:522`), `map[U: Encoder]` (`:1392`),
+`groupByKey[K: Encoder]` (`:962`), `SparkSession.createDataset[T: Encoder]` (`:359`). A grep of every
+Spark SQL source that references `ExpressionEncoder` for `ConcurrentHashMap | computeIfAbsent |
+getOrElseUpdate | memoiz | CacheBuilder` returns **zero hits** — Spark memoizes encoder derivation
+nowhere. So `import spark.implicits._` plus any typed operation re-runs `encoderFor` under the global
+`ScalaSubtypeLock` every time.
+
+`ScalaSubtypeLock` is a single JVM-static monitor, so this serializes wherever one driver JVM builds
+typed plans concurrently: a **Spark Connect or Thrift server** (one shared JVM, many sessions, each
+request deserializing a typed relation server-side), **parallel job submission** (the documented
+FAIR-scheduler pattern, `Future { df.as[T]… }` fanned out over distinct datasets), and concurrent
+**notebook/REPL** cells.
+
+To measure that path with the "it's cached" loophole closed, a second benchmark pair
+(`deriveMixed`) derives **all 8 distinct TPC-H encoders per op, no type ever repeating** — so even a
+hypothetical per-type cache could not help; the only thing shared across threads is the lock itself:
+
+| Threads | Spark `encoderFor`, 8 distinct types (ops/s) | Compile-time (ops/s) | Speedup |
+|---:|---:|---:|---:|
+| 1 | 552.7 ± 27 | 215,343 ± 13k | **~390×** |
+| 8 | **403.8 ± 11** | 886,382 ± 287k | **~2,195×** |
+| scaling 1→8 | **0.73× (slower)** | 4.1× | — |
+
+The result is unambiguous: with eight cores deriving eight *different* case classes, Spark's
+throughput *drops* below its single-threaded rate — adding workers makes it slower because they
+queue on one monitor regardless of type. The compile-time path, doing the identical work, scales 4.1×.
+This is the "many encoders derived concurrently and uncached" case made concrete, and it is exactly
+the shape of a multi-tenant Connect server.
 
 ## §10. The ceiling (secondary): specialized serializers
 

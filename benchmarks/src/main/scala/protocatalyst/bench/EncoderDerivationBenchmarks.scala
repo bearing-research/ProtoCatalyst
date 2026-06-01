@@ -39,3 +39,20 @@ class EncoderDerivationBenchmarks:
   @Benchmark
   def deriveOrders: AnyRef =
     AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Orders])
+
+  /** Lock-free counterpart to `SparkEncoderDerivationBenchmarks.deriveMixed`: derive all 8 *distinct*
+    * TPC-H encoders in one op. Compile-time `Mirror`/`inline` derivation has no runtime `<:<` and no
+    * global monitor, so concurrent threads deriving different types never serialize — throughput
+    * scales with cores instead of collapsing.
+    */
+  @Benchmark
+  def deriveMixed: Array[AnyRef] = Array[AnyRef](
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Region]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Nation]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Part]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Supplier]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[PartSupp]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Customer]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Orders]),
+    AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Lineitem])
+  )
