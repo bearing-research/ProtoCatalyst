@@ -11,7 +11,7 @@ Spark's encoder pipeline is reused unchanged. The replacement is:
 
 - **Faithful** — the derived `AgnosticEncoder` is byte-identical to what `ScalaReflection.encoderFor`
   produces, across the common type surface (§8).
-- **Far cheaper** — ~391× faster to derive single-threaded, ~2,595× at 8 threads; and where Spark's
+- **Far cheaper** — ~389× faster to derive single-threaded, ~2,365× at 8 threads; and where Spark's
   reflective derivation *degrades* under concurrency (the global lock), the compile-time path scales
   with cores (§9).
 - **Strictly more capable** — it encodes Scala 3 features Spark's reflection cannot (`enum`s,
@@ -288,17 +288,17 @@ apples-to-apples "type → encoder description" comparison. `SparkEncoderDerivat
 
 | Threads | Spark `encoderFor` (ops/s) | Compile-time (ops/s) | Speedup |
 |---:|---:|---:|---:|
-| 1 | 2,309 ± 69 | 902,906 ± 11k | **~391×** |
-| 8 | **1,580 ± 65** | 4,099,836 ± 144k | **~2,595×** |
-| scaling 1→8 | **0.68× (slower)** | 4.5× | — |
+| 1 | 2,304 ± 9 | 896,924 ± 7k | **~389×** |
+| 8 | **1,660 ± 26** | 3,926,237 ± 125k | **~2,365×** |
+| scaling 1→8 | **0.72× (slower)** | 4.4× | — |
 
 Two things stand out. Single-threaded, compile-time derivation is ~400× faster — no reflection walk,
 just object construction. And, more telling: **Spark's derivation gets *slower* with more threads**
-(2,309 → 1,580 ops/s as contention on `ScalaSubtypeLock` rises), while ours scales with cores (4.5×
+(2,304 → 1,660 ops/s as contention on `ScalaSubtypeLock` rises), while ours scales with cores (4.4×
 on this 4-performance-core machine). On a many-core server the gap only widens.
 
-**Honest scope.** These are local Apple-M1 numbers at directional fidelity (`-f1 -wi3 -i5`; a
-publication run is `-f3` plus a cross-architecture sweep). They measure *derivation* (building the
+**Honest scope.** These are local Apple-M1 numbers at publication time-axis fidelity (`-f3 -wi5 -i10`,
+30 measured iterations; a cross-architecture sweep is still pending, §13). They measure *derivation* (building the
 encoder description), not execution, and the compile-time side is *not* "zero runtime" — it is
 lock-free object construction. A user who hoists the encoder into a `val` amortizes either path to
 once per type; the lock bites in the paths that *can't* hoist — which, as §9b shows, are the
@@ -340,15 +340,18 @@ hypothetical per-type cache could not help; the only thing shared across threads
 
 | Threads | Spark `encoderFor`, 8 distinct types (ops/s) | Compile-time (ops/s) | Speedup |
 |---:|---:|---:|---:|
-| 1 | 552.7 ± 27 | 215,343 ± 13k | **~390×** |
-| 8 | **403.8 ± 11** | 886,382 ± 287k | **~2,195×** |
-| scaling 1→8 | **0.73× (slower)** | 4.1× | — |
+| 1 | 538.0 ± 10 | 208,153 ± 3.5k | **~387×** |
+| 2 | 437.2 ± 10 | 416,343 ± 2.6k | **~952×** |
+| 4 | 403.1 ± 4 | 750,628 ± 28k | **~1,862×** |
+| 8 | **402.3 ± 5** | 907,782 ± 32k | **~2,256×** |
+| scaling 1→8 | **0.75× (slower)** | 4.36× | — |
 
-The result is unambiguous: with eight cores deriving eight *different* case classes, Spark's
-throughput *drops* below its single-threaded rate — adding workers makes it slower because they
-queue on one monitor regardless of type. The compile-time path, doing the identical work, scales 4.1×.
-This is the "many encoders derived concurrently and uncached" case made concrete, and it is exactly
-the shape of a multi-tenant Connect server.
+The result is unambiguous, and the *shape* is the point: as threads rise 1→2→4→8, Spark's throughput
+moves **538 → 437 → 403 → 402** ops/s — it *falls* and then flatlines below its single-threaded rate,
+because every worker queues on one monitor regardless of type. The compile-time path, doing the
+identical work, climbs **208k → 416k → 751k → 908k** (4.36× over the 8 cores). This is the "many
+encoders derived concurrently and uncached" case made concrete, and it is exactly the shape of a
+multi-tenant Connect server. (`-f3 -wi5 -i10`; the monotone degradation is well outside the ±CIs.)
 
 ## §9c. Measurement validity
 
@@ -392,10 +395,10 @@ worth stating why the comparison is sound and what the harness does and does not
   Scala 3 works at all. We flag the `scalac` delta as the genuine debit; TASTy/bytecode-size impact
   is not yet measured.
 
-- **Fidelity caveat (unchanged from §9).** The numbers here are local Apple-M1, `-f1 -wi3 -i5`
-  (directional). A single fork does not capture inter-JVM variance, which is exactly what JMH's
-  ≥3-fork guidance addresses; publication requires `-f3` (the value baked into the suites'
-  `@Fork`/`@Warmup`/`@Measurement`) plus the cross-architecture sweep noted in §13.
+- **Fidelity caveat (unchanged from §9).** The numbers here are local Apple-M1 at `-f3 -wi5 -i10`
+  (3 forks × 10 measured iterations = 30 data points, inter-JVM variance captured per JMH's ≥3-fork
+  guidance; tight CIs, see the tables). The remaining gap to publication is the **cross-architecture
+  sweep** (Graviton/Intel/AMD) noted in §13 — to confirm the ratios are not an Apple-silicon artifact.
 
 ## §10. The ceiling (secondary): specialized serializers
 

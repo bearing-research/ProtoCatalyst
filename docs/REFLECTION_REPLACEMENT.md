@@ -291,16 +291,18 @@ compile-time Scala 3 derivation has no runtime `<:<` and no lock.
 
 | Threads | Spark (reflective) ops/s | Ours (compile-time) ops/s | Speedup |
 |---:|---:|---:|---:|
-| 1 | 2,309 ± 69 | 902,906 ± 11k | **~391×** |
-| 8 | **1,580 ± 65** | 4,099,836 ± 144k | **~2,595×** |
-| scaling 1→8 | **0.68× (degrades)** | 4.5× | |
+| 1 | 2,304 ± 9 | 896,924 ± 7k | **~389×** |
+| 8 | **1,660 ± 26** | 3,926,237 ± 125k | **~2,365×** |
+| scaling 1→8 | **0.72× (degrades)** | 4.4× | |
 
 **Spark's derivation gets *slower* with more threads** (lock contention); ours scales with cores.
-*Caveats:* local M1 (8-core: 4 perf + 4 efficiency, hence ~4.5× not 8×), directional fidelity
-(`-f1 -wi3 -i5` — a publication run is `-f3` + cross-arch EC2). This measures **derivation**
-(building the encoder), not execution; and it's *not* "zero runtime" — ours is plain lock-free
-object construction (amortized to once per type via a `given`/`val`). On a many-core server the gap
-widens: Spark stays flat/degrades, ours keeps scaling.
+*Caveats:* local M1 (8-core: 4 perf + 4 efficiency, hence ~4.4× not 8×), `-f3 -wi5 -i10` (publication
+time-axis fidelity; cross-arch EC2 sweep still pending). This measures **derivation** (building the
+encoder), not execution; and it's *not* "zero runtime" — ours is plain lock-free object construction.
+The `deriveMixed` variant (8 distinct types/op, no repeat) closes the "it's cached" loophole and
+shows the same shape: Spark 538→437→403→402 ops/s across 1→2→4→8 threads (degrades), ours
+208k→416k→751k→908k (scales). Compile-time cost of derivation: ~1.0s fixed + ~20ms/type of `scalac`
+(REPORT §9c). On a many-core server the gap widens: Spark stays flat/degrades, ours keeps scaling.
 
 ---
 
@@ -360,11 +362,12 @@ widens: Spark stays flat/degrades, ours keeps scaling.
     OffsetDateTime, …) — no oracle, not Scala-3-specific.
   - The full superset catalog (every Scala-3-unique behavior + its implementation) lives in
     [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
-- **M5 — Benchmark — ✅ DONE (local, directional).** `SparkEncoderDerivationBenchmarks` (2.13) +
-  `EncoderDerivationBenchmarks` (Scala 3). Result (§7.1): ~391× single-threaded, ~2,595× at 8
-  threads; Spark *degrades* under concurrency (`ScalaSubtypeLock`), ours scales 4.5×. A `deriveMixed`
-  pair (8 distinct types/op, no repeat — closes the "encoders are cached" loophole) confirms the
-  degradation is the lock, not per-type cost. Remaining: publication run (`-f3` + cross-arch EC2).
+- **M5 — Benchmark — ✅ DONE (`-f3`, local).** `SparkEncoderDerivationBenchmarks` (2.13) +
+  `EncoderDerivationBenchmarks` (Scala 3). Result (§7.1, `-f3 -wi5 -i10`): ~389× single-threaded,
+  ~2,365× at 8 threads; Spark *degrades* under concurrency (`ScalaSubtypeLock`), ours scales 4.4×. A
+  `deriveMixed` pair (8 distinct types/op, no repeat — closes the "encoders are cached" loophole)
+  confirms the degradation is the lock, not per-type cost. Compile-time cost measured (REPORT §9c:
+  ~1.0s fixed + ~20ms/type `scalac`). Remaining: cross-arch EC2 sweep.
 - **M6 — Break the execution wall — ✅ DONE (§2.1.1).** `spark-reflection-patch` = Spark 4.1.2's
   `ScalaReflection` with two lines changed (lazy `universe`; `encodeFieldNameToIdentifier` via
   `NameTransformer.encode`), compiled on 2.13 and shadowing Spark's copy on `encoder-spark`'s test
