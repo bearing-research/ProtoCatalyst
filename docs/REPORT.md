@@ -22,8 +22,10 @@ Spark's encoder pipeline is reused unchanged. The replacement is:
 
 Everything is backed by code in this repository and validated against stock Spark, which serves as
 both the correctness oracle and the benchmark baseline. The companion design documents are
-[`REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md) (the bridge design and full parity surface)
-and [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md) (the Scala-3-beyond-Spark catalog).
+[`REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md) (the bridge design and full parity surface),
+[`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md) (the Scala-3-beyond-Spark catalog), and
+[`INFRASTRUCTURE.md`](INFRASTRUCTURE.md) (the cross-version build topology, how to run everything, and
+the measurement-validity rationale behind §9).
 
 > **Scope note.** A *separate, more ambitious* line of work — replacing Spark's per-row *serializer*
 > codegen with compile-time-specialized `UnsafeRow`/Arrow encoders — also beats Spark on the hot
@@ -347,6 +349,44 @@ throughput *drops* below its single-threaded rate — adding workers makes it sl
 queue on one monitor regardless of type. The compile-time path, doing the identical work, scales 4.1×.
 This is the "many encoders derived concurrently and uncached" case made concrete, and it is exactly
 the shape of a multi-tenant Connect server.
+
+## §9c. Measurement validity
+
+The two suites live in different modules and Scala versions (the baseline `encoderFor[T: TypeTag]`
+exists only on 2.13; the compile-time path only on Scala 3 — see `docs/INFRASTRUCTURE.md`), so it is
+worth stating why the comparison is sound and what the harness does and does not contribute.
+
+- **The harness is excluded from the measurement.** Both suites are JMH `Throughput`, run with
+  `Jmh / fork := true`. JMH launches a *fresh* JVM per fork; sbt only starts it. The warmup
+  iterations (`-wi`) run before any timed iteration, so class-loading, JIT compilation to
+  steady-state, and one-time initialization are not counted. The numbers are steady-state per-op
+  throughput, not wall-clock that includes launcher latency.
+
+- **The cold-start exclusion is conservative *against* us.** Spark's first
+  `scala.reflect.runtime.universe` initialization (~500 ms, measured) and first codegen pass happen
+  during warmup, so they do not appear in the reported Spark per-op figure. Real workloads pay them;
+  the compile-time path does not pay either. The headline ratios therefore understate the
+  end-to-end difference rather than inflate it.
+
+- **Same machine, JDK, and JMH parameters on both sides.** The only intended difference between the
+  two forks is the operation under test — reflective vs compile-time production of the *same*
+  `AgnosticEncoder`. Both return the constructed encoder (an `AnyRef` / `Array[AnyRef]`) so the JIT
+  cannot dead-code-eliminate the work; no `Blackhole` is needed. Thread scaling uses `-t N` within a
+  single fork, so the global `ScalaSubtypeLock` contention (§4) is genuinely exercised.
+
+- **The one asymmetry, stated plainly.** `ProtoEncoder.derived[T]` performs the *type analysis* at
+  `scalac` time; the runtime benchmark on our side therefore measures only the residual work — the
+  bridge's recursive lowering plus `AgnosticEncoder` object construction — whereas Spark's
+  `encoderFor[T]` does the whole walk at runtime. This is not a measurement trick; it *is* the thesis
+  ("move the analysis to compile time"). The cost does not vanish — it shifts to compilation
+  (`inline` expansion adds to `scalac` time, paid once per build, not per run). A complete accounting
+  would report that `scalac` delta; we have not yet measured it, and flag it as the honest debit
+  against the runtime win.
+
+- **Fidelity caveat (unchanged from §9).** The numbers here are local Apple-M1, `-f1 -wi3 -i5`
+  (directional). A single fork does not capture inter-JVM variance, which is exactly what JMH's
+  ≥3-fork guidance addresses; publication requires `-f3` (the value baked into the suites'
+  `@Fork`/`@Warmup`/`@Measurement`) plus the cross-architecture sweep noted in §13.
 
 ## §10. The ceiling (secondary): specialized serializers
 

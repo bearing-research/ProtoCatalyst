@@ -183,6 +183,8 @@ sbt 'benchmarkSpark/Jmh/run SparkEncoderBenchmarks'
 - **[DSL Reference](docs/DSL_REFERENCE.md)** — Complete query DSL API reference
 - **[Compile-Time DSL](docs/COMPILE_TIME_DSL.md)** — How the compile-time query optimization works
 - **[Understanding Encoders](docs/ENCODER_DEEP_DIVE.md)** — Beginner-friendly encoder guide
+- **[Replacing Spark's Reflective Encoder](docs/REPORT.md)** — the reflection-replacement writeup (the Scala 3 thesis)
+- **[Infrastructure](docs/INFRASTRUCTURE.md)** — cross-version (Scala 3 ↔ 2.13) build topology + how to run the reflection-replacement work
 - [Design Document](docs/DESIGN.md) — Architecture and design decisions
 - [Optimizer Plan](docs/OPTIMIZER_PLAN.md) — 48 optimizer rules and implementation
 - [SQL Parser](docs/SQL_PARSER.md) — Compile-time SQL parsing
