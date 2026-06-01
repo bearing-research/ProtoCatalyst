@@ -137,6 +137,17 @@ sbt 'benchmarks/Jmh/run -f 1 -wi 3 -i 5 -t 8  EncoderDerivationBenchmarks'
 # Publication fidelity: -f 3 -wi 5 -i 10 (the @Fork/@Warmup/@Measurement defaults on the classes)
 ```
 
+### 4.2b Multi-tenant experiment (operator view: throughput + tail latency)
+
+Models a shared-JVM Connect/Thrift server — `S` session threads each deriving an `ExpressionEncoder`
+via the real public API, cycling over the 8 TPC-H types — and reports throughput + p50/p99 as `S`
+grows (REPORT §9d). Custom load generator, not JMH:
+
+```bash
+sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.MultiTenantDerivation'  # reflective
+sbt 'benchmarks/runMain protocatalyst.bench.MultiTenantDerivation'                      # compile-time
+```
+
 ### 4.3 Regenerate the parity goldens
 
 After adding a type to the corpus (both `AgnosticParityFixtures` on 2.13 and the spec on 3):

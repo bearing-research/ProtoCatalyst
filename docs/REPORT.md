@@ -351,7 +351,8 @@ moves **538 → 437 → 403 → 402** ops/s — it *falls* and then flatlines be
 because every worker queues on one monitor regardless of type. The compile-time path, doing the
 identical work, climbs **208k → 416k → 751k → 908k** (4.36× over the 8 cores). This is the "many
 encoders derived concurrently and uncached" case made concrete, and it is exactly the shape of a
-multi-tenant Connect server. (`-f3 -wi5 -i10`; the monotone degradation is well outside the ±CIs.)
+multi-tenant Connect server — §9d measures that server directly, through the public API, and adds the
+tail-latency view. (`-f3 -wi5 -i10`; the monotone degradation is well outside the ±CIs.)
 
 ## §9c. Measurement validity
 
@@ -399,6 +400,41 @@ worth stating why the comparison is sound and what the harness does and does not
   (3 forks × 10 measured iterations = 30 data points, inter-JVM variance captured per JMH's ≥3-fork
   guidance; tight CIs, see the tables). The remaining gap to publication is the **cross-architecture
   sweep** (Graviton/Intel/AMD) noted in §13 — to confirm the ratios are not an Apple-silicon artifact.
+
+## §9d. Operator view: throughput and tail latency under concurrent sessions
+
+The microbenchmarks above measure derivation in isolation. The question an operator actually asks is:
+*as concurrent sessions pile onto one shared-JVM server, what happens to throughput and per-request
+latency?* To answer it directly we built a small load generator (`MultiTenantDerivation`) modeling a
+Connect/Thrift server: `S` session threads, each in a loop deriving an `ExpressionEncoder[T]` via the
+**real public API** — Spark's `ExpressionEncoder[T: TypeTag]()` (→ `encoderFor` → the lock) versus our
+`ExpressionEncoder(toAgnostic(derived[T]))` — cycling over the 8 TPC-H types. After a 2 s warmup we
+measure throughput and request-latency percentiles over a 5 s window (8-core M1):
+
+| Sessions | Spark thrpt (op/s) | Ours thrpt | Spark p50 / p99 (µs) | Ours p50 / p99 (µs) |
+|---:|---:|---:|---:|---:|
+| 1 | 3,612 | 34,823 | 258 / 637 | 26 / 69 |
+| 4 | 3,123 | 134,187 | 1,120 / 3,309 | 27 / 68 |
+| 8 | 3,074 | 144,461 | 2,264 / 7,615 | 31 / 229 |
+| 16 | 2,858 | 129,659 | 4,730 / 18,233 | 34 / 265 |
+| 32 | 2,825 | 136,353 | 9,536 / 37,617 | 34 / 543 |
+
+Two operator-relevant failures of the reflective path show up at once. **Throughput never scales** —
+it sits flat at ~3k/s and even *declines* (3,612 → 2,825) as sessions grow, because the global lock
+serializes every derivation; adding sessions (or cores) buys nothing. And **latency degrades without
+bound** — p50 grows linearly with session count (258 µs → 9.5 ms, 37×) and p99 explodes
+637 µs → **37.6 ms** (59×), since each request waits behind every other on one monitor. The
+compile-time path scales throughput 4.1× to the core count (then plateaus on an 8-core box) and holds
+p99 **sub-millisecond** throughout. At 8 sessions that is **47× the aggregate throughput** and **33×
+lower p99**; at 32 sessions, **69× lower p99**.
+
+This is the §4 lock and the §9b "uncached" finding made operationally concrete: a multi-tenant typed
+server built on reflective derivation has a hard throughput ceiling and a tail-latency cliff, both of
+which the compile-time path removes. (Caveat: 8 physical cores, so the *S* = 16/32 rows mix lock
+contention with CPU oversubscription; the divergence is already unambiguous within the core budget at
+*S* ≤ 8, and a many-core server would push the reflective ceiling's pain further, not less. Validity
+notes from §9c apply — this is a custom harness, not JMH, so it carries no inter-fork CIs; the effect
+size dwarfs run-to-run noise.)
 
 ## §10. The ceiling (secondary): specialized serializers
 
