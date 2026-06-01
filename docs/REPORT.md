@@ -374,14 +374,23 @@ worth stating why the comparison is sound and what the harness does and does not
   cannot dead-code-eliminate the work; no `Blackhole` is needed. Thread scaling uses `-t N` within a
   single fork, so the global `ScalaSubtypeLock` contention (§4) is genuinely exercised.
 
-- **The one asymmetry, stated plainly.** `ProtoEncoder.derived[T]` performs the *type analysis* at
-  `scalac` time; the runtime benchmark on our side therefore measures only the residual work — the
-  bridge's recursive lowering plus `AgnosticEncoder` object construction — whereas Spark's
-  `encoderFor[T]` does the whole walk at runtime. This is not a measurement trick; it *is* the thesis
-  ("move the analysis to compile time"). The cost does not vanish — it shifts to compilation
-  (`inline` expansion adds to `scalac` time, paid once per build, not per run). A complete accounting
-  would report that `scalac` delta; we have not yet measured it, and flag it as the honest debit
-  against the runtime win.
+- **The one asymmetry, stated plainly, and its measured cost.** `ProtoEncoder.derived[T]` performs
+  the *type analysis* at `scalac` time; the runtime benchmark on our side therefore measures only the
+  residual work — the bridge's recursive lowering plus `AgnosticEncoder` object construction —
+  whereas Spark's `encoderFor[T]` does the whole walk at runtime. This is not a measurement trick; it
+  *is* the thesis ("move the analysis to compile time"). The cost does not vanish — it shifts to
+  compilation. We measured it: against an identical no-derivation baseline (so JVM/`scalac` fixed
+  cost cancels), deriving *k* 12-field case classes adds **~1.0 s fixed + ~20 ms per type** of
+  `scalac` time (least-squares slope over *k* ∈ {16, 32, 64, 128}, min-of-5, this M1).
+
+  The honest reading: ~20 ms of *compile* time per type is **larger than a single Spark runtime
+  derivation** (~0.43 ms at 1 thread). If an encoder is derived exactly once per JVM, the
+  compile-time path is a wash-to-slight-loss on pure derivation time. The win is real because the
+  realistic paths don't derive once: the typed-API surface re-derives *per call, uncached* (§9b) so
+  the compile cost is paid once against many runtime derivations; there is no runtime lock to
+  serialize on (§4); the ~500 ms `scala.reflect.runtime` cold start is gone; and — the actual point —
+  Scala 3 works at all. We flag the `scalac` delta as the genuine debit; TASTy/bytecode-size impact
+  is not yet measured.
 
 - **Fidelity caveat (unchanged from §9).** The numbers here are local Apple-M1, `-f1 -wi3 -i5`
   (directional). A single fork does not capture inter-JVM variance, which is exactly what JMH's
