@@ -79,6 +79,10 @@ class ExecutionWallSpec extends FunSuite:
     val t = HasTuple(3, ("k", 5), (7L, true, 2.5))
     assertEquals(roundTrip(t), t)
 
+  test("tuple whose element is a case class round-trips"):
+    val t = HasTupleCC(3, ("k", Address("Elm", 11)))
+    assertEquals(roundTrip(t), t)
+
   test("collections (incl. Array) round-trip with structural equality"):
     val c = Colls(Seq(1, 2), List("a", "b"), Vector(3L), Set(4, 5), Array(6.0, 7.0))
     val back = roundTrip(c)

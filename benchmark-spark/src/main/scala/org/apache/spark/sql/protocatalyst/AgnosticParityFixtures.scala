@@ -64,6 +64,9 @@ case class Deep(
     maybe: Option[Address])
 // Tuples (Spark ProductEncoder with _1/_2/… fields): top-level and as fields.
 case class HasTuple(id: Int, pair: (String, Int), triple: (Long, Boolean, Double))
+// Tuple whose element is a *case class* — exercises the generic Mirror path (the explicit tuple
+// givens can't summon a bare case-class element); Spark encodes it as Product[Tuple2] with _1/_2.
+case class HasTupleCC(id: Int, pair: (String, Address))
 
 object AgnosticParityFixtures {
 
@@ -124,6 +127,7 @@ object AgnosticParityFixtures {
     write(outDir, "Deep", canonical(ExpressionEncoder[Deep]().encoder))
     write(outDir, "Tuple3", canonical(ExpressionEncoder[(Int, String, Double)]().encoder))
     write(outDir, "HasTuple", canonical(ExpressionEncoder[HasTuple]().encoder))
+    write(outDir, "HasTupleCC", canonical(ExpressionEncoder[HasTupleCC]().encoder))
     println("Done.")
   }
 }

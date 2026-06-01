@@ -257,7 +257,7 @@ Every case in the corpus is byte-identical to Spark's:
 | Scalars | `String`, `Array[Byte]`, Scala/Java `BigDecimal` at `DecimalType(38,18)`, Scala/Java `BigInt` at `(38,0)` |
 | Temporal | `LocalDate`/`java.sql.Date`, `Instant`/`java.sql.Timestamp`, `LocalDateTime`, `Duration`, `Period` (all `lenient=false`) |
 | Composite | `Option`, `Seq`/`List`/`Vector`/`Set`/`Array`, `Map`, nested case classes, tuples |
-| Combinations | `Seq[Option[Int]]`, and collection/map/option **of a case class** (`Seq[Address]`, `Map[String,Address]`, `Option[Address]`) |
+| Combinations | `Seq[Option[Int]]`, collection/map/option **of a case class** (`Seq[Address]`, `Map[String,Address]`, `Option[Address]`), and a **tuple of a case class** (`(String, Address)` → `Product[Tuple2]`) |
 
 The disambiguations a reviewer reaches for first all hold: `BigInt` vs `BigDecimal` (same Decimal
 type, different node), `LocalDate` vs `java.sql.Date`, `Instant` vs `java.sql.Timestamp`,
@@ -422,9 +422,11 @@ that codegen, a separate and much larger project. This report's claim is deliber
 
 - **Publication-fidelity derivation benchmark** (`-f3`) plus a cross-architecture sweep
   (Graviton/Intel/AMD), to confirm the §9 numbers generalize beyond the development laptop.
-- **Tail of the type surface**: Java-bean inference (`JavaTypeInference`, Java reflection — works on
-  Scala 3, out of the Scala-reflection scope), UDTs, and the `TransformingEncoder`-wrapped
-  beyond-Spark types (UUID, OffsetDateTime).
+- **Tail of the type surface**: the faithful Scala subset is now complete through tuple-of-case-class
+  (§8). What remains is *out of scope* or *beyond Spark*: Java-bean and Java-enum inference
+  (`JavaTypeInference`, Java reflection — already works on Scala 3), UDTs, and the
+  `TransformingEncoder`-wrapped types Spark itself does not encode (UUID, OffsetDateTime), which the
+  bridge could *add* as a Scala-3 superset (validated by self-consistency, like `enum`s in §7).
 - **Upstream**: prototype the `spark-sql-encoder-3` module against a Scala-3 build of `spark-sql-api`
   and run the typed-`Dataset` test suite — the definitive end-to-end validation that §3's wall is
   the last derivation-side obstacle.

@@ -53,6 +53,8 @@ case class Wrapped(id: Int, nums: Seq[Option[Int]])
 // Collection/map/option OF a case class — derivable after the inline-given ProtoEncoder fix.
 case class Deep(id: Int, tags: Seq[Address], lookup: Map[String, Address], maybe: Option[Address])
 case class HasTuple(id: Int, pair: (String, Int), triple: (Long, Boolean, Double))
+// Tuple whose element is a case class — derived via the generic Mirror path, not the tuple givens.
+case class HasTupleCC(id: Int, pair: (String, Address))
 
 // Scala 3 enums — a feature Spark's reflection cannot encode (no oracle). The bridge DEFINES
 // behavior: a simple enum round-trips via a TransformingEncoder over String; a data-carrying ADT
@@ -160,6 +162,9 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
 
   test("structural parity: HasTuple (tuple-of-leaves fields)"):
     assertParity[HasTuple]("HasTuple")
+
+  test("structural parity: HasTupleCC (tuple whose element is a case class)"):
+    assertParity[HasTupleCC]("HasTupleCC")
 
   // --- Scala-3 superset: defined behavior, not Spark parity (no oracle for Scala 3 enums). ---
 

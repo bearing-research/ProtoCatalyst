@@ -341,8 +341,10 @@ widens: Spark stays flat/degrades, ours keeps scaling.
   through public `makeOptionEncoder`/`makeCollectionEncoder`/`makeMapEncoder` factories (else the
   private class isn't accessible when the given inlines at an external call site). `Deep`
   (Seq/Map/Option of `Address`) now passes structural parity. No regressions: `encoder` 268,
-  `encoder-spark` 158, `arrow` 158, `query` 166. *(Tuple-of-case-class has the same latent limitation
-  in the 21 tuple givens — deferred; rarer than collections.)*
+  `encoder-spark` 158, `arrow` 158, `query` 166. *(Tuple-of-case-class — e.g. a field `(String,
+  Address)` — also works: the generic `Mirror.ProductOf` path derives it as `Product[Tuple2]` with
+  `_1`/`_2`, byte-identical to Spark's golden; the explicit tuple givens are bypassed for it.
+  Locked in by `HasTupleCC` parity + an end-to-end round-trip in `ExecutionWallSpec`.)*
 - **M3 — Parity harness:** structural + schema parity vs `ScalaReflection.encoderFor` over the corpus.
 - **M4 — Tail / Scala-3 superset — partial.** Total parity was never the bar: we reproduce Spark
   *where Spark has an encoder*, and **define** sensible behavior where it doesn't (a Scala-3
