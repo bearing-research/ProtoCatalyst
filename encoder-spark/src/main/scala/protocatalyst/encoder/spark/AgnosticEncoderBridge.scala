@@ -20,11 +20,13 @@ import protocatalyst.types.ProtoType
   * same `ProtoType` — e.g. the unboxed/boxed split). Types `ProtoEncoder` supports but Spark
   * cannot represent are rejected here at invocation (D3).
   *
-  * M1 scope: all leaf encoders (primitives unboxed+boxed, String, Binary, Scala/Java BigInt &
+  * Scope: all leaf encoders (primitives unboxed+boxed, String, Binary, Scala/Java BigInt &
   * BigDecimal, Null, temporal: Date/LocalDate/Timestamp/Instant/LocalDateTime, Duration/Period,
-  * CalendarInterval, Variant, Char/Varchar) + nested `Product`. Extensions Spark's `encoderFor`
-  * rejects (UUID, OffsetDateTime, ZonedDateTime, java.util.Date, LocalTime/TimeType, Char-boxed)
-  * are rejected here (D3); collections/Map/Option land in M2.
+  * CalendarInterval, Variant, Char/Varchar), nested `Product`, collections/Map/Option, tuples, and
+  * Scala 3 `enum`s. Beyond Spark's parity surface, types Spark's `encoderFor` *rejects* are added as
+  * String-backed `TransformingEncoder`s (UUID, OffsetDateTime, ZonedDateTime, and Scala 3 enums) —
+  * a defined superset, validated by self-consistent round-trips rather than a Spark golden. Types
+  * still rejected (D3): data-carrying ADTs (Spark has no sum-type), LocalTime, java.util.Date, UDTs.
   */
 object AgnosticEncoderBridge:
 
@@ -61,7 +63,10 @@ object AgnosticEncoderBridge:
         // String normalizes here, as do enums and extensions Spark lacks; clsTag splits them.
         if rc == classOf[String] then StringEncoder
         else if classOf[scala.reflect.Enum].isAssignableFrom(rc) then scala3EnumEncoder(enc)
-        else reject(enc, "Spark has no String-backed encoder for this type (UUID/Character/Java enum)")
+        else if rc == classOf[java.util.UUID] then
+          // Beyond-Spark extension: round-trip the canonical 36-char form, losslessly.
+          stringBackedEncoder(enc.clsTag, _.toString, s => java.util.UUID.fromString(s))
+        else reject(enc, "Spark has no String-backed encoder for this type (Character/Java enum)")
       case ProtoType.BinaryType => BinaryEncoder
       case ProtoType.NullType   => NullEncoder
 
@@ -81,7 +86,13 @@ object AgnosticEncoderBridge:
       case ProtoType.TimestampType =>
         if rc == classOf[java.time.Instant] then InstantEncoder(lenientSerialization = false)
         else if rc == classOf[java.sql.Timestamp] then TimestampEncoder(lenientSerialization = false)
-        else reject(enc, "extension timestamp (OffsetDateTime/ZonedDateTime/java.util.Date) — M4 via TransformingEncoder")
+        // Beyond-Spark extensions: ProtoEncoder's lossy Timestamp default is upgraded here to a
+        // lossless String-backed codec (ISO-8601 preserves the offset/zone a Timestamp would drop).
+        else if rc == classOf[java.time.OffsetDateTime] then
+          stringBackedEncoder(enc.clsTag, _.toString, s => java.time.OffsetDateTime.parse(s))
+        else if rc == classOf[java.time.ZonedDateTime] then
+          stringBackedEncoder(enc.clsTag, _.toString, s => java.time.ZonedDateTime.parse(s))
+        else reject(enc, "extension timestamp (java.util.Date) — not yet bridged")
       case ProtoType.TimestampNTZType    => LocalDateTimeEncoder
       case ProtoType.DayTimeIntervalType => DayTimeIntervalEncoder
       case ProtoType.YearMonthIntervalType => YearMonthIntervalEncoder
@@ -146,8 +157,31 @@ object AgnosticEncoderBridge:
         private lazy val valueOfM = companion.getMethod("valueOf", classOf[String])
         def encode(in: Any): String = in.toString
         def decode(out: String): Any = valueOfM.invoke(module, out)
+    transformingOverString(enc.clsTag, codecProvider)
+
+  /** A String-backed [[TransformingEncoder]] for a type Spark's own reflection does not encode (a
+    * beyond-Spark extension we *define*, not parity). `encode`/`decode` are plain functions — no
+    * `scala.reflect.runtime` — run only at ser/deser time; storage is `StringEncoder`, and the codec
+    * makes the round-trip lossless (a bare `StringEncoder` would deserialize to `String`, not `T`).
+    */
+  private def stringBackedEncoder(
+      clsTag: ClassTag[?],
+      encode0: Any => String,
+      decode0: String => Any
+  ): AgnosticEncoder[?] =
+    val codecProvider: () => Codec[Any, String] = () =>
+      new Codec[Any, String]:
+        def encode(in: Any): String = encode0(in)
+        def decode(out: String): Any = decode0(out)
+    transformingOverString(clsTag, codecProvider)
+
+  /** Build `TransformingEncoder(clsTag, StringEncoder, codecProvider, nullable = true)`. */
+  private def transformingOverString(
+      clsTag: ClassTag[?],
+      codecProvider: () => Codec[Any, String]
+  ): AgnosticEncoder[?] =
     TransformingEncoder(
-      enc.clsTag.asInstanceOf[ClassTag[Any]],
+      clsTag.asInstanceOf[ClassTag[Any]],
       StringEncoder,
       codecProvider,
       nullable = true

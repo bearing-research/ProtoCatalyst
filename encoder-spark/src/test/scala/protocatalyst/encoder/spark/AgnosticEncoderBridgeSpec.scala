@@ -178,6 +178,21 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
     }
     assert(ex.getMessage.contains("sum-type"), ex.getMessage)
 
+  // Beyond-Spark extension types: Spark's reflection rejects these, so there is no parity golden —
+  // we DEFINE a String-backed TransformingEncoder (lossless). Structure here, round-trip in
+  // ExecutionWallSpec.
+  test("UUID → String-backed TransformingEncoder (Spark's reflection has no UUID encoder)"):
+    val ours = AgnosticEncoderBridge.toAgnostic(summon[ProtoEncoder[java.util.UUID]])
+    assertEquals(canonical(ours), "Transforming[UUID,StringEncoder]")
+
+  test("OffsetDateTime → String-backed TransformingEncoder (lossless ISO-8601, preserves offset)"):
+    val ours = AgnosticEncoderBridge.toAgnostic(summon[ProtoEncoder[java.time.OffsetDateTime]])
+    assertEquals(canonical(ours), "Transforming[OffsetDateTime,StringEncoder]")
+
+  test("ZonedDateTime → String-backed TransformingEncoder"):
+    val ours = AgnosticEncoderBridge.toAgnostic(summon[ProtoEncoder[java.time.ZonedDateTime]])
+    assertEquals(canonical(ours), "Transforming[ZonedDateTime,StringEncoder]")
+
   test("ExpressionEncoder builds from our AgnosticEncoder; schema is reflection-free & Spark-correct"):
     val ours = AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[Person])
     val enc = ExpressionEncoder(ours)

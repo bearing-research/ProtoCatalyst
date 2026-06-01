@@ -252,7 +252,10 @@ object ProtoEncoder:
   given ProtoEncoder[java.util.UUID] =
     PrimitiveEncoder(ProtoType.StringType, classTag[java.util.UUID])
 
-  // Timezone-aware timestamps (converted to UTC Instant internally)
+  // Timezone-aware timestamps (the engine's default representation is a UTC Instant — lossy as to
+  // the offset/zone). The AgnosticEncoderBridge upgrades these to a *lossless* String-backed
+  // TransformingEncoder for the Spark path (ISO-8601 preserves the offset/zone); Spark's own
+  // reflection rejects them outright, so that is a beyond-Spark extension.
   given ProtoEncoder[java.time.OffsetDateTime] =
     PrimitiveEncoder(ProtoType.TimestampType, classTag[java.time.OffsetDateTime])
   given ProtoEncoder[java.time.ZonedDateTime] =

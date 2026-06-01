@@ -225,6 +225,13 @@ match), and the bridge does so honestly:
   **clean rejection**: Spark's `AgnosticEncoder` model has *no sum-type representation at all*. This
   is a concrete gap in Spark's encoder model that a Scala-3 port would grow — surfaced, not hidden.
 
+Separately, the bridge also encodes types Spark's reflection *rejects outright* even on 2.13 —
+`java.util.UUID`, `java.time.OffsetDateTime`, `java.time.ZonedDateTime` — as String-backed
+`TransformingEncoder`s with a plain `toString`/`parse` codec (ISO-8601, so the offset/zone survives;
+a Timestamp base would not). These aren't Scala-3-specific, but they show the derivation is
+*extensible* where Spark's is closed. Like the `enum`, they have no Spark golden, so they're
+validated by self-consistent end-to-end round-trips (§3).
+
 The full catalog of Scala-3 behaviors and their implementations is in `SCALA3_SUPERSET.md`.
 
 ---
@@ -423,10 +430,10 @@ that codegen, a separate and much larger project. This report's claim is deliber
 - **Publication-fidelity derivation benchmark** (`-f3`) plus a cross-architecture sweep
   (Graviton/Intel/AMD), to confirm the §9 numbers generalize beyond the development laptop.
 - **Tail of the type surface**: the faithful Scala subset is now complete through tuple-of-case-class
-  (§8). What remains is *out of scope* or *beyond Spark*: Java-bean and Java-enum inference
-  (`JavaTypeInference`, Java reflection — already works on Scala 3), UDTs, and the
-  `TransformingEncoder`-wrapped types Spark itself does not encode (UUID, OffsetDateTime), which the
-  bridge could *add* as a Scala-3 superset (validated by self-consistency, like `enum`s in §7).
+  (§8), and the bridge adds the beyond-Spark extensions UUID/OffsetDateTime/ZonedDateTime as
+  String-backed `TransformingEncoder`s (§7). What remains is *out of scope*: Java-bean and Java-enum
+  inference (`JavaTypeInference`, Java reflection — already works on Scala 3), UDTs, and a handful of
+  types Spark itself cannot encode either (`java.util.Date`, `LocalTime`).
 - **Upstream**: prototype the `spark-sql-encoder-3` module against a Scala-3 build of `spark-sql-api`
   and run the typed-`Dataset` test suite — the definitive end-to-end validation that §3's wall is
   the last derivation-side obstacle.

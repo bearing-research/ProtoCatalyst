@@ -1,11 +1,19 @@
 package protocatalyst.encoder.spark
 
+import java.time.{OffsetDateTime, ZonedDateTime}
+import java.util.UUID
+
 import scala.deriving.Mirror
 
 import munit.FunSuite
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 
 import protocatalyst.encoder.ProtoEncoder
+
+// Beyond-Spark extension types (Spark's own reflection has no encoder for these); the bridge adds
+// them as String-backed TransformingEncoders, so a successful round-trip is their self-consistency
+// oracle.
+case class HasExtensions(id: UUID, when: OffsetDateTime, zoned: ZonedDateTime)
 
 /** End-to-end execution from a **Scala 3 process** against Spark's real encoder runtime.
   *
@@ -82,6 +90,14 @@ class ExecutionWallSpec extends FunSuite:
   test("tuple whose element is a case class round-trips"):
     val t = HasTupleCC(3, ("k", Address("Elm", 11)))
     assertEquals(roundTrip(t), t)
+
+  test("beyond-Spark extension types (UUID, OffsetDateTime, ZonedDateTime) round-trip"):
+    val v = HasExtensions(
+      UUID.fromString("550e8400-e29b-41d4-a716-446655440000"),
+      OffsetDateTime.parse("2026-05-31T10:15:30+01:00"),
+      ZonedDateTime.parse("2026-05-31T10:15:30+01:00[Europe/Paris]")
+    )
+    assertEquals(roundTrip(v), v)
 
   test("collections (incl. Array) round-trip with structural equality"):
     val c = Colls(Seq(1, 2), List("a", "b"), Vector(3L), Set(4, 5), Array(6.0, 7.0))
