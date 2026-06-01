@@ -139,13 +139,25 @@ sbt 'benchmarks/Jmh/run -f 1 -wi 3 -i 5 -t 8  EncoderDerivationBenchmarks'
 
 ### 4.2b Multi-tenant experiment (operator view: throughput + tail latency)
 
-Models a shared-JVM Connect/Thrift server — `S` session threads each deriving an `ExpressionEncoder`
-via the real public API, cycling over the 8 TPC-H types — and reports throughput + p50/p99 as `S`
-grows (REPORT §9d). Custom load generator, not JMH:
+Models a multi-threaded application that builds typed `Dataset`s concurrently (a query-serving
+service on a shared `SparkSession`, or threaded job submission — *not* the Connect server, which
+ships client-derived encoders) — `S` threads each deriving an `ExpressionEncoder` via the real public
+API, cycling the 8 TPC-H types — reporting throughput + p50/p99 as `S` grows (REPORT §9d). Custom load
+generator, not JMH:
 
 ```bash
 sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.MultiTenantDerivation'  # reflective
 sbt 'benchmarks/runMain protocatalyst.bench.MultiTenantDerivation'                      # compile-time
+```
+
+### 4.2c Cold-start probe (the everyday, concurrency-free cost)
+
+First reflective derivation in a fresh JVM (forces `scala.reflect.runtime.universe`) vs warm
+steady-state — the ~1 s per-JVM cold start short-lived drivers pay every run (REPORT §9). One number
+per fresh JVM, so run it a few times:
+
+```bash
+sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.ColdStartProbe'
 ```
 
 ### 4.3 Regenerate the parity goldens

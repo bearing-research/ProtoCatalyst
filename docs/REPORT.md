@@ -3,7 +3,8 @@
 Apache Spark cannot run on Scala 3, and the reason is one function. Spark's typed-`Dataset[T]`
 API derives every encoder through `ScalaReflection.encoderFor[T: TypeTag]`, which is built on Scala
 2's runtime reflection (`scala.reflect.runtime.universe`). That reflection does not work for Scala
-3 types — and, separately, it serializes *all* encoder derivation in a JVM on a single global lock.
+3 types — and, separately, it is costly: a ~1 s per-JVM reflective cold-start, plus a global lock on
+every subtype check that caps concurrent derivation.
 
 This report shows that the reflective derivation can be replaced, wholesale, by **compile-time
 Scala 3 `Mirror` derivation that produces Spark's own `AgnosticEncoder`** — so the entire rest of
@@ -11,9 +12,10 @@ Spark's encoder pipeline is reused unchanged. The replacement is:
 
 - **Faithful** — the derived `AgnosticEncoder` is byte-identical to what `ScalaReflection.encoderFor`
   produces, across the common type surface (§8).
-- **Far cheaper** — ~389× faster to derive single-threaded, ~2,365× at 8 threads; and where Spark's
-  reflective derivation *degrades* under concurrency (the global lock), the compile-time path scales
-  with cores (§9).
+- **Far cheaper** — ~389× faster to derive single-threaded, and it eliminates a **~1 s per-JVM
+  reflective cold-start** that short-lived drivers (serverless/Glue/CI) pay on every run (§9). (It
+  also removes a global derivation lock that caps concurrent typed-API throughput — a real but
+  narrower, latent benefit; §9d.)
 - **Strictly more capable** — it encodes Scala 3 features Spark's reflection cannot (`enum`s,
   sealed-trait ADTs), and marks where Spark's encoder model would have to grow (§7).
 - **Proven end-to-end** — the execution wall that stops stock Spark on Scala 3 is a *two-line* change
@@ -154,11 +156,15 @@ private[catalyst] def isSubtype(tpe1: Type, tpe2: Type): Boolean =
 ```
 
 Because Scala 2's `<:<` is not thread-safe, Spark must serialize *all* encoder derivation in a JVM
-on one monitor. This is invisible in a single-threaded micro but devastating under concurrency —
-multi-tenant Spark Connect servers, REPL/notebook sessions, jobs touching many distinct case
-classes. Compile-time Scala 3 derivation does the type analysis at `scalac` time; there is no
-runtime `<:<` and no lock. §9 measures exactly what that is worth; §9b shows the lock is on a real,
-uncached code path — every typed `.as[T]`/`.map`/`createDataset` re-derives — not just a micro.
+on one monitor. Single-threaded this is a small constant tax (an uncontended lock); it only bites
+when one JVM derives encoders on many threads at once. That is **narrower than it sounds** — the
+Spark Connect *server* does not reflectively derive (the client builds the encoder and ships it; §9d),
+and JDBC/Thrift traffic is untyped SQL with no encoders. The genuine case is a *long-lived,
+multi-threaded application that builds typed `Dataset`s concurrently* — e.g. a query-serving service
+on a shared `SparkSession`, or threaded job submission. Compile-time Scala 3 derivation does the type
+analysis at `scalac` time, so there is no runtime `<:<` and no lock at all. The lock's worth is
+quantified in §9d (a latent scalability hazard); the broadly-applicable wins are single-thread cost
+and cold-start (§9).
 
 ---
 
@@ -289,23 +295,28 @@ apples-to-apples "type → encoder description" comparison. `SparkEncoderDerivat
 | Threads | Spark `encoderFor` (ops/s) | Compile-time (ops/s) | Speedup |
 |---:|---:|---:|---:|
 | 1 | 2,304 ± 9 | 896,924 ± 7k | **~389×** |
-| 8 | **1,660 ± 26** | 3,926,237 ± 125k | **~2,365×** |
-| scaling 1→8 | **0.72× (slower)** | 4.4× | — |
+| 8 | 1,660 ± 26 | 3,926,237 ± 125k | ~2,365× |
 
-Two things stand out. Single-threaded, compile-time derivation is ~400× faster — no reflection walk,
-just object construction. And, more telling: **Spark's derivation gets *slower* with more threads**
-(2,304 → 1,660 ops/s as contention on `ScalaSubtypeLock` rises), while ours scales with cores (4.4×
-on this 4-performance-core machine). On a many-core server the gap only widens.
+Single-threaded, compile-time derivation is ~400× faster — no reflection walk, just object
+construction. This is the **broadly-applicable** win: it holds for *every* typed-`Dataset` program,
+no concurrency assumed. (The 8-thread row hints at a second effect — Spark gets *slower* with more
+threads while ours scales — but that only matters for concurrent derivation, a narrower case treated
+honestly in §9d; do not read it as a headline.)
 
-**Honest scope.** These are local Apple-M1 numbers at publication time-axis fidelity (`-f3 -wi5 -i10`,
-30 measured iterations; a cross-architecture sweep is still pending, §13). They measure *derivation* (building the
-encoder description), not execution, and the compile-time side is *not* "zero runtime" — it is
-lock-free object construction. A user who hoists the encoder into a `val` amortizes either path to
-once per type; the lock bites in the paths that *can't* hoist — which, as §9b shows, are the
-realistic concurrent ones. There is also a one-time cold-start the replacement avoids: the
-first `scala.reflect.runtime.universe` initialization in a JVM is ~500 ms (measured), and Spark's
-first per-encoder codegen pass is ~100 ms — both paid once per JVM, both zero for compile-time
-derivation.
+**Cold-start: the bigger everyday cost.** The first reflective derivation in a *fresh* JVM forces
+`scala.reflect.runtime.universe` to build its symbol table — a one-time cost paid once per JVM, on
+top of the derivation. Measured (`ColdStartProbe`, 3 fresh JVMs): the first `ExpressionEncoder[T]()`
+takes **~1.05 s**, versus a warm steady-state of ~1.4 ms — i.e. **~1 s of pure cold-start**.
+Compile-time derivation pays none of it (the analysis already happened at `scalac`). This is the
+robust performance case and it needs no concurrency: **short-lived drivers** — serverless Spark, AWS
+Glue, CI jobs, frequent small batches — restart constantly and never amortize that second. For a
+30 s job it is ~3% overhead paid every run; for a 5 s job, ~20%.
+
+**Honest scope.** Local Apple-M1, publication time-axis fidelity (`-f3 -wi5 -i10`, 30 iterations;
+cross-architecture sweep pending, §13). These measure *derivation* (building the encoder
+description), not execution; the compile-time side is *not* "zero runtime" — it is lock-free object
+construction, and a user who hoists an encoder into a `val` amortizes either path to once per type.
+The compile-time path is also not free at build: it costs `scalac` time, measured in §9c.
 
 ## §9b. This is a real code path, not a micro — and it is uncached
 
@@ -328,13 +339,18 @@ getOrElseUpdate | memoiz | CacheBuilder` returns **zero hits** — Spark memoize
 nowhere. So `import spark.implicits._` plus any typed operation re-runs `encoderFor` under the global
 `ScalaSubtypeLock` every time.
 
-`ScalaSubtypeLock` is a single JVM-static monitor, so this serializes wherever one driver JVM builds
-typed plans concurrently: a **Spark Connect or Thrift server** (one shared JVM, many sessions, each
-request deserializing a typed relation server-side), **parallel job submission** (the documented
-FAIR-scheduler pattern, `Future { df.as[T]… }` fanned out over distinct datasets), and concurrent
-**notebook/REPL** cells.
+This has two consequences. **First** — the one that matters most — the per-derivation cost of §9 and
+the ~1 s cold-start are *not* one-time accidents a cache quietly hides: they recur on **every** typed
+op unless the user manually hoists the encoder into a `val`. **Second**, because `ScalaSubtypeLock`
+is a single JVM-static monitor, concurrent derivation in one JVM serializes on it. That second effect
+is **narrower than it first appears**, and earlier drafts of this report overstated it: the Spark
+Connect *server* does not reflectively derive (the client builds the `AgnosticEncoder` and ships it in
+the request; the server only deserializes it — verified in `SparkConnectPlanner`), and Thrift/JDBC is
+untyped SQL with no encoders. The genuine concurrent case is a *multi-threaded application building
+typed `Dataset`s* — a query-serving service on a shared `SparkSession`, or threaded job submission —
+treated honestly in §9d.
 
-To measure that path with the "it's cached" loophole closed, a second benchmark pair
+To isolate that concurrency effect with the "it's cached" loophole closed, a second benchmark pair
 (`deriveMixed`) derives **all 8 distinct TPC-H encoders per op, no type ever repeating** — so even a
 hypothetical per-type cache could not help; the only thing shared across threads is the lock itself:
 
@@ -349,10 +365,11 @@ hypothetical per-type cache could not help; the only thing shared across threads
 The result is unambiguous, and the *shape* is the point: as threads rise 1→2→4→8, Spark's throughput
 moves **538 → 437 → 403 → 402** ops/s — it *falls* and then flatlines below its single-threaded rate,
 because every worker queues on one monitor regardless of type. The compile-time path, doing the
-identical work, climbs **208k → 416k → 751k → 908k** (4.36× over the 8 cores). This is the "many
-encoders derived concurrently and uncached" case made concrete, and it is exactly the shape of a
-multi-tenant Connect server — §9d measures that server directly, through the public API, and adds the
-tail-latency view. (`-f3 -wi5 -i10`; the monotone degradation is well outside the ±CIs.)
+identical work, climbs **208k → 416k → 751k → 908k** (4.36× over the 8 cores). This confirms the
+degradation is the **lock**, not per-type cost — but it only manifests when a single JVM derives on
+many threads, which (per above) is a specific application shape, not a universal one. §9d measures
+that shape through the public API and adds the tail-latency view. (`-f3 -wi5 -i10`; the monotone
+degradation is well outside the ±CIs.)
 
 ## §9c. Measurement validity
 
@@ -366,9 +383,9 @@ worth stating why the comparison is sound and what the harness does and does not
   steady-state, and one-time initialization are not counted. The numbers are steady-state per-op
   throughput, not wall-clock that includes launcher latency.
 
-- **The cold-start exclusion is conservative *against* us.** Spark's first
-  `scala.reflect.runtime.universe` initialization (~500 ms, measured) and first codegen pass happen
-  during warmup, so they do not appear in the reported Spark per-op figure. Real workloads pay them;
+- **The cold-start exclusion is conservative *against* us.** Spark's first-derivation cold start
+  (~1 s in a fresh JVM, dominated by `scala.reflect.runtime.universe` init; §9) happens during
+  warmup, so it does not appear in the reported Spark per-op figure. Real workloads pay it;
   the compile-time path does not pay either. The headline ratios therefore understate the
   end-to-end difference rather than inflate it.
 
@@ -391,25 +408,32 @@ worth stating why the comparison is sound and what the harness does and does not
   derivation** (~0.43 ms at 1 thread). If an encoder is derived exactly once per JVM, the
   compile-time path is a wash-to-slight-loss on pure derivation time. The win is real because the
   realistic paths don't derive once: the typed-API surface re-derives *per call, uncached* (§9b) so
-  the compile cost is paid once against many runtime derivations; there is no runtime lock to
-  serialize on (§4); the ~500 ms `scala.reflect.runtime` cold start is gone; and — the actual point —
-  Scala 3 works at all. We flag the `scalac` delta as the genuine debit; TASTy/bytecode-size impact
-  is not yet measured.
+  the compile cost is paid once against many runtime derivations; the **~1 s per-JVM cold start (§9)**
+  is gone, which alone dwarfs the build delta for short-lived drivers; and — the actual point — Scala
+  3 works at all. We flag the `scalac` delta as the genuine debit; TASTy/bytecode-size impact is not
+  yet measured.
 
 - **Fidelity caveat (unchanged from §9).** The numbers here are local Apple-M1 at `-f3 -wi5 -i10`
   (3 forks × 10 measured iterations = 30 data points, inter-JVM variance captured per JMH's ≥3-fork
   guidance; tight CIs, see the tables). The remaining gap to publication is the **cross-architecture
   sweep** (Graviton/Intel/AMD) noted in §13 — to confirm the ratios are not an Apple-silicon artifact.
 
-## §9d. Operator view: throughput and tail latency under concurrent sessions
+## §9d. A latent scalability hazard: concurrent typed-plan construction (secondary)
 
-The microbenchmarks above measure derivation in isolation. The question an operator actually asks is:
-*as concurrent sessions pile onto one shared-JVM server, what happens to throughput and per-request
-latency?* To answer it directly we built a small load generator (`MultiTenantDerivation`) modeling a
-Connect/Thrift server: `S` session threads, each in a loop deriving an `ExpressionEncoder[T]` via the
-**real public API** — Spark's `ExpressionEncoder[T: TypeTag]()` (→ `encoderFor` → the lock) versus our
-`ExpressionEncoder(toAgnostic(derived[T]))` — cycling over the 8 TPC-H types. After a 2 s warmup we
-measure throughput and request-latency percentiles over a 5 s window (8-core M1):
+This is the concurrency story, kept honest and deliberately *secondary* to §9. **Where it does not
+apply:** the Spark Connect server (the client derives the encoder and ships it; the server only
+deserializes — `SparkConnectPlanner` calls `encoderFor(agnosticEncoder)`, never `encoderFor[T: TypeTag]`)
+and Thrift/JDBC (untyped SQL). **Where it does:** a long-lived, multi-threaded JVM that *constructs
+typed `Dataset`s* concurrently — a query-serving service on a shared `SparkSession`, or threaded
+(FAIR-scheduler) job submission. And even there it is material only for *high-rate, short* typed
+requests, since derivation is microseconds-to-ms against query execution measured in seconds. With
+those scope limits stated, the effect is real and worth quantifying.
+
+A small load generator (`MultiTenantDerivation`) runs `S` threads, each deriving an
+`ExpressionEncoder[T]` via the **real public API** — Spark's `ExpressionEncoder[T: TypeTag]()`
+(→ `encoderFor` → the lock) versus our `ExpressionEncoder(toAgnostic(derived[T]))` — cycling the 8
+TPC-H types. After a 2 s warmup we measure throughput and request-latency percentiles over 5 s
+(8-core M1):
 
 | Sessions | Spark thrpt (op/s) | Ours thrpt | Spark p50 / p99 (µs) | Ours p50 / p99 (µs) |
 |---:|---:|---:|---:|---:|
@@ -428,13 +452,13 @@ compile-time path scales throughput 4.1× to the core count (then plateaus on an
 p99 **sub-millisecond** throughout. At 8 sessions that is **47× the aggregate throughput** and **33×
 lower p99**; at 32 sessions, **69× lower p99**.
 
-This is the §4 lock and the §9b "uncached" finding made operationally concrete: a multi-tenant typed
-server built on reflective derivation has a hard throughput ceiling and a tail-latency cliff, both of
-which the compile-time path removes. (Caveat: 8 physical cores, so the *S* = 16/32 rows mix lock
-contention with CPU oversubscription; the divergence is already unambiguous within the core budget at
-*S* ≤ 8, and a many-core server would push the reflective ceiling's pain further, not less. Validity
-notes from §9c apply — this is a custom harness, not JMH, so it carries no inter-fork CIs; the effect
-size dwarfs run-to-run noise.)
+So *for the application shape it applies to*, the §4 lock turns into a hard throughput ceiling and a
+tail-latency cliff that the compile-time path removes. We present it as a latent hazard rather than a
+headline precisely because that shape — concurrent, high-rate, short typed requests in one JVM — is a
+slice of Spark usage, not the common case; the broadly-applicable wins remain single-thread cost and
+cold-start (§9). (Caveats: 8 physical cores, so *S* = 16/32 mix lock contention with CPU
+oversubscription — the divergence is already clear at *S* ≤ 8; and this is a custom harness, not JMH,
+so it carries no inter-fork CIs, though the effect size dwarfs run-to-run noise.)
 
 ## §10. The ceiling (secondary): specialized serializers
 
