@@ -184,12 +184,15 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
       "id:integer:false,name:string:true,active:boolean:false,score:double:false"
     )
 
-  // FINDING (M0): actually *executing* ser/deser from this Scala 3 process against stock Spark
+  // FINDING (M0): actually *executing* ser/deser from this Scala 3 process against *stock* Spark
   // crashes — `Invoke.encodedFunctionName` calls `ScalaReflection.encodeFieldNameToIdentifier`
   // (`TermName(name).encodedName`, a scala.reflect.runtime use), and touching the `ScalaReflection`
   // object eagerly initializes `val universe = scala.reflect.runtime.universe`, which cannot
   // initialize against the Scala 3 stdlib (`FatalError: class Array does not have a member apply`).
-  // This refutes "everything downstream of AgnosticEncoder is reflection-free" and is itself the
-  // thesis in miniature: stock Spark cannot run on Scala 3. Behavioral correctness here follows
-  // from the structural-parity test above (our AgnosticEncoder == Spark's ⇒ identical Spark
-  // expressions/codegen ⇒ identical behavior); end-to-end execution is for a Scala-3-ported Spark.
+  // This is the Scala-3 execution wall: stock Spark cannot run on Scala 3.
+  //
+  // RESOLVED: a 2-line patch to `ScalaReflection` (lazy `universe`; `encodeFieldNameToIdentifier`
+  // via `NameTransformer.encode`) removes the wall. With it on the test classpath, the structural
+  // parity above is upgraded to *observed* behavioral parity — see `ExecutionWallSpec`, which
+  // round-trips real values through Spark's unmodified codegen ser/deser from this Scala 3 process.
+  // See `spark-reflection-patch` and docs/REFLECTION_REPLACEMENT.md §2.1.

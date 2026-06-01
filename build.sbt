@@ -328,7 +328,14 @@ lazy val encoderSpark = project
     ),
     Test / fork := true,
     // TpchDbgenIntegrationSpec reads data/tpch/<sf>/*.tbl with project-root-relative paths.
-    Test / baseDirectory := (ThisBuild / baseDirectory).value
+    Test / baseDirectory := (ThisBuild / baseDirectory).value,
+    // Execution-wall demonstrator: prepend the patched (Scala 2.13) ScalaReflection ahead of
+    // spark-catalyst on the test classpath so it shadows Spark's copy. This lets WallReproSpec run
+    // Spark's real ser/deser end-to-end from this Scala 3 process. See spark-reflection-patch.
+    Test / fullClasspath := {
+      val patched = (sparkReflectionPatch / Compile / products).value.map(Attributed.blank)
+      patched ++ (Test / fullClasspath).value
+    }
   )
 
 // Spark Catalyst integration module (Scala 2.13) - Convert ProtoLogicalPlan to Spark LogicalPlan
@@ -359,4 +366,24 @@ lazy val sparkCatalyst = project
     ),
     testFrameworks += new TestFramework("munit.Framework"),
     Test / fork := true
+  )
+
+// Execution-wall demonstrator (Scala 2.13). A verbatim copy of Spark 4.1.2's
+// `org.apache.spark.sql.catalyst.ScalaReflection` with two lines changed (lazy `universe`;
+// `encodeFieldNameToIdentifier` via NameTransformer). Compiled here against spark-catalyst 4.1.2 +
+// scala-reflect, its output is prepended to encoderSpark's test classpath to shadow Spark's copy,
+// proving the Scala-3 ser/deser execution wall is removable. NOT a Scala 3 module on purpose:
+// the patch is the would-be upstream diff and must compile/run as 2.13 bytecode.
+lazy val sparkReflectionPatch = project
+  .in(file("spark-reflection-patch"))
+  .settings(
+    name := "protocatalyst-spark-reflection-patch",
+    scalaVersion := "2.13.16",
+    allowUnsafeScalaLibUpgrade := true,
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      "org.apache.spark" %% "spark-catalyst" % "4.1.2",
+      "org.apache.spark" %% "spark-sql-api" % "4.1.2",
+      "org.scala-lang" % "scala-reflect" % "2.13.16"
+    )
   )

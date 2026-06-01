@@ -16,6 +16,9 @@ Spark's encoder pipeline is reused unchanged. The replacement is:
   with cores (§9).
 - **Strictly more capable** — it encodes Scala 3 features Spark's reflection cannot (`enum`s,
   sealed-trait ADTs), and marks where Spark's encoder model would have to grow (§7).
+- **Proven end-to-end** — the execution wall that stops stock Spark on Scala 3 is a *two-line* change
+  to `ScalaReflection`; with it, our compile-time-derived encoders round-trip real values through
+  Spark's unmodified codegen ser/deser from a Scala 3 process (§3).
 
 Everything is backed by code in this repository and validated against stock Spark, which serves as
 both the correctness oracle and the benchmark baseline. The companion design documents are
@@ -111,10 +114,28 @@ finds references to `ScalaReflection` in only **3 files via 5 members** — `enc
 scala-reflect fallback). Removing the eager `val universe` de-poisons the trivial utilities; the
 substantive work is `encoderFor`/`schemaFor`. (Detail: `REFLECTION_REPLACEMENT.md` §2.1.)
 
-A practical consequence shapes this report's methodology: because stock Spark's codegen cannot
-*execute* in a Scala 3 process, we validate the replacement by **structural parity** of the derived
-`AgnosticEncoder` against Spark's, generated on the Scala 2.13 side (§8). End-to-end execution is a
-property of a Scala-3-*ported* Spark, the natural follow-up.
+**The wall is removable — demonstrated.** Two lines of `ScalaReflection` cause the crash above, and
+patching exactly those two removes it:
+
+1. `val universe` → **`lazy val universe`** — the object's static initializer no longer forces
+   runtime reflection (it is forced only if `encoderFor`/`schemaFor`/`findConstructor`'s fallback is
+   actually *called*, none of which the ser/deser execution path does); and
+2. `encodeFieldNameToIdentifier` uses **`scala.reflect.NameTransformer.encode`** (a scala-library
+   function with identical name-mangling) instead of `universe.TermName(_).encodedName`.
+
+We verify this concretely. `spark-reflection-patch` is a verbatim copy of Spark 4.1.2's
+`ScalaReflection` with only those two lines changed, compiled on Scala 2.13 and placed ahead of
+`spark-catalyst` on the test classpath so it shadows Spark's copy. With it, `ExecutionWallSpec` (in
+`encoder-spark`, **a Scala 3 module**) round-trips real values — flat and nested products, all
+primitive widths, `java.lang` boxed types, `Some`/`None`, maps, collections including `Array`,
+collection/map/option *of* a case class, and tuples — through Spark's **unmodified** codegen
+serializer and deserializer. Nine cases, all green.
+
+This upgrades the report's correctness argument from structural to **observed**: the
+`AgnosticEncoder` we derive at compile time (no `TypeTag`, no reflection, §6) drives Spark's actual
+ser/deser and reproduces the input. Structural parity (§8) remains the broad oracle across the full
+type surface; the end-to-end spec is the existence proof that identical structure does yield
+identical runtime behavior — and that the wall is a two-line change, not a rewrite.
 
 ## §4. The hidden tax: a global lock serializes all derivation
 
@@ -242,6 +263,12 @@ The disambiguations a reviewer reaches for first all hold: `BigInt` vs `BigDecim
 type, different node), `LocalDate` vs `java.sql.Date`, `Instant` vs `java.sql.Timestamp`,
 boxed vs unboxed, exact decimal precision/scale, and `Seq[CaseClass]`. (Full corpus and design:
 `REFLECTION_REPLACEMENT.md`.)
+
+Structural identity is the broad oracle here, but it is not the only evidence: §3 closes the loop by
+*executing* these encoders. With the two-line `ScalaReflection` patch, `ExecutionWallSpec` drives a
+representative slice of this same corpus through Spark's unmodified codegen ser/deser from a Scala 3
+process and round-trips the values — confirming that identical structure does produce identical
+runtime behavior.
 
 ## §9. Derivation cost: the headline measurement
 

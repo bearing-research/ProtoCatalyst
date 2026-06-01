@@ -134,6 +134,30 @@ pure Java reflection (`findConstructor`'s primary path) or pure string work
 port de-poisons them; the two expression-layer utilities are then mechanical to port. So the surface
 is: **`encoderFor`/`schemaFor` (the real work) + two trivial expression-layer utilities.**
 
+#### 2.1.1 The wall is removable — demonstrated (`spark-reflection-patch`)
+
+The claim above is now backed by a working demonstrator rather than reasoning alone. The module
+`spark-reflection-patch` is a **verbatim copy of Spark 4.1.2's `ScalaReflection`** (the `sql-api`
+copy) with exactly **two lines** changed:
+
+1. `val universe` → **`lazy val universe`** — the object's `<clinit>` no longer forces runtime
+   reflection. The universe is forced only if `encoderFor`/`schemaFor`/`findConstructor`'s fallback
+   is *invoked*; the ser/deser execution path invokes none of them.
+2. `encodeFieldNameToIdentifier` body → **`scala.reflect.NameTransformer.encode(fieldName)`**
+   (scala-library, identical name-mangling) instead of `universe.TermName(_).encodedName`.
+
+`findConstructor` needed no change: its primary `ConstructorUtils` (Java-reflection) path covers the
+case classes exercised, and the scala-reflect fallback is never reached for them.
+
+The module is compiled on Scala 2.13 and prepended to `encoder-spark`'s test classpath so it
+**shadows** Spark's `ScalaReflection`. With it, `encoder-spark`'s `ExecutionWallSpec` — running in a
+**Scala 3** module — builds Spark's serializer/deserializer from our compile-time-derived
+`AgnosticEncoder` and round-trips real values (flat/nested products, all primitive widths,
+`java.lang` boxed types, `Some`/`None`, maps, collections incl. `Array`, collection/map/option *of* a
+case class, tuples). 9 cases, all green; the full 171-test `encoder-spark` suite stays green (the
+patch is behavior-preserving). This is the M0 finding's resolution: the wall is a two-line change,
+and structural parity (D6) is thereby upgraded to *observed* behavioral parity for the executed slice.
+
 This is strong report material: it's a concrete, minimal proof that *stock Spark cannot run on
 Scala 3*, and it pinpoints the entire surface.
 
@@ -214,12 +238,17 @@ From Scala 3 against Spark's 2.13 jars (`CrossVersion.for3Use2_13`, already used
    round-trips.
 2. **Build + schema sanity:** `ExpressionEncoder(ours)` constructs and its `dataType`/schema is
    correct — reflection-free, so it runs fine from Scala 3.
+3. **In-process end-to-end execution (now available — §2.1.1):** with the two-line
+   `spark-reflection-patch` shadowing `ScalaReflection`, `ExecutionWallSpec` runs Spark's *unmodified*
+   ser/deser from a Scala 3 process and round-trips real values. Structural parity is thereby
+   *observed*, not just argued, for the executed slice.
 
-> **No in-process execution oracle against stock Spark (M0 finding, §2.1).** Actually *running*
-> ser/deser from a Scala 3 process crashes on stock Spark's residual `scala.reflect.runtime`
-> (`Invoke`/`NewInstance` → the poisoned `ScalaReflection` object). End-to-end *execution* is
-> validated on a **Scala-3-ported Spark** (the later phase) — not against stock 2.13 jars from a
-> Scala 3 JVM. Structural parity covers behavior in the meantime.
+> **In-process execution oracle (M0 finding RESOLVED, §2.1.1).** Running ser/deser from a Scala 3
+> process originally crashed on stock Spark's residual `scala.reflect.runtime` (`Invoke`/`NewInstance`
+> → the poisoned `ScalaReflection` object). A two-line patch (lazy `universe`; `NameTransformer`)
+> removes the wall, and end-to-end execution now runs against those patched 2.13 jars from a Scala 3
+> JVM — no full Scala-3 port of Spark required to demonstrate it. Structural parity remains the broad
+> oracle across the full type surface.
 
 ---
 
@@ -283,7 +312,8 @@ widens: Spark stays flat/degrades, ours keeps scaling.
   Two findings: (a) `ProtoEncoder`'s `PrimitiveEncoder.nullable` is hardcoded `false` for *all*
   leaves (so `String` came out non-nullable) — the bridge takes nullability from the lowered child's
   `.nullable` (Spark's `!isPrimitive` rule) instead; the `ProtoEncoder` bug should be fixed at source
-  in M1. (b) the §2.1 secondary-surface / no-in-process-execution finding.
+  in M1. (b) the §2.1 secondary-surface / no-in-process-execution finding (**since resolved** — see
+  M6 and §2.1.1).
 - **M1 — Leaf coverage — ✅ DONE.** All leaf nodes lowered with `clsTag` disambiguation, structural
   parity green for `Primitives` (7 unboxed), `Boxed` (7 boxed), `Scalars` (String/Binary/Scala+Java
   Decimal at `(38,18)`/BigInt), `Temporal` (Date/LocalDate/Timestamp/Instant/LocalDateTime/Duration/
@@ -330,8 +360,15 @@ widens: Spark stays flat/degrades, ours keeps scaling.
     [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
 - **M5 — Benchmark — ✅ DONE (local, directional).** `SparkEncoderDerivationBenchmarks` (2.13) +
   `EncoderDerivationBenchmarks` (Scala 3). Result (§7.1): ~391× single-threaded, ~2,595× at 8
-  threads; Spark *degrades* under concurrency (`ScalaSubtypeLock`), ours scales 4.5×. Remaining:
-  publication run (`-f3` + cross-arch EC2) and folding into the main report next to §11/§11b.
+  threads; Spark *degrades* under concurrency (`ScalaSubtypeLock`), ours scales 4.5×. A `deriveMixed`
+  pair (8 distinct types/op, no repeat — closes the "encoders are cached" loophole) confirms the
+  degradation is the lock, not per-type cost. Remaining: publication run (`-f3` + cross-arch EC2).
+- **M6 — Break the execution wall — ✅ DONE (§2.1.1).** `spark-reflection-patch` = Spark 4.1.2's
+  `ScalaReflection` with two lines changed (lazy `universe`; `encodeFieldNameToIdentifier` via
+  `NameTransformer.encode`), compiled on 2.13 and shadowing Spark's copy on `encoder-spark`'s test
+  classpath. `ExecutionWallSpec` then round-trips real values (9 cases across the corpus) through
+  Spark's **unmodified** codegen ser/deser **from a Scala 3 process** — turning structural parity
+  into observed behavioral parity. Full `encoder-spark` suite (171 tests) stays green.
 
 ---
 
