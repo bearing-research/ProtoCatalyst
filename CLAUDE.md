@@ -1,0 +1,85 @@
+# CLAUDE.md
+
+Project-level guidance for Claude Code working in this repo. Read this first; deeper detail lives in
+`docs/` (linked below).
+
+## What this project is
+
+ProtoCatalyst is a compile-time Spark SQL / Catalyst optimizer that has grown into an
+engine-independent query compiler (LLVM-for-queries analogy). The **headline initiative** is the
+*reflection replacement*: replace Spark's runtime reflection-based encoder derivation
+(`ScalaReflection.encoderFor[T: TypeTag]`) with Scala 3 compile-time derivation (`ProtoEncoder`), to
+unblock Spark's migration to Scala 3.
+
+- **Primary goal:** push Spark toward Scala 3. Stock Spark is the correctness oracle + benchmark
+  baseline only — we do not ship a plugin.
+- **Strategy:** tech-report-first to gain traction, then upstream. The 2-line `ScalaReflection` patch
+  is the scoped "down payment" ask.
+
+Key docs:
+- `docs/REPORT.md` — the writeup (blocker → replacement → results → migration). The artifact.
+- `docs/REFLECTION_REPLACEMENT.md` — bridge design, decisions, milestones; §2.1.1 = the wall patch.
+- `docs/INFRASTRUCTURE.md` — cross-version build mechanics + **how to run every benchmark/test**.
+- `docs/SCALA3_SUPERSET.md` — behaviors beyond Spark's encoder model.
+- `docs/BENCHMARK_METHODOLOGY.md`, `docs/BENCHMARKS.md` — per-row/e2e benchmark methodology + suite.
+
+## Build & toolchain
+
+- sbt **1.12.1**. `ThisBuild/scalaVersion := 3.8.1`; some modules pin **2.13.16** (see below).
+- **JDK 21 is required** and is wired via `.sbtopts` (`-java-home /opt/homebrew/opt/openjdk@21`).
+  The shell's default `java` is JDK 1.8 and will NOT run scalac/Spark 4.1. If you run scalac or a
+  Scala 3 JVM directly (outside sbt), first `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`.
+- Spark target: **4.1.2**.
+
+### Cross-version layout (why two Scala versions)
+
+The baseline (`encoderFor[T: TypeTag]`) only exists on 2.13; the replacement only on 3. Both live in
+one build:
+
+- **Scala 3 (3.8.1):** `core`, `proto`, `encoder`, `arrow`, `query`, `benchmarks`, `encoderSpark`
+  (`encoderSpark` consumes Spark via `CrossVersion.for3Use2_13`).
+- **Scala 2.13.16:** `benchmarkSpark` (Spark baseline + parity-golden generator), `sparkCatalyst`,
+  `sparkReflectionPatch` (the 2-line patched `ScalaReflection`).
+
+The seam that makes this work: `ExpressionEncoder.apply[T](enc: AgnosticEncoder[T])` — the no-`TypeTag`
+overload, callable from Scala 3. `AgnosticEncoderBridge.toAgnostic` produces the `AgnosticEncoder`.
+
+## Common commands
+
+```bash
+sbt compile                                              # all modules, both Scala versions
+sbt encoderSpark/test                                   # bridge parity + execution-wall e2e (Scala 3)
+sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'  # structural parity vs goldens
+sbt 'encoderSpark/testOnly *ExecutionWallSpec'          # end-to-end round-trips (uses the patch)
+
+# Derivation benchmarks (headline). deriveMixed = 8 distinct types/op (defeats "it's cached")
+sbt 'benchmarkSpark/Jmh/run -f 1 -wi 3 -i 5 -t 8 SparkEncoderDerivationBenchmarks'  # reflective
+sbt 'benchmarks/Jmh/run     -f 1 -wi 3 -i 5 -t 8 EncoderDerivationBenchmarks'        # compile-time
+
+sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.ColdStartProbe'      # cold-start cost
+```
+
+Regenerate parity goldens after adding a corpus type (edit both 2.13 fixtures and the 3 spec):
+```bash
+sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.AgnosticParityFixtures'
+sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
+```
+
+## Hard constraints (do not violate)
+
+- **Never run a benchmark while another sbt process is touching the same module.** Concurrent
+  recompilation corrupts/aborts the run. Don't edit a module's sources while its benchmark is running.
+- **Commit messages** must end with:
+  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+- **Push only when explicitly told.** Branch first if on `main` and the user wants a PR.
+- **Do not stage the pre-existing untracked WIP**: `tools/`,
+  `executor/.../FlightSqlConnectTest.scala`, `scripts/__pycache__/`. These are unrelated in-progress
+  work — leave them out of any commit.
+
+## Status (2026-06)
+
+Reflection-replacement engine + bridge work, structural/byte parity, the execution-wall patch, and the
+benchmark suite (derivation cost, cold-start, multi-tenant) are done and reported in `docs/REPORT.md`.
+Open directions: tech-report polish + related work, the dev@spark pitch, the clean 2-line-patch PR;
+later — cross-arch EC2 sweep (parked on AWS creds), second backend for generality. There is one stale
+JIRA ticket (only the user has updated it).
