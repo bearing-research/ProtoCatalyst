@@ -125,6 +125,6 @@ If performance becomes critical, we can:
 
 ## References
 
-- [ENCODER_DEEP_DIVE.md](../ENCODER_DEEP_DIVE.md) - Performance benchmarks
+- [ENCODER_DEEP_DIVE.md](../scala3-encoder/ENCODER_DEEP_DIVE.md) - Performance benchmarks
 - [Spark ExpressionEncoder](https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/encoders/ExpressionEncoder.scala)
 - [Janino](https://janino-compiler.github.io/janino/)

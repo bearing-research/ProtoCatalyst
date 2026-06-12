@@ -608,7 +608,7 @@ Terms used in this document:
 
 ## Further Reading
 
-- [Spark Migration Guide](SPARK_MIGRATION_GUIDE.md) - Integrating with Spark
-- [ADR-001: No Runtime Codegen](decisions/ADR-001-no-runtime-codegen.md) - Design decision rationale
+- [Replacing Spark's Reflective Encoder Derivation](REPORT.md) - the migration writeup (see §11–§11b)
+- [ADR-001: No Runtime Codegen](../decisions/ADR-001-no-runtime-codegen.md) - Design decision rationale
 - [Scala 3 Derivation](https://docs.scala-lang.org/scala3/reference/contextual/derivation.html) - Official docs on `derives`
 - [Tungsten Memory Format](https://databricks.com/blog/2015/04/28/project-tungsten-bringing-spark-closer-to-bare-metal.html) - Why row format matters

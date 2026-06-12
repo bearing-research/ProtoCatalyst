@@ -2,7 +2,7 @@
 > compile-time–specialized *serializers* (`UnsafeRow`, Arrow) match Spark byte-for-byte and beat
 > it on the per-row hot path. The project's headline thesis has since narrowed to **replacing
 > Spark's reflective encoder *derivation*** with compile-time `Mirror` derivation (the Scala-3
-> unlock). See **[`REPORT.md`](REPORT.md)** for the current report; this document is retained for
+> unlock). See **[`REPORT.md`](../REPORT.md)** for the current report; this document is retained for
 > the per-row "ceiling" data it contains.
 
 # Compile-Time Encoders for Spark: A Scala 3 Path Forward
@@ -43,7 +43,7 @@ Every claim is backed by code in this repository. The reflection,
 parity, and derivation results are reproducible from the
 `encoder-spark` test suite and the `*EncoderDerivationBenchmarks` JMH
 suites; the per-row microbenchmarks via
-[`scripts/bench.sh`](../scripts/bench.sh).
+[`scripts/bench.sh`](../../../scripts/bench.sh).
 
 ---
 
@@ -205,7 +205,7 @@ Examples on the leaf side: `PrimitiveBooleanEncoder`,
 `OptionEncoder`, `IterableEncoder`, `MapEncoder`, `UDTEncoder`,
 `TransformingEncoder`. Our compile-time encoder matches this
 catalog at the type level for the subset we target (§7); the full
-cross-reference lives in [`docs/ENCODER_PARITY.md`](ENCODER_PARITY.md).
+cross-reference lives in [`docs/scala3-encoder/ENCODER_PARITY.md`](../ENCODER_PARITY.md).
 
 ### The TypeTag-based derivation
 
@@ -525,7 +525,7 @@ delivers concrete benefits:
 
 - **GraalVM `native-image` AOT compilation becomes viable for the
   encoder layer — one of ~15 AOT blockers in Spark 4.1 (full
-  inventory in [`docs/AOT_ROADMAP.md`](AOT_ROADMAP.md)).** This
+  inventory in [`docs/scala3-encoder/AOT_ROADMAP.md`](../AOT_ROADMAP.md)).** This
   claim needs unpacking because it's the most externally-cited
   benefit of compile-time derivation, and it's also the most easily
   over-claimed. Going slowly:
@@ -639,7 +639,7 @@ delivers concrete benefits:
   **The encoder is one specific blocker among ~15.** What we
   deliver is the *typed `Dataset[T]` read/write path* being
   AOT-clean. The Catalyst codegen path requires separate work; see
-  [`AOT_ROADMAP.md`](AOT_ROADMAP.md) §6 for why none of the
+  [`AOT_ROADMAP.md`](../AOT_ROADMAP.md) §6 for why none of the
   candidate replacements (compile-time macros, Truffle, interpreted
   fallback) is a near-term win.
 
@@ -920,7 +920,7 @@ at compile time with a clear message):
 | Out of scope by design | `Decimal`, `CalendarInterval`, `VariantVal`, `Geography`, `Geometry` (Spark-internal classes) | Belongs in a spark-coupling bridge module |
 
 The cross-reference against Spark 4.1's full `AgnosticEncoder`
-catalog is in [`docs/ENCODER_PARITY.md`](ENCODER_PARITY.md).
+catalog is in [`docs/scala3-encoder/ENCODER_PARITY.md`](../ENCODER_PARITY.md).
 
 ### Binary / wire compatibility
 
@@ -1135,14 +1135,14 @@ surface: flat case classes, the 7 unboxed + 7 boxed primitives,
 `Option`, `Seq`/`List`/`Vector`/`Set`/`Array`, `Map`, nested case
 classes, tuples, and collection/map/option *of* a case class. Every
 case is byte-identical to Spark's. (Design and the full corpus:
-[`docs/REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md).)
+[`docs/scala3-encoder/REFLECTION_REPLACEMENT.md`](../REFLECTION_REPLACEMENT.md).)
 
 ### Byte-level parity test against `ExpressionEncoder` (serializer)
 
 The core correctness oracle lives at
 [`encoder-spark/src/test/scala/.../UnsafeRowParitySpec.scala`][parity].
 
-[parity]: ../encoder-spark/src/test/scala/protocatalyst/encoder/spark/UnsafeRowParitySpec.scala
+[parity]: ../../../encoder-spark/src/test/scala/protocatalyst/encoder/spark/UnsafeRowParitySpec.scala
 
 For each test shape, the procedure is:
 
@@ -1198,7 +1198,7 @@ correctness oracle. It loads real `dbgen`-produced SF=0.01 output
 (60,175 lineitem rows + 7 other tables) through `TblParser`, then
 round-trips every row through `UnsafeRowSerializer`:
 
-[dbgen-spec]: ../encoder-spark/src/test/scala/protocatalyst/encoder/spark/tpch/TpchDbgenIntegrationSpec.scala
+[dbgen-spec]: ../../../encoder-spark/src/test/scala/protocatalyst/encoder/spark/tpch/TpchDbgenIntegrationSpec.scala
 
 ```scala
 TblParser.foreachLine(dataRoot.resolve("lineitem.tbl"), TblParser.parseLineitem) { row =>
@@ -1249,11 +1249,11 @@ in §7 and would be follow-up work.
 
 ## §10. Benchmark methodology
 
-Distilled from [`docs/BENCHMARK_METHODOLOGY.md`][methodology]; full
+Distilled from [`docs/scala3-encoder/BENCHMARKS.md`][methodology]; full
 reasoning and sources are there. This section states the rules and
 their justifications briefly.
 
-[methodology]: BENCHMARK_METHODOLOGY.md
+[methodology]: ../BENCHMARKS.md
 
 ### Statistical treatment (Georges et al., OOPSLA 2007)
 
@@ -1335,7 +1335,7 @@ A reported number is only "credible" by our methodology if:
    public git SHA.
 3. Raw JMH JSON + end-to-end wall-clock CSV are attached.
 4. The EC2 setup script (if cloud-side) is documented in
-   [`docs/CLOUD_BENCH.md`](CLOUD_BENCH.md).
+   [`docs/scala3-encoder/BENCHMARKS.md`](../BENCHMARKS.md).
 
 Each results directory in this repository (`results/<utc-ts>-sf<N>/`)
 satisfies items 1, 3, and 4. The git SHA is baked into the
@@ -1380,7 +1380,7 @@ that claim.
 
 *This part presents the measured benchmark data. Numbers cite the
 publication run in
-[`results/20260527T185535Z-sf1/`](../results/20260527T185535Z-sf1/)
+[`results/20260527T185535Z-sf1/`](../../../results/20260527T185535Z-sf1/)
 on commit `1ac4873d`. The directory contains the JMH JSON for both
 sides plus the end-to-end query CSV, the disclosure header, and
 the exact git SHA under which the run was produced. Run the same
@@ -1402,7 +1402,7 @@ measured on different axes, so the results split accordingly:
   (§9) and *far more cheaply* — ~391–2,595× faster, and lock-free
   where Spark's reflective derivation serializes on a global lock and
   degrades under concurrency (§13). It also encodes Scala 3 features
-  Spark cannot (§13, and `docs/SCALA3_SUPERSET.md`). This is the
+  Spark cannot (§13, and `docs/scala3-encoder/SCALA3_SUPERSET.md`). This is the
   Scala-3 migration result and reuses Spark's serializer codegen
   unchanged.
 - **Secondary — replacing the *serializer* too (the ceiling).** §11,
@@ -1427,7 +1427,7 @@ upper bound if one replaces that too.*
 ### Hardware and configuration
 
 All numbers in this section come from
-[`results/20260527T185535Z-sf1/`](../results/20260527T185535Z-sf1/)
+[`results/20260527T185535Z-sf1/`](../../../results/20260527T185535Z-sf1/)
 on commit `1ac4873d` (post-P1/P2/P3 fixes). The full disclosure is
 in `disclosure.txt`; reproduced here for the report:
 
@@ -1444,7 +1444,7 @@ in `disclosure.txt`; reproduced here for the report:
 Cross-arch validation on EC2 m6i.8xlarge (x86_64, 32 cores, 124 GB,
 Amazon Linux 2023, JDK 21.0.11 Corretto) was run on commit
 `dbb9a22` from
-[`results/20260528T033917Z-sf1/`](../results/20260528T033917Z-sf1/);
+[`results/20260528T033917Z-sf1/`](../../../results/20260528T033917Z-sf1/);
 key deltas in the dedicated cross-arch subsection below.
 
 ### Per-row throughput, by TPC-H table
@@ -1609,7 +1609,7 @@ residual ~6% lives inside *shared* Arrow internals —
 chain inside `DecimalVector.setSafe` — not in the macro-generated code
 (Spark pays the same costs; closing it would mean bypassing Arrow's
 safe API, which Spark doesn't do either). Provenance:
-[`results/arrow-decimal-opt-quiet-20260529T004832Z/`](../results/arrow-decimal-opt-quiet-20260529T004832Z/)
+[`results/arrow-decimal-opt-quiet-20260529T004832Z/`](../../../results/arrow-decimal-opt-quiet-20260529T004832Z/)
 on `4a233b9`, §11 hardware/JMH config.
 
 These numbers originally backed a native-image Spark Connect client;
@@ -1845,8 +1845,8 @@ sessions, and jobs touching many distinct case classes — rather
 than in a steady per-row inner loop. The full reflection-replacement
 design, the broader parity surface, and the Scala-3 features Spark
 cannot encode at all are documented in
-[`REFLECTION_REPLACEMENT.md`](REFLECTION_REPLACEMENT.md) and
-[`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
+[`REFLECTION_REPLACEMENT.md`](../REFLECTION_REPLACEMENT.md) and
+[`SCALA3_SUPERSET.md`](../SCALA3_SUPERSET.md).
 
 ### Strictly more capable: Scala 3 types Spark cannot encode
 
@@ -1868,7 +1868,7 @@ honest behavior for each:
 Validated by self-consistency (there can be no Spark golden for a type
 Spark cannot encode). The full catalog of these behaviors and their
 implementations is in
-[`docs/SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
+[`docs/scala3-encoder/SCALA3_SUPERSET.md`](../SCALA3_SUPERSET.md).
 
 ### Where Spark still wins — honest accounting
 
@@ -1890,7 +1890,7 @@ this either, so it's symmetric work.
 The headline numbers are from Apple Silicon (arm64); the
 publication sweep was also run on an EC2 m6i.8xlarge x86_64 box
 (commit `dbb9a22`, results in
-[`results/20260528T033917Z-sf1/`](../results/20260528T033917Z-sf1/),
+[`results/20260528T033917Z-sf1/`](../../../results/20260528T033917Z-sf1/),
 full cross-arch table in §11). Overall geomean across 12 benches:
 Mac 1.16× → EC2 1.19×. End-to-end Q6: Mac 4.70× → EC2 4.52×. The
 encoder claim is portable. Notable EC2-specific finding: the
@@ -1968,7 +1968,7 @@ compatibility with existing Spark artifacts.
   user's build.
 - **One AOT blocker removed — not all of them.** The encoder is one
   of ~15 AOT blockers in Spark 4.1
-  ([`docs/AOT_ROADMAP.md`](AOT_ROADMAP.md)); the structural one,
+  ([`docs/scala3-encoder/AOT_ROADMAP.md`](../AOT_ROADMAP.md)); the structural one,
   Catalyst whole-stage codegen via Janino, is unaffected by this
   work, so full Spark is not close to a native-image binary. (A
   narrower spin-off — a native-image **Spark Connect client**, no
@@ -2161,7 +2161,7 @@ completed and folded into §11 / §13. Geomean wins hold (Mac 1.16×
 a stable 1.06× on the quieter EC2 box, confirming the Mac result
 was JIT-timing variance rather than a real regression. Full
 results in
-[`results/20260528T033917Z-sf1/`](../results/20260528T033917Z-sf1/).
+[`results/20260528T033917Z-sf1/`](../../../results/20260528T033917Z-sf1/).
 
 ### Arrow-path follow-ups
 
@@ -2365,12 +2365,12 @@ files:
   — the wall-clock timing harness used for §12.
 
 - **One-command reproduction**:
-  [`scripts/bench.sh`](../scripts/bench.sh) — full pipeline.
+  [`scripts/bench.sh`](../../../scripts/bench.sh) — full pipeline.
 
-[macro]: ../encoder-spark/src/main/scala/protocatalyst/encoder/spark/UnsafeRowSerializerMacro.scala
-[trait]: ../encoder-spark/src/main/scala/protocatalyst/encoder/spark/UnsafeRowSerializer.scala
-[paritytest]: ../encoder-spark/src/test/scala/protocatalyst/encoder/spark/UnsafeRowParitySpec.scala
-[harness]: ../benchmark-spark/src/main/scala/protocatalyst/benchmark/tpch/TpchQueryBench.scala
+[macro]: ../../../encoder-spark/src/main/scala/protocatalyst/encoder/spark/UnsafeRowSerializerMacro.scala
+[trait]: ../../../encoder-spark/src/main/scala/protocatalyst/encoder/spark/UnsafeRowSerializer.scala
+[paritytest]: ../../../encoder-spark/src/test/scala/protocatalyst/encoder/spark/UnsafeRowParitySpec.scala
+[harness]: ../../../benchmark-spark/src/main/scala/protocatalyst/benchmark/tpch/TpchQueryBench.scala
 
 ## Appendix D. Reproducibility
 
@@ -2395,7 +2395,7 @@ two JMH JSONs + queries.csv.
 
 ### Cloud (single EC2 instance, ~50 min + ~$1)
 
-Full setup in [`docs/CLOUD_BENCH.md`](CLOUD_BENCH.md). Summary:
+Full setup in [`docs/scala3-encoder/BENCHMARKS.md`](../BENCHMARKS.md). Summary:
 
 ```sh
 # Launch m6i.8xlarge with Ubuntu 24.04 LTS
@@ -2412,7 +2412,7 @@ Apple Silicon numbers in §11/§12.
 
 The full cross-reference of every Spark 4.1 `AgnosticEncoder`
 variant against our coverage status lives in
-[`docs/ENCODER_PARITY.md`](ENCODER_PARITY.md). Summary of what's
+[`docs/scala3-encoder/ENCODER_PARITY.md`](../ENCODER_PARITY.md). Summary of what's
 covered in §7:
 
 - **Match** (covered by our macro): all primitive leaf encoders,
@@ -2444,5 +2444,5 @@ questions.
 
 *End of report. Source repository, full code, test suites, and
 reproducible benchmark scripts at
-[github.com/.../ProtoCatalyst](../). Contact for questions or
+[github.com/.../ProtoCatalyst](../../../). Contact for questions or
 review: the project maintainers via GitHub issues.*

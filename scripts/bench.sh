@@ -4,7 +4,7 @@
 # Wraps: gen-tpch.sh → TpchParquetConverter → JMH microbench (both sides) →
 # TpchQueryBench, into a single artifact-producing run. Outputs go to
 # `results/<timestamp>/` along with a full-disclosure header per
-# docs/BENCHMARK_METHODOLOGY.md. Spark committers ask for this directory.
+# docs/scala3-encoder/BENCHMARKS.md. Spark committers ask for this directory.
 #
 # Usage:
 #   ./scripts/bench.sh [SF] [--quick] [--skip-data] [--skip-micro] [--skip-queries]
@@ -133,7 +133,7 @@ Measure iter:  ${JMH_MEASURE}
 
 ## Methodology source
 
-See \`docs/BENCHMARK_METHODOLOGY.md\` for the rules (Georges OOPSLA 2007,
+See \`docs/scala3-encoder/BENCHMARKS.md\` for the rules (Georges OOPSLA 2007,
 Photon SIGMOD 2022, ClickBench, DuckDB benchmarking guide).
 EOF
   echo "==> Disclosure: ${out}"

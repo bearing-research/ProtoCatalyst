@@ -16,7 +16,7 @@ import java.time.LocalDate
   *    `ProtoEncoder[BigDecimal]` default to `DecimalType(38, 18)`. We document this divergence
   *    from the TPC-H spec; using the system-default precision is the only honest apples-to-apples
   *    comparison because that's what real Dataset[T] users get. See
-  *    `docs/BENCHMARK_METHODOLOGY.md`.
+  *    `docs/scala3-encoder/BENCHMARKS.md`.
   *  - `DATE` → `java.time.LocalDate`.
   *
   * Field names match TPC-H column names with the `l_`/`o_`/etc. table-prefixes dropped. One

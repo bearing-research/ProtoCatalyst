@@ -11,7 +11,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  *
  * Runs Q1 / Q6 / Q14 / Q21 in two variants (DataFrame / Dataset[T]) under multiple Spark
  * configurations (codegen on/off, AQE on/off, threads), reports min-of-3-after-warmup
- * wall-clock per the methodology in `docs/BENCHMARK_METHODOLOGY.md`.
+ * wall-clock per the methodology in `docs/scala3-encoder/BENCHMARKS.md`.
  *
  * Run:
  * {{{

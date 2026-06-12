@@ -38,7 +38,7 @@
 //
 // Compiled on Scala 2.13 and placed ahead of spark-catalyst on the classpath, it
 // shadows Spark's copy; encoder-spark's end-to-end round-trip then runs from a
-// Scala 3 process. See docs/REFLECTION_REPLACEMENT.md and docs/REPORT.md §3.
+// Scala 3 process. See docs/scala3-encoder/REFLECTION_REPLACEMENT.md and docs/scala3-encoder/REPORT.md §3.
 // =============================================================================
 
 package org.apache.spark.sql.catalyst

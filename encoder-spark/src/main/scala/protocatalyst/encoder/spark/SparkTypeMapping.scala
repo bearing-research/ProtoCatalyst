@@ -37,7 +37,7 @@ import protocatalyst.types.{ProtoStructField, ProtoType}
   *
   * Used by `InternalRowSerializer` / `UnsafeRowSerializer` to dispatch the right Spark internal
   * accessor for each field. The mapping is intentionally total over every `ProtoType` that has a
-  * corresponding `AgnosticEncoder` in Spark 4.0; see `docs/ENCODER_PARITY.md`.
+  * corresponding `AgnosticEncoder` in Spark 4.0; see `docs/scala3-encoder/ENCODER_PARITY.md`.
   *
   * Three `ProtoType` cases — `UDTType`, `SumType`, `UnresolvedType` — do not have a direct Spark
   * equivalent and throw `IllegalArgumentException` if encountered. UDTs are intended to be

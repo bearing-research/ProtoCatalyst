@@ -32,7 +32,7 @@ the measurement-validity rationale behind §9).
 > **Scope note.** A *separate, more ambitious* line of work — replacing Spark's per-row *serializer*
 > codegen with compile-time-specialized `UnsafeRow`/Arrow encoders — also beats Spark on the hot
 > path. That is the achievable *ceiling*, not the migration's headline, and is summarized in §10 and
-> documented in full in the archived [`REPORT_encoder_perf.md`](REPORT_encoder_perf.md). It is not
+> documented in full in the archived [`REPORT_encoder_perf.md`](archive/REPORT_encoder_perf.md). It is not
 > required for, and does not follow from, the derivation replacement.
 
 ---
@@ -374,7 +374,7 @@ degradation is well outside the ±CIs.)
 ## §9c. Measurement validity
 
 The two suites live in different modules and Scala versions (the baseline `encoderFor[T: TypeTag]`
-exists only on 2.13; the compile-time path only on Scala 3 — see `docs/INFRASTRUCTURE.md`), so it is
+exists only on 2.13; the compile-time path only on Scala 3 — see `INFRASTRUCTURE.md`), so it is
 worth stating why the comparison is sound and what the harness does and does not contribute.
 
 - **The harness is excluded from the measurement.** Both suites are JMH `Throughput`, run with
@@ -488,7 +488,7 @@ Their adoptability for Spark differs, and conflating them overstates the case:
 
 Full data, methodology (Georges et al., OOPSLA 2007), cross-arch validation, and the end-to-end
 query tax that motivates per-row optimization are in the archived
-[`REPORT_encoder_perf.md`](REPORT_encoder_perf.md).
+[`REPORT_encoder_perf.md`](archive/REPORT_encoder_perf.md).
 
 ---
 
@@ -523,6 +523,37 @@ Implementation sketch:
 The migration becomes incremental rather than coordinated: ship the Scala 3 encoder module, users
 compile typed `Dataset` code against the Scala 3 jars, and the per-user cross-version workarounds
 disappear one user at a time.
+
+## §11b. Concrete mapping and migration checklist
+
+The proposal touches a small, enumerable surface. The mapping below is deliberately narrow — it
+replaces the *derivation* and de-reflects the `ScalaReflection` object, and **reuses everything
+downstream of `AgnosticEncoder` unchanged** (the opposite of replacing `ExpressionEncoder` wholesale):
+
+| This project | Replaces / touches in Spark | Role |
+|---|---|---|
+| `ProtoEncoder.derived[T]` (Scala 3 `Mirror`/`inline`) | the type-analysis half of `ScalaReflection.encoderFor[T]` | compile-time type → IR |
+| `AgnosticEncoderBridge.toAgnostic` | the node-building half of `encoderFor` | lower IR → Spark's `AgnosticEncoder` |
+| *(unchanged)* | `ExpressionEncoder`, `Serializer`/`DeserializerBuildHelper`, whole-stage codegen | downstream, already reflection-free |
+| `lazy val universe`; `NameTransformer.encode`; `findConstructor` fallback | the eager `val universe` + 2 utilities in `ScalaReflection` | de-poison the object for Scala 3 (§3) |
+
+Migration checklist (the end-to-end upstream validation in §13 is the last two boxes):
+
+- [ ] Implement `ExpressionEncoder.apply[T]()` on the Scala 3 build via `deriveAgnosticEncoder[T]`
+      (`Mirror` derivation + bridge); keep the reflective body for 2.13.
+- [ ] De-reflect the `ScalaReflection` object: `val universe` → `lazy val`;
+      `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode`; replace
+      `findConstructor`'s scala-reflect fallback.
+- [ ] Swap the ~16 `TypeTag`-threading signatures (`Encoders`, `Dataset`, `SparkSession`,
+      `functions`, …) to derived-given signatures — forced anyway, since `TypeTag` is gone.
+- [ ] Run Spark's existing encoder test suite (`catalyst/testOnly *Encoder*`) against the Scala 3 build.
+- [ ] Run the typed-`Dataset` suite — the definitive proof that §3's wall is the last derivation-side
+      obstacle.
+
+A reflection-free path also changes one user-visible behavior for the better: an unsupported type is a
+**compile error** (`Cannot find or derive ProtoEncoder for type …`) rather than a runtime exception
+from `encoderFor`. (Earlier integration sketches that routed through a bespoke `InlineRowSerializer`
+instead of Spark's `AgnosticEncoder` are superseded by the bridge approach above.)
 
 ## §12. What this unlocks — and what it doesn't
 

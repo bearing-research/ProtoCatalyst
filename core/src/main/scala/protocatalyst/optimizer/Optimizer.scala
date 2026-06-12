@@ -75,7 +75,7 @@ import protocatalyst.plan.ProtoLogicalPlan
   *   - InferFiltersFromConstraints: Derives additional filters from join constraints
   *
   * @see
-  *   docs/OPTIMIZER_PLAN.md for the full optimization plan
+  *   docs/compiler/OPTIMIZER_PLAN.md for the full optimization plan
   */
 object Optimizer extends RuleExecutor:
 

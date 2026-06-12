@@ -119,7 +119,7 @@ val restored: Person = serializer.deserialize(row)
 | **Windows** | `rowNumber().over(Window.partitionBy(...).orderBy(...))` |
 | **Hints** | `.broadcast`, `.coalesce(4)`, `.repartition(8)` |
 
-See [DSL Reference](docs/DSL_REFERENCE.md) for the complete API.
+See [DSL Reference](docs/compiler/DSL_REFERENCE.md) for the complete API.
 
 ## Performance Highlights
 
@@ -180,17 +180,25 @@ sbt 'benchmarkSpark/Jmh/run SparkEncoderBenchmarks'
 
 ## Documentation
 
-- **[DSL Reference](docs/DSL_REFERENCE.md)** — Complete query DSL API reference
-- **[Compile-Time DSL](docs/COMPILE_TIME_DSL.md)** — How the compile-time query optimization works
-- **[Understanding Encoders](docs/ENCODER_DEEP_DIVE.md)** — Beginner-friendly encoder guide
-- **[Replacing Spark's Reflective Encoder](docs/REPORT.md)** — the reflection-replacement writeup (the Scala 3 thesis)
-- **[Infrastructure](docs/INFRASTRUCTURE.md)** — cross-version (Scala 3 ↔ 2.13) build topology + how to run the reflection-replacement work
-- [Design Document](docs/DESIGN.md) — Architecture and design decisions
-- [Optimizer Plan](docs/OPTIMIZER_PLAN.md) — 48 optimizer rules and implementation
-- [SQL Parser](docs/SQL_PARSER.md) — Compile-time SQL parsing
-- [Spark Catalyst Reference](docs/SPARK_CATALYST_REFERENCE.md) — Spark internals reference
-- [Spark Migration Guide](docs/SPARK_MIGRATION_GUIDE.md) — Integration with Spark Scala 3
-- [Benchmarks](docs/BENCHMARKS.md) — Performance testing and results
+See **[docs/README.md](docs/README.md)** for the full index. The docs are split into two tracks —
+the Scala 3 / compile-time-encoder thesis and the general query compiler.
+
+**Scala 3 / compile-time encoder (the reflection-replacement thesis):**
+
+- **[Replacing Spark's Reflective Encoder](docs/scala3-encoder/REPORT.md)** — the writeup (the Scala 3 thesis). The artifact.
+- **[Infrastructure](docs/scala3-encoder/INFRASTRUCTURE.md)** — cross-version (Scala 3 ↔ 2.13) build topology + how to run everything
+- [Understanding Encoders](docs/scala3-encoder/ENCODER_DEEP_DIVE.md) — Beginner-friendly encoder guide
+- [Reflection Replacement Design](docs/scala3-encoder/REFLECTION_REPLACEMENT.md) — bridge design + the 2-line wall patch
+- [Benchmarks](docs/scala3-encoder/BENCHMARKS.md) — suite, methodology, and EC2 / cross-arch runs
+
+**General query compiler:**
+
+- [DSL Reference](docs/compiler/DSL_REFERENCE.md) — Complete query DSL API reference
+- [Compile-Time DSL](docs/compiler/COMPILE_TIME_DSL.md) — How the compile-time query optimization works
+- [Design Document](docs/compiler/DESIGN.md) — Architecture and design decisions
+- [Optimizer Plan](docs/compiler/OPTIMIZER_PLAN.md) — Optimizer rules and implementation
+- [SQL Parser](docs/compiler/SQL_PARSER.md) — Compile-time SQL parsing
+- [Spark Catalyst Reference](docs/compiler/SPARK_CATALYST_REFERENCE.md) — Spark internals reference
 - [ADR-001: No Runtime Codegen](docs/decisions/ADR-001-no-runtime-codegen.md) — Why compile-time over runtime
 
 ## Requirements

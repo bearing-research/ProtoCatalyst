@@ -21,7 +21,7 @@ case class HasExtensions(id: UUID, when: OffsetDateTime, zoned: ZonedDateTime)
   * the serializer: `Invoke.encodedFunctionName` -> `ScalaReflection.encodeFieldNameToIdentifier`
   * forces `ScalaReflection`'s `<clinit>`, whose eager `val universe = scala.reflect.runtime.universe`
   * cannot initialize on the Scala 3 stdlib (`FatalError: class Array does not have a member apply`).
-  * That is the Scala-3 execution wall (docs/REPORT.md §3, REFLECTION_REPLACEMENT.md §2.1).
+  * That is the Scala-3 execution wall (docs/scala3-encoder/REPORT.md §3, REFLECTION_REPLACEMENT.md §2.1).
   *
   * With the 2-line patch on the test classpath (lazy `universe`; `encodeFieldNameToIdentifier` via
   * `NameTransformer.encode`), the wall is gone and Spark's *unmodified* serializer/deserializer run.

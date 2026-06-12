@@ -65,7 +65,7 @@ enum Shape:
   case Circle(r: Double)
   case Square(s: Double)
 
-/** M0 spike for the reflection-replacement initiative (see docs/REFLECTION_REPLACEMENT.md):
+/** M0 spike for the reflection-replacement initiative (see docs/scala3-encoder/REFLECTION_REPLACEMENT.md):
   *
   *   1. **Structural parity** — `AgnosticEncoderBridge.toAgnostic(ProtoEncoder.derived[T])`
   *      produces the same `AgnosticEncoder` shape Spark's reflective `ScalaReflection.encoderFor`
@@ -215,4 +215,4 @@ class AgnosticEncoderBridgeSpec extends FunSuite:
   // via `NameTransformer.encode`) removes the wall. With it on the test classpath, the structural
   // parity above is upgraded to *observed* behavioral parity — see `ExecutionWallSpec`, which
   // round-trips real values through Spark's unmodified codegen ser/deser from this Scala 3 process.
-  // See `spark-reflection-patch` and docs/REFLECTION_REPLACEMENT.md §2.1.
+  // See `spark-reflection-patch` and docs/scala3-encoder/REFLECTION_REPLACEMENT.md §2.1.

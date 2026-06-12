@@ -16,7 +16,7 @@ import protocatalyst.encoder.spark.tpch.Schemas.*
   *
   * NOTE: this measures *building the encoder description*, not executing it. Executing a
   * Spark-derived serializer from a Scala 3 process is blocked by stock Spark's residual
-  * `scala.reflect.runtime` (see docs/REFLECTION_REPLACEMENT.md §2.1) — but derivation itself is
+  * `scala.reflect.runtime` (see docs/scala3-encoder/REFLECTION_REPLACEMENT.md §2.1) — but derivation itself is
   * reflection-free and runs cleanly here.
   *
   * {{{

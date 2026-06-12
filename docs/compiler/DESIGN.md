@@ -9,7 +9,7 @@ ProtoCatalyst is a Scala 3 query compiler that validates, optimizes, and seriali
 3. **Engine-Independent IR**: A rich intermediate representation (`ProtoLogicalPlan`, `ProtoExpr`, `ProtoType`) that can target multiple execution backends
 4. **ML Compute Graphs**: Tensor operation IR with autograd and ONNX export
 
-ProtoCatalyst is a query compiler, not a query engine. It sits above execution runtimes (Spark today, DataFusion/Velox in the future) the way LLVM sits above CPU architectures. See [ROADMAP.md](../ROADMAP.md) for the full vision.
+ProtoCatalyst is a query compiler, not a query engine. It sits above execution runtimes (Spark today, DataFusion/Velox in the future) the way LLVM sits above CPU architectures. See [ROADMAP.md](../../ROADMAP.md) for the full vision.
 
 ---
 
@@ -376,7 +376,7 @@ enum HintParam extends Serializable:
   case IntVal(value: Int)
 ```
 
-These 20 plan nodes have no Substrait equivalent for 7 of them: `Pivot`, `Unpivot`, `Generate`, `LateralJoin`, `With`, `ResolvedHint`, `Distinct`. This is a key reason for the [independent IR decision](decisions/ADR-002-independent-ir.md).
+These 20 plan nodes have no Substrait equivalent for 7 of them: `Pivot`, `Unpivot`, `Generate`, `LateralJoin`, `With`, `ResolvedHint`, `Distinct`. This is a key reason for the [independent IR decision](../decisions/ADR-002-independent-ir.md).
 
 ### 1.6 Artifact Format and Versioning
 
@@ -619,23 +619,23 @@ inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] = ${ deriveImpl[T]
 | Type representation | Custom `ProtoType` enum (26 variants) | Reuse Spark's `DataType` | Engine-independent, no Spark compile-time dependency |
 | Literal representation | `LiteralValue` enum (15 variants) | `Any` | Type-safe, serializable, no ClassCastException |
 | Serialization | Dual JSON + Protobuf with PCAT container | Single format | JSON for debugging, Protobuf for production (3–10x smaller) |
-| Column identity | `(name, qualifier)` | ExprId | Sufficient for one-shot resolution; simpler (see [ColumnRef docs](../core/src/main/scala/protocatalyst/expr/ProtoExpr.scala)) |
+| Column identity | `(name, qualifier)` | ExprId | Sufficient for one-shot resolution; simpler (see [ColumnRef docs](../../core/src/main/scala/protocatalyst/expr/ProtoExpr.scala)) |
 | Schema fingerprint | 64-bit dual MurmurHash3 | Single 32-bit hash | Eliminates collision risk at scale |
 | Schema binding | Name-based (no `position` field) | Position-based | Robust to column reorder, simpler FieldContract |
-| Interchange format | Independent IR | Substrait export | Lossy export, fundamental model clash (see [ADR-002](decisions/ADR-002-independent-ir.md)) |
+| Interchange format | Independent IR | Substrait export | Lossy export, fundamental model clash (see [ADR-002](../decisions/ADR-002-independent-ir.md)) |
 | Function handling | `OpaqueCall` fallback | Exhaustive catalog | Pragmatic: known functions get compile-time types, unknown deferred to runtime |
 | `proto` module | Pure Java | Scala 3 | Consumable by both Scala 3 and 2.13 (Spark compatibility) |
 
 ### B. Open Questions
 
-1. **Physical plan layer**: What cost model for `ProtoPhysicalPlan`? See [ROADMAP Phase 9](../ROADMAP.md).
-2. **Backend lowerings**: Direct lowering vs intermediate physical plan? See [ROADMAP Phase 10](../ROADMAP.md).
-3. **ML as plan operator**: How to vectorize `ComputeGraph` evaluation over Arrow `RecordBatch`? See [ROADMAP Phase 11](../ROADMAP.md).
+1. **Physical plan layer**: What cost model for `ProtoPhysicalPlan`? See [ROADMAP Phase 9](../../ROADMAP.md).
+2. **Backend lowerings**: Direct lowering vs intermediate physical plan? See [ROADMAP Phase 10](../../ROADMAP.md).
+3. **ML as plan operator**: How to vectorize `ComputeGraph` evaluation over Arrow `RecordBatch`? See [ROADMAP Phase 11](../../ROADMAP.md).
 4. **Spark 4.0 Scala 3**: When upstream adds Scala 3 support, bridge `ProtoEncoder` → `AgnosticEncoder`.
 
 ### C. Related Work
 
-- **Substrait**: Cross-engine query plan interchange format. We chose to stay independent — see [ADR-002](decisions/ADR-002-independent-ir.md).
+- **Substrait**: Cross-engine query plan interchange format. We chose to stay independent — see [ADR-002](../decisions/ADR-002-independent-ir.md).
 - **Spark Catalyst**: Runtime query optimizer. ProtoCatalyst moves 48 rules to compile time; Spark handles CBO and physical planning at runtime.
 - **Spark Connect**: Wire protocol for Spark client-server. Complementary — ProtoCatalyst could serialize to Spark Connect's protobuf format as a backend lowering.
 - **DataFusion**: Arrow-native query engine in Rust. Future backend target.

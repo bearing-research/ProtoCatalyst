@@ -307,4 +307,4 @@ QuoteMacro.quote { Table[User](tableName) }  // Compile error
 - [DESIGN.md](DESIGN.md) - Overall ProtoCatalyst architecture
 - [OPTIMIZER_PLAN.md](OPTIMIZER_PLAN.md) - Optimizer rule details
 - [SQL_PARSER.md](SQL_PARSER.md) - SQL path documentation
-- [Plan file](../.claude/plans/) - Detailed implementation plan
+- [Plan file](../../.claude/plans/) - Detailed implementation plan

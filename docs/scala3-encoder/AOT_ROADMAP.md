@@ -569,4 +569,4 @@ rather than trying to AOT-compile Catalyst itself.
 
 *Document prepared as a companion to [`REPORT.md`](REPORT.md). The
 encoder work referenced throughout lives in
-[`encoder-spark/src/main/scala/protocatalyst/encoder/spark/`](../encoder-spark/src/main/scala/protocatalyst/encoder/spark/).*
+[`encoder-spark/src/main/scala/protocatalyst/encoder/spark/`](../../encoder-spark/src/main/scala/protocatalyst/encoder/spark/).*

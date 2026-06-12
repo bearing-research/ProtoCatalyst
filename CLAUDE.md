@@ -16,12 +16,13 @@ unblock Spark's migration to Scala 3.
 - **Strategy:** tech-report-first to gain traction, then upstream. The 2-line `ScalaReflection` patch
   is the scoped "down payment" ask.
 
-Key docs:
-- `docs/REPORT.md` — the writeup (blocker → replacement → results → migration). The artifact.
-- `docs/REFLECTION_REPLACEMENT.md` — bridge design, decisions, milestones; §2.1.1 = the wall patch.
-- `docs/INFRASTRUCTURE.md` — cross-version build mechanics + **how to run every benchmark/test**.
-- `docs/SCALA3_SUPERSET.md` — behaviors beyond Spark's encoder model.
-- `docs/BENCHMARK_METHODOLOGY.md`, `docs/BENCHMARKS.md` — per-row/e2e benchmark methodology + suite.
+Key docs (full index: `docs/README.md`; docs are split into `docs/scala3-encoder/` and
+`docs/compiler/` tracks):
+- `docs/scala3-encoder/REPORT.md` — the writeup (blocker → replacement → results → migration). The artifact.
+- `docs/scala3-encoder/REFLECTION_REPLACEMENT.md` — bridge design, decisions, milestones; §2.1.1 = the wall patch.
+- `docs/scala3-encoder/INFRASTRUCTURE.md` — cross-version build mechanics + **how to run every benchmark/test**.
+- `docs/scala3-encoder/SCALA3_SUPERSET.md` — behaviors beyond Spark's encoder model.
+- `docs/scala3-encoder/BENCHMARKS.md` — benchmark suite + methodology + EC2/cross-arch runs.
 
 ## Build & toolchain
 
@@ -79,7 +80,7 @@ sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
 ## Status (2026-06)
 
 Reflection-replacement engine + bridge work, structural/byte parity, the execution-wall patch, and the
-benchmark suite (derivation cost, cold-start, multi-tenant) are done and reported in `docs/REPORT.md`.
+benchmark suite (derivation cost, cold-start, multi-tenant) are done and reported in `docs/scala3-encoder/REPORT.md`.
 Open directions: tech-report polish + related work, the dev@spark pitch, the clean 2-line-patch PR;
 later — cross-arch EC2 sweep (parked on AWS creds), second backend for generality. There is one stale
 JIRA ticket (only the user has updated it).

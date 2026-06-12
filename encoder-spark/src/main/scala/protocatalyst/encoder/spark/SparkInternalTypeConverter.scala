@@ -152,7 +152,7 @@ object SparkInternalTypeConverter extends InternalTypeConverter:
               throw IllegalArgumentException(s"Cannot convert ${other.getClass} to StructType")
 
         case ProtoType.CalendarIntervalType | ProtoType.VariantType =>
-          // Spark-class external types — see docs/ENCODER_PARITY.md. Passed through unchanged
+          // Spark-class external types — see docs/scala3-encoder/ENCODER_PARITY.md. Passed through unchanged
           // (caller is responsible for already having a CalendarInterval or VariantVal).
           value
 

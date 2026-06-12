@@ -3,8 +3,8 @@
 This document explains how a single sbt build runs **two Scala versions at once** — the mechanism
 that lets a Scala 3 compile-time encoder be compared against, and validated against, Spark's Scala
 2.13 reflective encoder — and how to drive every piece of the reflection-replacement system
-(`docs/REFLECTION_REPLACEMENT.md`, `docs/REPORT.md`). For the per-row / end-to-end query benchmark
-methodology (statistics, ablations, disclosure), see `docs/BENCHMARK_METHODOLOGY.md`.
+(`REFLECTION_REPLACEMENT.md`, `REPORT.md`). For the per-row / end-to-end query benchmark
+methodology (statistics, ablations, disclosure), see `BENCHMARKS.md`.
 
 ## 1. Why two Scala versions
 
@@ -34,7 +34,7 @@ touch Spark's reflection.
 | `benchmarks` | 3.8.1 | JMH: our side (`EncoderDerivationBenchmarks`, …) | — |
 | `benchmark-spark` | **2.13.16** | JMH: Spark baseline (`SparkEncoderDerivationBenchmarks`) **and** the parity-golden generator (`AgnosticParityFixtures`) | spark-sql/-catalyst 4.1.2 (native 2.13) |
 | `spark-catalyst` | **2.13.16** | Spark-side integration / e2e parity harness | native 2.13 |
-| `spark-reflection-patch` | **2.13.16** | The 2-line patched `ScalaReflection` (execution-wall demonstrator, `docs/REFLECTION_REPLACEMENT.md` §2.1.1) | native 2.13 |
+| `spark-reflection-patch` | **2.13.16** | The 2-line patched `ScalaReflection` (execution-wall demonstrator, `REFLECTION_REPLACEMENT.md` §2.1.1) | native 2.13 |
 
 ## 3. How the cross-version wiring works
 
@@ -70,7 +70,7 @@ allowUnsafeScalaLibUpgrade := true
 ```
 
 Safe here because we don't link against symbols that exist only in the newer stdlib. This is a real
-migration cost worth disclosing (toolchain lag), not hidden — see `BENCHMARK_METHODOLOGY.md` §8.
+migration cost worth disclosing (toolchain lag), not hidden — see `BENCHMARKS.md` §8.
 
 ### 3.3 The classpath-shadow demonstrator
 
@@ -87,7 +87,7 @@ Test / fullClasspath := {
 ```
 
 This lets `ExecutionWallSpec` run Spark's real ser/deser from a Scala 3 process. Details and the
-why-it's-not-a-cheat argument: `docs/REFLECTION_REPLACEMENT.md` §2.1.1.
+why-it's-not-a-cheat argument: `REFLECTION_REPLACEMENT.md` §2.1.1.
 
 ### 3.4 Cross-compile parity (the correctness oracle)
 
@@ -185,7 +185,7 @@ val row      = enc.createSerializer()(value)      // executes only with the §3.
 
 A reviewer's first question. Short answer: the sbt/JMH harness is *excluded* from the measurement,
 and the cross-version setup is a fair same-contract comparison — with one asymmetry we state openly.
-Full treatment is in `docs/REPORT.md` §9 ("Measurement validity"); summary:
+Full treatment is in `REPORT.md` §9 ("Measurement validity"); summary:
 
 - **sbt is not in the measured JVM.** JMH forks a fresh JVM per `-f`; sbt only launches it. Harness
   and class-loading overhead land in warmup, not measurement.
@@ -201,8 +201,9 @@ Full treatment is in `docs/REPORT.md` §9 ("Measurement validity"); summary:
 
 ## See also
 
-- `docs/REPORT.md` — the writeup (blocker → replacement → results → migration), incl. §9 validity.
-- `docs/REFLECTION_REPLACEMENT.md` — bridge design, decisions, milestones, §2.1.1 wall patch.
-- `docs/SCALA3_SUPERSET.md` — behaviors beyond Spark's encoder model.
-- `docs/BENCHMARK_METHODOLOGY.md` — statistics/ablations/disclosure for the per-row + e2e benchmarks.
-- `docs/BENCHMARKS.md` — the broader benchmark suite and how to run it.
+- `REPORT.md` — the writeup (blocker → replacement → results → migration), incl. §9 validity.
+- `REFLECTION_REPLACEMENT.md` — bridge design, decisions, milestones, §2.1.1 wall patch.
+- `SCALA3_SUPERSET.md` — behaviors beyond Spark's encoder model.
+- `BENCHMARKS.md` — the benchmark suite, methodology (statistics/ablations/disclosure), and EC2 /
+  cross-arch runs (this absorbed the former `BENCHMARK_METHODOLOGY.md` and `CLOUD_BENCH.md`).
+- `archive/REPORT_encoder_perf.md` — the archived per-row "ceiling" study (UnsafeRow/Arrow serializers).

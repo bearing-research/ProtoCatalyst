@@ -15,9 +15,9 @@ import protocatalyst.encoder.spark.tpch.Schemas
   * The Spark side of this comparison lives in `benchmark-spark/.../TpchSparkEncoderBenchmarks`
   * (Scala 2.13, `ExpressionEncoder`). Two separate JMH runs, two JSON outputs, merged at report
   * time — the Scala 3 / Scala 2.13 wall makes a single benchmark module impractical (Spark's
-  * codegen path can't run from Scala 3; see `docs/ENCODER_PARITY.md`).
+  * codegen path can't run from Scala 3; see `docs/scala3-encoder/ENCODER_PARITY.md`).
   *
-  * Methodology (per `docs/BENCHMARK_METHODOLOGY.md`): 3 forks, 5 warmup + 15 measurement
+  * Methodology (per `docs/scala3-encoder/BENCHMARKS.md`): 3 forks, 5 warmup + 15 measurement
   * iterations × 1s, `-prof gc` for allocation profiling. Scale factor parameterised via
   * `@Param`; SF=1 is the canonical JMH scale.
   *
