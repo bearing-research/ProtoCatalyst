@@ -10,14 +10,17 @@ This report shows that the reflective derivation can be replaced, wholesale, by 
 Scala 3 `Mirror` derivation that produces Spark's own `AgnosticEncoder`** — so the entire rest of
 Spark's encoder pipeline is reused unchanged. The replacement is:
 
-- **Faithful** — the derived `AgnosticEncoder` is byte-identical to what `ScalaReflection.encoderFor`
-  produces, across the common type surface (§8).
+- **Faithful** — the derived `AgnosticEncoder` is *structurally identical* to what
+  `ScalaReflection.encoderFor` produces — same node tree, field names, nullability, decimal
+  precision/scale, and flags, with class names compared by normalized simple name — across the common
+  type surface (§8).
 - **Far cheaper** — ~389× faster to derive single-threaded, and it eliminates a **~1 s per-JVM
   reflective cold-start** that short-lived drivers (serverless/Glue/CI) pay on every run (§9). (It
   also removes a global derivation lock that caps concurrent typed-API throughput — a real but
   narrower, latent benefit; §9d.)
-- **Strictly more capable** — it encodes Scala 3 features Spark's reflection cannot (`enum`s,
-  sealed-trait ADTs), and marks where Spark's encoder model would have to grow (§7).
+- **Strictly more capable** — it encodes simple Scala 3 `enum`s that Spark's reflection cannot, and
+  *detects and cleanly rejects* data-carrying `enum`s / sealed-trait ADTs as a gap in Spark's encoder
+  model (which has no sum-type node) rather than mis-encoding them (§7).
 - **Proven end-to-end** — the execution wall that stops stock Spark on Scala 3 is a *two-line* change
   to `ScalaReflection`; with it, our compile-time-derived encoders round-trip real values through
   Spark's unmodified codegen ser/deser from a Scala 3 process (§3).
@@ -62,8 +65,11 @@ T  ──ScalaReflection.encoderFor[T: TypeTag]──►  AgnosticEncoder[T]  �
 `AgnosticEncoder[T]` is a pure algebraic data type — field names, nullability, sub-encoders,
 `DataType`, `ClassTag`. It carries no reflection and no Catalyst expressions; it is purely a
 *description*. Everything downstream of it (`ExpressionEncoder`, `SerializerBuildHelper` /
-`DeserializerBuildHelper`, codegen) is already reflection-free. The reflection is confined to
-producing the `AgnosticEncoder` in the first place:
+`DeserializerBuildHelper`, codegen) does no reflective *derivation* — with one caveat the wall in §3
+makes precise: the emitted ser/deser code calls small co-located `ScalaReflection` *utilities*
+(`encodeFieldNameToIdentifier`, a name-mangler; `findConstructor`), so the `ScalaReflection` object
+must still be de-reflected even though no type analysis happens downstream. The reflective derivation
+itself is confined to producing the `AgnosticEncoder` in the first place:
 
 ```scala
 // org.apache.spark.sql.catalyst.ScalaReflection  (spark-sql-api)
@@ -153,7 +159,7 @@ We verify this concretely. `spark-reflection-patch` is a verbatim copy of Spark 
 `encoder-spark`, **a Scala 3 module**) round-trips real values — flat and nested products, all
 primitive widths, `java.lang` boxed types, `Some`/`None`, maps, collections including `Array`,
 collection/map/option *of* a case class, and tuples — through Spark's **unmodified** codegen
-serializer and deserializer. Nine cases, all green.
+serializer and deserializer. Eleven cases, all green.
 
 This upgrades the report's correctness argument from structural to **observed**: the
 `AgnosticEncoder` we derive at compile time (no `TypeTag`, no reflection, §6) drives Spark's actual
@@ -270,8 +276,9 @@ The full catalog of Scala-3 behaviors and their implementations is in `SCALA3_SU
 
 Correctness is established by showing the compile-time `AgnosticEncoder` is *structurally identical*
 to the one Spark's reflective `encoderFor` produces — same nodes, field names, nullability, decimal
-precision/scale, `lenientSerialization` flags, and `clsTag`s — so Spark's unchanged downstream
-behaves identically.
+precision/scale, `lenientSerialization` flags, and `clsTag` *simple-names* (the canonical dump
+normalizes class names, so this asserts node identity, not full `ClassTag` equality) — so Spark's
+unchanged downstream behaves identically.
 
 `encoderFor[T: TypeTag]` exists only in Scala 2.13, so goldens are generated there
 (`AgnosticParityFixtures`) and compared on the Scala 3 side (`AgnosticEncoderBridgeSpec`) via a
@@ -284,7 +291,7 @@ Double)`:
 Product[Person](id:PrimitiveIntEncoder!, name:StringEncoder?, active:PrimitiveBooleanEncoder!, score:PrimitiveDoubleEncoder!)
 ```
 
-Every case in the corpus is byte-identical to Spark's:
+Every case in the corpus matches Spark's canonical structural dump (modulo class-name normalization):
 
 | Group | Coverage |
 |---|---|
@@ -342,7 +349,8 @@ The compile-time path is also not free at build: it costs `scalac` time, measure
 
 The natural objection to §9 is "encoders are cached, so derivation runs once and the lock never
 matters." At the level of a single held `val`, true. But the *typed-API surface* re-derives on every
-call, with no cache anywhere in Spark. The chain is short and verifiable (Spark 4.0.0):
+call, with no cache anywhere in Spark. The chain is short and verifiable (line numbers from Spark
+4.0.0 sources; structurally unchanged in the 4.1.2 build target):
 
 ```scala
 // SQLImplicits.scala:306 — an implicit *def*, so it materializes fresh on every summon
@@ -351,17 +359,24 @@ implicit def newProductEncoder[T <: Product: TypeTag]: Encoder[T] = Encoders.pro
 def product[T <: Product: TypeTag]: Encoder[T] = ScalaReflection.encoderFor[T]   // → the global lock
 ```
 
-Every context-bound `Encoder[T]` on the public typed ops is satisfied by that `def`, uncached:
-`Dataset.as[U: Encoder]` (`Dataset.scala:522`), `map[U: Encoder]` (`:1392`),
-`groupByKey[K: Encoder]` (`:962`), `SparkSession.createDataset[T: Encoder]` (`:359`). A grep of every
-Spark SQL source that references `ExpressionEncoder` for `ConcurrentHashMap | computeIfAbsent |
-getOrElseUpdate | memoiz | CacheBuilder` returns **zero hits** — Spark memoizes encoder derivation
-nowhere. So `import spark.implicits._` plus any typed operation re-runs `encoderFor` under the global
-`ScalaSubtypeLock` every time.
+This `def` satisfies the context-bound `Encoder[T]` on the public typed ops — `Dataset.as[U: Encoder]`
+(`Dataset.scala:522`), `map[U: Encoder]` (`:1392`), `groupByKey[K: Encoder]` (`:962`),
+`SparkSession.createDataset[T: Encoder]` (`:359`) — **whenever the element type routes through the
+reflective implicits**: product case classes (`newProductEncoder`), plus the `Seq`/`Map`/`Set`,
+product-array, and Java-enum implicits, all of which call `encoderFor` (`SQLImplicits.scala`). It does
+*not* cover built-in scalars — primitives, boxed primitives, `String`, decimals, temporals, and
+primitive arrays resolve to pre-built `Encoders.*` constants with no reflective walk and no lock. So
+the recurrence is real for the **case-class / collection / map / set / Java-enum** surface — which is
+exactly what §9 measures (all eight TPC-H types are products) — and not for, say, a `Dataset[Int]`.
+Within that surface there is no memoization: a grep of every Spark SQL source referencing
+`ExpressionEncoder` for `ConcurrentHashMap | computeIfAbsent | getOrElseUpdate | memoiz | CacheBuilder`
+returns **zero hits**, so each such typed op re-runs `encoderFor` under the global `ScalaSubtypeLock`
+every time.
 
 This has two consequences. **First** — the one that matters most — the per-derivation cost of §9 and
-the ~1 s cold-start are *not* one-time accidents a cache quietly hides: they recur on **every** typed
-op unless the user manually hoists the encoder into a `val`. **Second**, because `ScalaSubtypeLock`
+the ~1 s cold-start are *not* one-time accidents a cache quietly hides: they recur on **every** such
+typed op (over a case class / collection / map / set / Java enum) unless the user manually hoists the
+encoder into a `val`. **Second**, because `ScalaSubtypeLock`
 is a single JVM-static monitor, concurrent derivation in one JVM serializes on it. That second effect
 is **narrower than it first appears**, and earlier drafts of this report overstated it: the Spark
 Connect *server* does not reflectively derive (the client builds the `AgnosticEncoder` and ships it in
@@ -554,7 +569,7 @@ downstream of `AgnosticEncoder` unchanged** (the opposite of replacing `Expressi
 |---|---|---|
 | `ProtoEncoder.derived[T]` (Scala 3 `Mirror`/`inline`) | the type-analysis half of `ScalaReflection.encoderFor[T]` | compile-time type → IR |
 | `AgnosticEncoderBridge.toAgnostic` | the node-building half of `encoderFor` | lower IR → Spark's `AgnosticEncoder` |
-| *(unchanged)* | `ExpressionEncoder`, `Serializer`/`DeserializerBuildHelper`, whole-stage codegen | downstream, already reflection-free |
+| *(unchanged)* | `ExpressionEncoder`, `Serializer`/`DeserializerBuildHelper`, whole-stage codegen | downstream — no reflective *derivation*; the small `ScalaReflection` utilities it calls are de-reflected separately (§2, §3) |
 | `lazy val universe`; `NameTransformer.encode`; `findConstructor` fallback | the eager `val universe` + 2 utilities in `ScalaReflection` | de-poison the object for Scala 3 (§3) |
 
 **One layer upstream, not two.** The first two rows are split only because this project is *out of
@@ -585,10 +600,13 @@ Migration checklist (the end-to-end upstream validation in §13 is the last two 
 - [ ] Run the typed-`Dataset` suite — the definitive proof that §3's wall is the last derivation-side
       obstacle.
 
-A reflection-free path also changes one user-visible behavior for the better: an unsupported type is a
+A reflection-free path also moves most failures earlier: a type `ProtoEncoder` cannot derive is a
 **compile error** (`Cannot find or derive ProtoEncoder for type …`) rather than a runtime exception
-from `encoderFor`. (Earlier integration sketches that routed through a bespoke `InlineRowSerializer`
-instead of Spark's `AgnosticEncoder` are superseded by the bridge approach above.)
+from `encoderFor`. The narrower case — a type that *derives* but that Spark's `AgnosticEncoder` model
+cannot represent (a data-carrying ADT, §7) — is today a **runtime** rejection at the bridge
+(`IllegalArgumentException`); an upstream macro could instead raise it at compile time
+(`scala.compiletime.error`). (Earlier integration sketches that routed through a bespoke
+`InlineRowSerializer` instead of Spark's `AgnosticEncoder` are superseded by the bridge approach above.)
 
 ## §12. What this unlocks — and what it doesn't
 
@@ -610,8 +628,10 @@ that codegen, a separate and much larger project. This report's claim is deliber
 - **Tail of the type surface**: the faithful Scala subset is now complete through tuple-of-case-class
   (§8), and the bridge adds the beyond-Spark extensions UUID/OffsetDateTime/ZonedDateTime as
   String-backed `TransformingEncoder`s (§7). What remains is *out of scope*: Java-bean and Java-enum
-  inference (`JavaTypeInference`, Java reflection — already works on Scala 3), UDTs, and a handful of
-  types Spark itself cannot encode either (`java.util.Date`, `LocalTime`).
+  inference (`JavaTypeInference`, Java reflection — already works on Scala 3), UDTs, and types with no
+  working Spark counterpart to match against — `java.util.Date`, and `LocalTime`, for which Spark
+  4.1.2 *derives* a `LocalTimeEncoder` but its `ExpressionEncoder` then rejects `TimeType` at
+  serializer-construction time (`[UNSUPPORTED_TIME_TYPE]`), so there is no Spark golden to compare.
 - **Upstream**: prototype the `spark-sql-encoder-3` module against a Scala-3 build of `spark-sql-api`
   and run the typed-`Dataset` test suite — the definitive end-to-end validation that §3's wall is
   the last derivation-side obstacle.

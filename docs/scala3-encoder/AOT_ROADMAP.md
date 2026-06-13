@@ -38,9 +38,9 @@ accompany a SPARK JIRA on this topic.
 
 Spark's startup cost on a fresh JVM is currently dominated by:
 
-- `scala.reflect.runtime.universe` initialization (~500 ms,
-  measured in [`REPORT.md`](REPORT.md) §13, paid by the first
-  `ExpressionEncoder[T]()` call).
+- `scala.reflect.runtime.universe` initialization — the dominant
+  component of the **~1.05 s** first `ExpressionEncoder[T]()` call in a
+  fresh JVM (measured in [`REPORT.md`](REPORT.md) §9).
 - JVM startup + class loading (~300 ms baseline).
 - Per-encoder Catalyst codegen via Janino (~100–130 ms first
   call, ~5–20 ms subsequent calls).

@@ -22,7 +22,7 @@ we do, why, where it's implemented, and how it's validated.
 | **Ours** | `ProtoEncoder.derived[T]` via `scala.deriving.Mirror.Of[T]` + `inline` (`summonInline`, `erasedValue`, `constValue`). No `TypeTag`, no runtime reflection. |
 | **Why Scala 3** | `TypeTag` and `scala.reflect.runtime.universe` **do not exist for Scala 3 types** — `ScalaReflection` cannot be ported, only re-derived via Mirrors. This is *the* structural blocker for Spark-on-Scala-3 and the reason the project exists. |
 | **Impl** | `encoder/…/ProtoEncoder.scala` (`derived`, `deriveProduct`, `deriveEnum`, `summonEncoder`); `encoder-spark/…/AgnosticEncoderBridge.scala` (`toAgnostic`). |
-| **Validation** | The entire faithful-subset parity suite (`AgnosticEncoderBridgeSpec`) — every byte-identical result is produced with zero `TypeTag`. |
+| **Validation** | The entire faithful-subset parity suite (`AgnosticEncoderBridgeSpec`) — every structurally-identical result (canonical dump, modulo class-name normalization) is produced with zero `TypeTag`. |
 
 > Corollary (see `REFLECTION_REPLACEMENT.md` §2.1): even *running* Spark's serializer codegen from a
 > Scala 3 process crashes, because `Invoke`/`NewInstance` touch the `ScalaReflection` object whose
@@ -100,7 +100,9 @@ These are part of the superset (we encode more than Spark) but are **not** Scala
 lossless — a Timestamp base would collapse OffsetDateTime/ZonedDateTime to a UTC instant and drop the
 offset/zone. Validated by **self-consistent end-to-end round-trips** through Spark's real ser/deser
 (`ExecutionWallSpec`, enabled by the §2.1.1 patch) plus a structural shape assertion. `java.util.Date`
-and `LocalTime` remain unbridged (the latter has no usable Spark encoder at all).
+and `LocalTime` remain unbridged (`LocalTime` has a `LocalTimeEncoder` in Spark 4.1.2's ADT, but
+`ExpressionEncoder` rejects `TimeType` at serializer-construction time, so there is no working Spark
+target to validate against).
 
 ---
 

@@ -70,7 +70,7 @@ allowUnsafeScalaLibUpgrade := true
 ```
 
 Safe here because we don't link against symbols that exist only in the newer stdlib. This is a real
-migration cost worth disclosing (toolchain lag), not hidden — see `BENCHMARKS.md` §8.
+migration cost worth disclosing (toolchain lag), not hidden — see `BENCHMARKS.md` §3.5 (Honesty rules).
 
 ### 3.3 The classpath-shadow demonstrator
 
@@ -189,9 +189,10 @@ Full treatment is in `REPORT.md` §9 ("Measurement validity"); summary:
 
 - **sbt is not in the measured JVM.** JMH forks a fresh JVM per `-f`; sbt only launches it. Harness
   and class-loading overhead land in warmup, not measurement.
-- **Warmup excludes JIT + one-time init.** Spark's ~500 ms `scala.reflect.runtime.universe` cold
-  start happens during warmup, so the reported per-op Spark number *understates* real-world cost — a
-  conservative bias against our own result.
+- **Warmup excludes JIT + one-time init.** Spark's first-derivation cold start (~1 s in a fresh JVM,
+  dominated by `scala.reflect.runtime.universe` init; REPORT §9) happens during warmup, so the
+  reported per-op Spark number *understates* real-world cost — a conservative bias against our own
+  result.
 - **Same JVM/hardware/JMH config on both sides.** The two suites differ only in the thing under
   test (reflective vs compile-time derivation of the same `AgnosticEncoder`).
 - **The honest asymmetry.** `ProtoEncoder.derived` moves the *type analysis* to `scalac`, so our

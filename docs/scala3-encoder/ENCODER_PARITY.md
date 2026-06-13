@@ -25,13 +25,25 @@ matching `ProtoEncoder` derivation in this repo.
 
 ## Quick verdict
 
+> **Scope: core `ProtoEncoder` coverage vs the runtime bridge.** This catalog maps `ProtoEncoder`'s
+> *core* type derivation onto Spark's `AgnosticEncoder` variants. The runtime `ProtoEncoder →
+> AgnosticEncoder` bridge (`AgnosticEncoderBridge`) is **narrower**: it lowers
+> `UUID`/`OffsetDateTime`/`ZonedDateTime` as String-backed `TransformingEncoder`s, and currently
+> **rejects** `java.lang.Character`, Java enums, and `java.util.Date` (no faithful Spark target). Rows
+> marked ➕ below describe core `ProtoEncoder` support; see `REFLECTION_REPLACEMENT.md` /
+> `SCALA3_SUPERSET.md` for which are actually bridged.
+
 - **Type-level parity is effectively complete** for the surface area that
   matters to Dataset[T] users: every primitive, boxed primitive, string,
   binary, decimal family, temporal family, interval, option, array,
-  collection, map, tuple, product, and Java enum has a matching encoder.
-- **ProtoCatalyst exceeds Spark** in six places: `OffsetDateTime`,
-  `ZonedDateTime`, `java.util.Date`, `java.util.UUID`, `java.lang.Character`,
-  and sealed-trait sum types. (`LocalTime` was a gap on 4.0 and closed in 4.1.)
+  collection, map, tuple, product, and Java enum has a matching encoder
+  (at the core/Spark type level; Java enums are not yet lowered by the bridge).
+- **ProtoCatalyst's core derivation exceeds Spark** in six places: `OffsetDateTime`,
+  `ZonedDateTime`, `java.util.UUID` (these three **are** bridged, as String-backed
+  `TransformingEncoder`s), plus `java.util.Date`, `java.lang.Character`, and sealed-trait
+  sum types (these three are **core-only — the bridge rejects them**). (`LocalTime` gained a
+  `LocalTimeEncoder` in Spark 4.1.2's ADT, but `ExpressionEncoder` still rejects `TimeType` at
+  serializer-construction time, so there is no working Spark target.)
 - **Five deliberate gaps** where the Spark-internal class itself is the
   external type — `o.a.s.s.t.Decimal`, `CalendarInterval`, `VariantVal`,
   `Geography`, `Geometry` (the last two are 4.1 additions). Adding these would

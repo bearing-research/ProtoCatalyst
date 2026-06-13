@@ -154,7 +154,7 @@ The module is compiled on Scala 2.13 and prepended to `encoder-spark`'s test cla
 **Scala 3** module — builds Spark's serializer/deserializer from our compile-time-derived
 `AgnosticEncoder` and round-trips real values (flat/nested products, all primitive widths,
 `java.lang` boxed types, `Some`/`None`, maps, collections incl. `Array`, collection/map/option *of* a
-case class, tuples). 9 cases, all green; the full 171-test `encoder-spark` suite stays green (the
+case class, tuples). 11 cases, all green; the full `encoder-spark` suite stays green (the
 patch is behavior-preserving). This is the M0 finding's resolution: the wall is a two-line change,
 and structural parity (D6) is thereby upgraded to *observed* behavioral parity for the executed slice.
 
@@ -210,11 +210,12 @@ cycles → compile error.
 lacks. A direct map like `UUID → StringEncoder` is **unsafe**: Spark's `StringEncoder` serializer
 expects a `String` at runtime and would fail on a `UUID` field. So each extension is either:
 - **lowered via a real `TransformingEncoder(leafEnc, Codec[Ext, Spark])`** when a sound bijective
-  conversion exists — `UUID ↔ String`, `OffsetDateTime/ZonedDateTime ↔ Instant` (micros),
-  `java.util.Date ↔ Timestamp`. The project's existing `TransformingEncoder` + `codec/` machinery
-  is the natural vehicle; the codec performs the runtime conversion the leaf serializer needs. *(A
-  `TransformingEncoder` golden has no `ScalaReflection` counterpart, so these are validated by
-  round-trip, not structural parity.)*
+  conversion exists. Implemented: `UUID`, `OffsetDateTime`, `ZonedDateTime` — all over **`StringEncoder`**
+  (ISO-8601 `toString`/`parse`, lossless: an `Instant`/`Timestamp` base would collapse the offset/zone
+  to a UTC instant). `java.util.Date` is currently **rejected** (not yet bridged). The project's existing
+  `TransformingEncoder` + `codec/` machinery is the vehicle; the codec performs the runtime conversion
+  the leaf serializer needs. *(A `TransformingEncoder` golden has no `ScalaReflection` counterpart, so
+  these are validated by round-trip, not structural parity.)*
 - **or rejected** (D3 runtime error) when no faithful Spark representation exists — `LocalTime`/
   `TimeType` (Spark 4.1 rejects it outright) and the data-carrying **sum-type** encoder (no
   `AgnosticEncoder` equivalent; `SparkTypeMapping` already flags `ProtoType.SumType` as un-lowerable).
@@ -320,8 +321,9 @@ shows the same shape: Spark 538→437→403→402 ops/s across 1→2→4→8 thr
   parity green for `Primitives` (7 unboxed), `Boxed` (7 boxed), `Scalars` (String/Binary/Scala+Java
   Decimal at `(38,18)`/BigInt), `Temporal` (Date/LocalDate/Timestamp/Instant/LocalDateTime/Duration/
   Period, all `lenient=false`). The canonical dump now captures decimal precision/scale and
-  `lenientSerialization`. Extensions (UUID, OffsetDateTime, ZonedDateTime, java.util.Date,
-  LocalTime, boxed Char) are rejected (D3); TransformingEncoder-wrapping deferred to M4.
+  `lenientSerialization`. Extensions `UUID`/`OffsetDateTime`/`ZonedDateTime` are now lowered as
+  String-backed `TransformingEncoder`s (M4, done); `java.util.Date`, `LocalTime`, boxed `Char`, and
+  Java enums remain rejected (D3 — no faithful Spark target).
   *Deferred:* fixing `ProtoEncoder.PrimitiveEncoder.nullable` at source — the bridge takes
   nullability from the lowered child's `.nullable` (Spark-correct) regardless, and changing the core
   `encoder/` module carries UnsafeRow/Arrow regression risk; tracked as a separate follow-up.
@@ -357,9 +359,10 @@ shows the same shape: Spark 538→437→403→402 ops/s across 1→2→4→8 thr
     `Transforming[Color,StringEncoder]`.
   - ✅ **Data-carrying Scala 3 enum / sealed-trait ADT** → clean rejection: Spark's `AgnosticEncoder`
     has **no** sum-type representation (a genuine Scala-3 gap in Spark's model, not a bridge limit).
-  - Deferred: Java enums (`JavaEnumEncoder` — parity-testable but needs a `.java` enum shared across
-    `benchmark-spark`/`encoder-spark`), and the `TransformingEncoder`-wrapped extensions (UUID,
-    OffsetDateTime, …) — no oracle, not Scala-3-specific.
+  - ✅ **String-backed extensions** `UUID`, `OffsetDateTime`, `ZonedDateTime` → `TransformingEncoder`
+    over `StringEncoder`, validated by round-trip (no `ScalaReflection` oracle; not Scala-3-specific).
+    Still deferred: Java enums (`JavaEnumEncoder` — parity-testable but needs a `.java` enum shared
+    across `benchmark-spark`/`encoder-spark`) and `java.util.Date`.
   - The full superset catalog (every Scala-3-unique behavior + its implementation) lives in
     [`SCALA3_SUPERSET.md`](SCALA3_SUPERSET.md).
 - **M5 — Benchmark — ✅ DONE (`-f3`, local).** `SparkEncoderDerivationBenchmarks` (2.13) +
@@ -371,9 +374,9 @@ shows the same shape: Spark 538→437→403→402 ops/s across 1→2→4→8 thr
 - **M6 — Break the execution wall — ✅ DONE (§2.1.1).** `spark-reflection-patch` = Spark 4.1.2's
   `ScalaReflection` with two lines changed (lazy `universe`; `encodeFieldNameToIdentifier` via
   `NameTransformer.encode`), compiled on 2.13 and shadowing Spark's copy on `encoder-spark`'s test
-  classpath. `ExecutionWallSpec` then round-trips real values (9 cases across the corpus) through
+  classpath. `ExecutionWallSpec` then round-trips real values (11 cases across the corpus) through
   Spark's **unmodified** codegen ser/deser **from a Scala 3 process** — turning structural parity
-  into observed behavioral parity. Full `encoder-spark` suite (171 tests) stays green.
+  into observed behavioral parity. Full `encoder-spark` suite stays green.
 
 ---
 
