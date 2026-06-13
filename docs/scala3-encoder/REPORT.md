@@ -1,6 +1,6 @@
 # Replacing Spark's Reflective Encoder Derivation: A Compile-Time Path to Scala 3
 
-Apache Spark cannot run on Scala 3, and the reason is one function. Spark's typed-`Dataset[T]`
+Apache Spark cannot run on Scala 3, and the reason is, overwhelmingly, one function. Spark's typed-`Dataset[T]`
 API derives every encoder through `ScalaReflection.encoderFor[T: TypeTag]`, which is built on Scala
 2's runtime reflection (`scala.reflect.runtime.universe`). That reflection does not work for Scala
 3 types — and, separately, it is costly: a ~1 s per-JVM reflective cold-start, plus a global lock on
@@ -86,6 +86,26 @@ A surrounding cohort of ~16 files (`Encoders`, `Dataset`, `SparkSession`, `funct
 `UDFRegistration`, `literals`, …) merely *thread a `TypeTag`* into `encoderFor`. On Scala 3 those
 become `[T]`-with-a-derived-given signature swaps — forced anyway, since `TypeTag` doesn't exist —
 and require no real reimplementation. The one function that does is `encoderFor`.
+
+**Is it really just `encoderFor`? An honesty check across all of Spark.** A scan of all 22 Spark
+modules' sources confirms how narrow the structural surface is. First, Spark SQL and core define
+**no Scala 2 `def` macros at all** — the one Scala-2 construct that would force a genuine rewrite is
+simply absent. Second, every other `scala.reflect.runtime` / `TypeTag` use is one of two
+*non*-structural kinds:
+
+- **Consumers that ride on this same fix.** MLlib's typed API is not a second derivation engine — it
+  *calls* this one. `UnaryTransformer[IN: TypeTag, OUT: TypeTag]` carries those tags solely to feed
+  `functions.udf(createTransformFunc)` (which routes into `encoderFor`), and `checkSchema[Data: TypeTag]`
+  calls `ScalaReflection.schemaFor[Data]` directly. Both become the same mechanical context-bound →
+  derived-given swap once `udf`/`schemaFor` are swapped — no new logic.
+- **Two genuinely independent touchpoints, both mechanical (not structural).** `PhysicalDataType.tag`
+  in Catalyst (~20 `typeTag[InternalType]` sites) exists only to produce a runtime `Class` for array
+  allocation at a single call site (`collectionOperations`) and is replaceable with `ClassTag`; and
+  three `runtimeMirror(...).staticClass(...)` class-loaders (the HBase token provider, MLlib
+  `FPGrowth`/`PrefixSpan`) are replaceable with `Class.forName`. Neither is a second `encoderFor`.
+
+So the derivation is the *only structural* Scala-3 refactor; everything else is mechanical, and the
+worst-case hazard (def macros) does not exist in Spark at all.
 
 ## §3. The wall: stock Spark cannot even run on Scala 3
 
