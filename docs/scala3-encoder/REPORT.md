@@ -557,10 +557,25 @@ downstream of `AgnosticEncoder` unchanged** (the opposite of replacing `Expressi
 | *(unchanged)* | `ExpressionEncoder`, `Serializer`/`DeserializerBuildHelper`, whole-stage codegen | downstream, already reflection-free |
 | `lazy val universe`; `NameTransformer.encode`; `findConstructor` fallback | the eager `val universe` + 2 utilities in `ScalaReflection` | de-poison the object for Scala 3 (§3) |
 
+**One layer upstream, not two.** The first two rows are split only because this project is *out of
+tree*: `ProtoEncoder`/`ProtoType` is an engine-independent IR (it also targets non-Spark backends)
+and `AgnosticEncoderBridge` lowers it to Spark. Inside Spark there is no second backend and no reason
+for a second IR — **`AgnosticEncoder` already *is* Spark's reflection-free encoder description**. So
+the upstream `deriveAgnosticEncoder[T]` is a *single* `Mirror` macro that emits `AgnosticEncoder`
+nodes directly, collapsing `ProtoType` + bridge into one pass. This is strictly *simpler* than the
+in-repo code, not an extra step: the bridge only exists to recover what `ProtoType` normalized away —
+re-splitting `BigInt`/`BigDecimal`, `UUID`/`String`, `Array`/`Seq` via `clsTag`, and overriding
+nullability back to Spark's `EncoderField(name, enc, enc.nullable)` rule. Deriving `AgnosticEncoder`
+straight from the `Mirror` never discards that information, so all of that recovery disappears. Spark
+inherits one new file that maps 1:1 onto `encoderFor` — not a new type system. The reusable IP is the
+*derivation algorithm* (the `Mirror`/`inline` walk, the inline-given that composes case-class
+elements, cycle handling, decimal/temporal defaults); only its output target changes.
+
 Migration checklist (the end-to-end upstream validation in §13 is the last two boxes):
 
-- [ ] Implement `ExpressionEncoder.apply[T]()` on the Scala 3 build via `deriveAgnosticEncoder[T]`
-      (`Mirror` derivation + bridge); keep the reflective body for 2.13.
+- [ ] Implement `ExpressionEncoder.apply[T]()` on the Scala 3 build via `deriveAgnosticEncoder[T]` — a
+      single `Mirror` macro emitting `AgnosticEncoder` directly (no separate `ProtoType`/bridge layer
+      upstream, per above); keep the reflective body for 2.13.
 - [ ] De-reflect the `ScalaReflection` object: `val universe` → `lazy val`;
       `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode`; replace
       `findConstructor`'s scala-reflect fallback.
