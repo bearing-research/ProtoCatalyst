@@ -4,7 +4,7 @@ A Scala 3 library that moves safe, deterministic parts of Spark SQL/Catalyst wor
 
 ## Key Features
 
-- **Compile-Time Query Optimization**: 48 optimizer rules run at compile time via `quote { }` DSL and `SqlMacro.compileOptimized`
+- **Compile-Time Query Optimization**: 41 optimizer rules run at compile time via `quote { }` DSL and `SqlMacro.compileOptimized`
 - **Type-Safe Query DSL**: `quote { Table[User]("users").filter(_.age > 18).select(_.name) }` — fully type-checked at compile time
 - **Compile-Time SQL Parsing**: SQL strings parsed, validated, and optimized during compilation
 - **Compile-Time Encoder Derivation**: Type-safe encoder derivation using Scala 3 `inline` and `Mirror` — no runtime reflection
@@ -31,7 +31,7 @@ A Scala 3 library that moves safe, deterministic parts of Spark SQL/Catalyst wor
 │          ProtoLogicalPlan (compile-time IR)                       │
 │                  │                                                │
 │                  ▼                                                │
-│          Optimizer.optimize() — 48 rules at compile time         │
+│          Optimizer.optimize() — 41 rules at compile time         │
 │                  │                                                │
 │                  ▼                                                │
 │          CompiledArtifact → PCAT bytes (JSON or Protobuf)        │
@@ -141,7 +141,7 @@ See [REPORT.md](docs/scala3-encoder/REPORT.md) for the precise, caveated numbers
 | Module | Scala | Description |
 |--------|-------|-------------|
 | `proto` | Java | Protobuf schema definitions (`.proto` files, generated Java classes) |
-| `core` | 3 | Types, schema, IR, optimizer (48 rules), codec (JSON + Protobuf) |
+| `core` | 3 | Types, schema, IR, optimizer (41 rules), codec (JSON + Protobuf) |
 | `encoder` | 3 | Compile-time encoder derivation (ProtoEncoder, InlineRowSerializer) |
 | `encoder-spark` | 3 | ProtoEncoder → Spark `AgnosticEncoder` bridge (Spark 2.13 jars via `for3Use2_13`) |
 | `arrow` | 3 | Arrow columnar format integration |
@@ -158,12 +158,12 @@ See [REPORT.md](docs/scala3-encoder/REPORT.md) for the precise, caveated numbers
 
 ## Project Stats
 
-- **~33,000** lines of source code across 142 files
-- **~1,948** tests across 74 test files
-- **101** commits on main
-- **93** expression types in the IR, **20** plan node types
-- **48** optimizer rules (constant folding, predicate pushdown, filter combining, etc.)
-- **4** protobuf schema files generating 176 Java classes
+- **~51,000** lines of source code across 228 files
+- **~2,700** tests across 113 test files
+- **193** commits on main
+- **100** expression types in the IR, **27** plan node types
+- **41** optimizer rules (constant folding, predicate pushdown, filter combining, etc.)
+- **8** protobuf schema files (plan, expression, type, artifact, physical-plan, ML, ONNX)
 
 ## Building
 
@@ -171,7 +171,7 @@ See [REPORT.md](docs/scala3-encoder/REPORT.md) for the precise, caveated numbers
 # Compile all modules
 sbt compile
 
-# Run all tests (~1,948 tests)
+# Run all tests (~2,700 tests)
 sbt test
 
 # Run specific module tests
