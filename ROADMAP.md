@@ -2,22 +2,27 @@
 
 ## Current State
 
-ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime to compile time. The project is feature-complete for its core mission — compile-time encoder derivation, query optimization, and Spark execution of pre-optimized plans. Beyond the core, it now includes a standalone Arrow-based execution engine with physical plan strategy selection, an ML compute graph IR with autograd and ONNX interop, native ML-in-SQL operators for training and inference, and Parquet file I/O for the standalone executor.
+ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime to compile time. There are two bodies of work:
+
+1. **The query compiler (Phases 1–11, feature-complete; built through Feb 2026).** Compile-time encoder derivation, an engine-independent IR (`ProtoLogicalPlan` / `ProtoExpr` / `ProtoPhysicalPlan`), a 41-rule SQL optimizer, a SQL parser and `quote { }` DSL, protobuf/JSON serialization, and three execution backends (Spark, a standalone Arrow engine, and DataFusion via SQL transpilation). It also includes an ML compute-graph IR with autograd and ONNX interop and native ML-in-SQL `Predict`/`Fit` operators, plus Parquet I/O for the standalone executor. This layer is stable and largely unchanged since February.
+
+2. **The Scala 3 reflection-replacement thesis (current focus).** Replacing Spark's runtime reflection-based encoder derivation (`ScalaReflection.encoderFor[T: TypeTag]`) with Scala 3 compile-time `Mirror` derivation that produces Spark's own `AgnosticEncoder`, to unblock Spark's Scala 3 migration. This is the active line of work — see [`docs/scala3-encoder/REPORT.md`](docs/scala3-encoder/REPORT.md) and the [docs index](docs/README.md).
 
 ### By the Numbers
 
 | Metric | Count |
 |--------|------:|
-| Source lines | ~47,000 |
-| Test lines | ~40,500 |
-| Test cases | ~1,955 |
-| Modules | 13 |
-| Optimizer rules | 56 (48 SQL + 8 ML) |
-| IR expression types | 93 |
-| IR logical plan node types | 22 |
-| IR physical plan node types | 25 |
+| Source lines | ~51,000 |
+| Test lines | ~42,000 |
+| Test cases | ~2,700 |
+| Modules | 15 |
+| Optimizer rules | 49 (41 SQL + 8 ML) |
+| IR expression types | 100 |
+| IR logical plan node types | 27 |
+| IR physical plan node types | 30 |
 | Protobuf definitions | 8 files |
-| Execution backends | 3 (Spark, Local, DataFusion) |
+| Execution backends | 3 (Spark, Local Arrow, DataFusion); Velox not started |
+| Spark target | 4.1.2 |
 
 ---
 
@@ -28,7 +33,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 - ProtoEncoder with compile-time derivation (Scala 3 `Mirror`)
 - ProtoType enum covering all Spark DataTypes
 - Full type support: primitives, BigInt/BigDecimal, Date/Time, timezone-aware types, intervals, collections, tuples (2–22), Option, case classes, enums
-- InlineRowSerializer with compile-time specialization (3–27x faster than Spark)
+- InlineRowSerializer with compile-time specialization (per-row results in the encoder report)
 - InternalTypeConverter abstraction with mock runtime
 - Arrow integration (InlineArrowWriter, ArrowBatchBuilder)
 - 268 unit tests, 26 Spark parity tests
@@ -36,13 +41,13 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 ### Phase 2: Spark Integration Readiness ✅
 
 - 100% parity with Spark's AgnosticEncoder types
-- Performance benchmarks: 10–27x faster roundtrip vs ExpressionEncoder
+- Performance benchmarks vs ExpressionEncoder (see [`docs/scala3-encoder/REPORT.md`](docs/scala3-encoder/REPORT.md) for current, caveated numbers)
 - Migration documentation for Spark team
 
 ### Phase 3: Compile-Time IR and Optimizer ✅
 
-- ProtoExpr (93 expression variants) — complete expression IR
-- ProtoLogicalPlan (20 plan node types) — full logical plan IR
+- ProtoExpr (100 expression variants) — complete expression IR
+- ProtoLogicalPlan (27 plan node types) — full logical plan IR
 - 48 optimizer rules at compile time:
   - Constant folding, boolean simplification, predicate canonicalization
   - Filter combining, predicate pushdown, column pruning
@@ -81,8 +86,8 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 ### Phase 6: Protobuf Serialization Format ✅
 
 - `proto` module — pure Java, consumable by both Scala 3 and 2.13
-- 4 `.proto` files: `types.proto`, `schema.proto`, `plan.proto`, `artifact.proto`
-- 176 generated Java classes
+- 8 `.proto` files: `types.proto`, `schema.proto`, `plan.proto`, `physical_plan.proto`, `artifact.proto`, `ml_types.proto`, `ml_graph.proto`, plus a bundled `onnx.proto`
+- ~390 generated Java classes
 - ProtoConverter — bidirectional Scala IR ↔ Java protobuf conversion (~1,400 lines)
 - ProtobufArtifactCodec implementing ArtifactCodec trait
 - PCAT binary container: `"PCAT" + format byte (0x01=JSON, 0x02=Protobuf) + payload`
@@ -94,7 +99,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 - SparkQueryRunner — `execute(bytes, spark)` → DataFrame
 - ArtifactParser dispatches JSON (0x01) and Protobuf (0x02) formats
 - Protobuf decoders: ProtobufTypeDecoder, ProtobufExpressionDecoder, ProtobufPlanDecoder
-- JSON decoders: TypeDecoder, ExpressionDecoder, PlanDecoder (full coverage of all 93 expr + 20 plan types)
+- JSON decoders: TypeDecoder, ExpressionDecoder, PlanDecoder (full coverage of all 100 expr + 27 plan types)
 - SparkPlanEncoder — bidirectional Spark → ProtoCatalyst JSON encoding
 - SchemaValidator — validates compile-time schema contracts against Spark catalog at runtime
 - Pivot, Unpivot, Generate converters (not stubs)
@@ -109,7 +114,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 
 ### Phase 9: Physical Plan Layer ✅
 
-- `ProtoPhysicalPlan` enum (25 variants) — physical plan IR with execution strategy choices
+- `ProtoPhysicalPlan` enum (30 variants) — physical plan IR with execution strategy choices
 - `PhysicalPlanner` — converts `ProtoLogicalPlan` → `ProtoPhysicalPlan` based on statistics, heuristics, and hints
 - Join strategies: `HashJoin`, `SortMergeJoin`, `BroadcastHashJoin`, `NestedLoopJoin` with automatic selection
 - Aggregate strategies: `HashAggregate`, `SortAggregate`
@@ -162,7 +167,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 
 - **SQL Transpiler** — converts ProtoCatalyst IR to executable SQL (ANSI SQL / DataFusion compatible)
   - `SqlGenerator` — `ProtoLogicalPlan` → SQL query strings (22 supported plan node types)
-  - `ExprSqlGenerator` — `ProtoExpr` → SQL expression fragments (93 expression variants)
+  - `ExprSqlGenerator` — `ProtoExpr` → SQL expression fragments (100 expression variants)
   - `TypeSqlGenerator` — `ProtoType` → SQL type names
   - Supports SELECT, WHERE, JOIN (all 7 types), GROUP BY, ORDER BY, LIMIT, DISTINCT, UNION, INTERSECT, EXCEPT, CTEs, subqueries, window functions
   - Defensive design: throws clear exceptions for unsupported features (Pivot, Unpivot, Generate, LateralJoin, ML nodes)
@@ -213,7 +218,7 @@ No other system combines these properties:
 1. **Compile-time query validation** — schema mismatches, type errors, and malformed queries caught before deployment. Every other engine validates at runtime.
 2. **Engine-independent IR** — `ProtoLogicalPlan` and `ProtoExpr` are self-contained, serializable via protobuf, and not coupled to any runtime.
 3. **Unified SQL + ML** — `ProtoLogicalPlan` (relational) and `ComputeGraph` (tensor/ML) live in the same IR with shared types. Native `Predict` and `Fit` operators bridge SQL query plans with ML model inference and training.
-4. **Built-in optimizer** — 56 rules (48 SQL + 8 ML) that run at compile time, before any runtime engine sees the plan.
+4. **Built-in optimizer** — 49 rules (41 SQL + 8 ML) that run at compile time, before any runtime engine sees the plan.
 
 ### Why not Substrait?
 
@@ -240,7 +245,7 @@ Build direct lowerings from `ProtoLogicalPlan` / `ProtoPhysicalPlan` to target r
 
 ### Ongoing: Spark Integration
 
-- [ ] `toAgnosticEncoder[T]`: ProtoEncoder → AgnosticEncoder bridge (pending Spark 4.0 Scala 3 support)
+- [x] `toAgnosticEncoder[T]`: ProtoEncoder → AgnosticEncoder bridge — **done** (`encoder-spark` module, Spark 4.1.2; see [`docs/scala3-encoder/REPORT.md`](docs/scala3-encoder/REPORT.md))
 - [ ] `protocatalyst.spark.implicits` for implicit encoder derivation
 - [ ] Runtime statistics collection for cost-based optimization
 - [ ] Delta Lake / Iceberg integration via Spark backend
@@ -259,13 +264,13 @@ Build direct lowerings from `ProtoLogicalPlan` / `ProtoPhysicalPlan` to target r
 
 - Zero runtime reflection overhead
 - Type errors caught at compile time
-- Inline expansion for primitive types (3–27x faster serialization)
-- 56 optimizer rules execute during compilation, not at query time
+- Inline expansion for primitive types (no runtime reflection on the hot path)
+- 49 optimizer rules execute during compilation, not at query time
 - Compatible with GraalVM native-image
 
 ### Why engine-independent?
 
-- The IR is not coupled to any runtime — test without Spark (mock-runtime, 279 tests)
+- The IR is not coupled to any runtime — the `core` / `encoder` / `query` modules build and test with no Spark dependency
 - Backend lowerings can target any engine, not just Spark
 - Protobuf serialization makes the IR language-neutral
 - Cleaner module boundaries; easier to add new backends
