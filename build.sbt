@@ -114,7 +114,7 @@ lazy val arrow = project
 // Executor module: standalone query execution engine (Arrow-based, no Spark dependency)
 lazy val executor = project
   .in(file("executor"))
-  .dependsOn(core, arrow)
+  .dependsOn(core, arrow, sqlParser % Test)
   .settings(
     name := "protocatalyst-executor",
     commonSettings,
