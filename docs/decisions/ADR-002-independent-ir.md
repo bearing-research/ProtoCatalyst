@@ -18,7 +18,7 @@ Substrait defines protobuf messages for types, expressions, and relations. Its c
 
 ### ProtoCatalyst's IR
 
-ProtoCatalyst enumerates every expression as an explicit enum variant (93 variants in ProtoExpr) and identifies columns by `(name, qualifier)`. It includes an optimizer (48 rules), schema contracts with fingerprints, compile-time validation via macros, and ML compute graphs.
+ProtoCatalyst enumerates every expression as an explicit enum variant (100 variants in ProtoExpr) and identifies columns by `(name, qualifier)`. It includes an optimizer (41 rules), schema contracts with fingerprints, compile-time validation via macros, and ML compute graphs.
 
 ## Decision
 
@@ -67,7 +67,7 @@ Substrait is designed for the use case: "engine A produces a plan, engine B cons
 
 | Concern | Substrait | ProtoCatalyst |
 |---------|-----------|---------------|
-| Optimization | Consumer's responsibility | Built-in (48 compile-time rules) |
+| Optimization | Consumer's responsibility | Built-in (41 compile-time rules) |
 | Validation | Runtime | Compile-time (macros, schema contracts) |
 | Schema contracts | Not supported | First-class (`SchemaContract`, `SchemaFingerprint`) |
 | ML integration | Out of scope | `ComputeGraph`, `TensorExpr`, autograd |

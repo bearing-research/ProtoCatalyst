@@ -51,7 +51,7 @@ Both produce a `ProtoLogicalPlan` that is optimized and embedded as a bytecode c
 - `Transpose` - Column-to-row transformation
 - `Range` - Sequence generation
 
-### ProtoExpr (93 variants)
+### ProtoExpr (100 variants)
 
 #### Leaf Nodes
 
@@ -394,14 +394,14 @@ Spark's internal test DSL (`org.apache.spark.sql.catalyst.dsl.package`) provides
 | **Type safety** | Untyped (`Expression`) | Typed (`Expr[A]`) with compile-time checking |
 | **When runs** | Runtime (per query execution) | Compile time (macro expansion) |
 | **Column access** | `$"col"` returns `UnresolvedAttribute` | `_.field` returns `Column[A, T]` via transparent inline macro |
-| **Optimization** | Runtime optimizer (100+ rules) | Compile-time optimizer (48 rules, same architecture) |
+| **Optimization** | Runtime optimizer (100+ rules) | Compile-time optimizer (41 rules, same architecture) |
 | **Output** | `LogicalPlan` tree | `CompiledArtifact` with protobuf serialization |
 | **Schema** | Runtime schema resolution | Compile-time schema derivation via `ProtoEncoder` |
 | **Error timing** | Runtime `AnalysisException` | Compile error |
 
 ---
 
-## 4. Optimizer Rules (48 rules, 10 batches)
+## 4. Optimizer Rules (41 rules, 10 batches)
 
 ### Batch Structure
 
@@ -434,7 +434,7 @@ Spark's internal test DSL (`org.apache.spark.sql.catalyst.dsl.package`) provides
 
 ### Spark Optimizer Comparison
 
-Spark's optimizer has **~75 unique rules** across **~20 batches**. ProtoCatalyst implements 48 rules (64% coverage), focusing on rules that don't need runtime information.
+Spark's optimizer has **~75 unique rules** across **~20 batches**. ProtoCatalyst implements 41 rules (55% coverage), focusing on rules that don't need runtime information.
 
 **Rules Spark has that ProtoCatalyst doesn't:**
 - Cost-based join reordering (`CostBasedJoinReorder`)

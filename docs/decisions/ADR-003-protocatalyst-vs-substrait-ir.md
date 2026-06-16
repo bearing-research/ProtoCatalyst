@@ -258,7 +258,7 @@ Aggregate { input: Rel, groupings: [Grouping], measures: [Measure] }
 | `NamedDdl` / `ExtensionDdl` | DDL operations |
 | `ExtensionLeaf` / `ExtensionSingle` / `ExtensionMulti` | Custom relation extension points |
 
-Note: ProtoCatalyst has its own physical plan layer (`ProtoPhysicalPlan` with 25 variants including `HashJoin`, `SortMergeJoin`, `BroadcastHashJoin`, `Exchange`, etc.) but these are separate from the logical plan IR.
+Note: ProtoCatalyst has its own physical plan layer (`ProtoPhysicalPlan` with 30 variants including `HashJoin`, `SortMergeJoin`, `BroadcastHashJoin`, `Exchange`, etc.) but these are separate from the logical plan IR.
 
 ---
 

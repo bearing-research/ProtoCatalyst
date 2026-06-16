@@ -41,7 +41,7 @@ ProtoCatalyst performs the "always safe" optimizations at Scala compile time, em
 │                   │                                              │
 │                   ▼                                              │
 │           Optimizer.optimize()                                   │
-│           (48 rules at compile time)                             │
+│           (41 rules at compile time)                             │
 │                   │                                              │
 │                   ▼                                              │
 │           ToExpr[ProtoLogicalPlan]                               │
@@ -124,7 +124,7 @@ The `QuoteMacro.quote { }` macro:
 2. **Extracts type information** using `ProtoEncoder` at compile time
 3. **Pattern matches the AST** to recognize DSL operations
 4. **Builds a `ProtoLogicalPlan`** representing the query
-5. **Runs the optimizer** (48 rules, all at compile time)
+5. **Runs the optimizer** (41 rules, all at compile time)
 6. **Embeds the result** in bytecode via `ToExpr` instances
 
 ### Example AST Transformation
@@ -248,7 +248,7 @@ core/src/main/scala/protocatalyst/
 ├── expr/
 │   └── ProtoExpr.scala       # Expression IR (57 expression types)
 └── optimizer/
-    ├── Optimizer.scala       # 48 optimization rules
+    ├── Optimizer.scala       # 41 optimization rules
     └── rules/                # Individual rule implementations
 ```
 

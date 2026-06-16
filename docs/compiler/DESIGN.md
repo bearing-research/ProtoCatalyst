@@ -29,7 +29,7 @@ ProtoCatalyst is a query compiler, not a query engine. It sits above execution r
 │       │         ┌────┘               │                       │
 │       ▼         ▼                    ▼                       │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Optimizer (48 rules)                                │   │
+│  │  Optimizer (41 rules)                                │   │
 │  │  Constant folding, predicate pushdown, cast simpl.   │   │
 │  └──────────────────────┬───────────────────────────────┘   │
 │                         ▼                                    │
@@ -220,14 +220,14 @@ case class FieldContract(
 
 ### 1.4 Shared Expression IR: ProtoExpr
 
-93 expression variants organized into categories. All expressions are fully resolved at
+100 expression variants organized into categories. All expressions are fully resolved at
 construction time — column references carry their resolved type and nullability. There is
 no separate "unresolved → resolved" analysis pass.
 
 ```scala
 package protocatalyst.expr
 
-/** Compile-time expression representation. 93 variants. */
+/** Compile-time expression representation. 100 variants. */
 enum ProtoExpr extends Serializable:
   // Leaf nodes
   case Literal(value: LiteralValue)                                 // Type-safe literals (no Any)
@@ -303,7 +303,7 @@ object ProtoExpr:
 
 ### 1.5 Shared Relational IR: ProtoLogicalPlan
 
-20 plan node types covering full SQL semantics including CTEs, pivots, generators, and hints.
+27 plan node types covering full SQL semantics including CTEs, pivots, generators, and hints.
 
 ```scala
 package protocatalyst.plan
@@ -376,7 +376,7 @@ enum HintParam extends Serializable:
   case IntVal(value: Int)
 ```
 
-These 20 plan nodes have no Substrait equivalent for 7 of them: `Pivot`, `Unpivot`, `Generate`, `LateralJoin`, `With`, `ResolvedHint`, `Distinct`. This is a key reason for the [independent IR decision](../decisions/ADR-002-independent-ir.md).
+These 27 plan nodes have no Substrait equivalent for 7 of them: `Pivot`, `Unpivot`, `Generate`, `LateralJoin`, `With`, `ResolvedHint`, `Distinct`. This is a key reason for the [independent IR decision](../decisions/ADR-002-independent-ir.md).
 
 ### 1.6 Artifact Format and Versioning
 
@@ -446,7 +446,7 @@ object ArtifactCodec:
 Two codec implementations:
 
 - **JsonArtifactCodec** — human-readable, uses uPickle, good for debugging
-- **ProtobufArtifactCodec** — 3–10x smaller, uses the `proto` module's 176 generated Java classes, schema-evolved via `.proto` definitions
+- **ProtobufArtifactCodec** — 3–10x smaller, uses the `proto` module's ~390 generated Java classes, schema-evolved via `.proto` definitions
 
 ---
 
@@ -501,7 +501,7 @@ The `quote { }` macro compiles Scala expressions to `ProtoLogicalPlan`:
 
 ### 2.4 Compile-Time Optimizer
 
-48 optimizer rules execute during compilation. Categories:
+41 optimizer rules execute during compilation. Categories:
 
 | Category | Rules | Examples |
 |----------|------:|---------|
@@ -529,7 +529,7 @@ All IR types are liftable as compile-time `Expr` constants via `ProtoLiftables`.
 Two serialization paths:
 
 - **JSON** (uPickle) — full roundtrip support, human-readable, used for debugging
-- **Protobuf** — 4 `.proto` files, 176 generated Java classes, 3–10x smaller
+- **Protobuf** — 8 `.proto` files, ~390 generated Java classes, 3–10x smaller
 
 `ProtoConverter` (~1,400 lines) handles bidirectional Scala IR ↔ Java protobuf conversion.
 
@@ -545,7 +545,7 @@ SparkQueryRunner.execute(artifactBytes: Array[Byte], spark: SparkSession): DataF
 
 Pipeline:
 1. `ArtifactParser` dispatches JSON (0x01) or Protobuf (0x02) from PCAT header
-2. Decode to `CompiledArtifact` (type/expression/plan decoders for all 93 expr + 20 plan types)
+2. Decode to `CompiledArtifact` (type/expression/plan decoders for all 100 expr + 27 plan types)
 3. `SchemaValidator` validates compile-time schema contracts against Spark catalog
 4. Convert `ProtoLogicalPlan` → Spark `LogicalPlan` with full support for Pivot, Unpivot, Generate
 5. Pass hint through (BROADCAST, SHUFFLE_MERGE, COALESCE, REPARTITION, etc.)
@@ -558,7 +558,7 @@ Full coverage decoders exist for both formats:
 - **Protobuf**: `ProtobufTypeDecoder`, `ProtobufExpressionDecoder`, `ProtobufPlanDecoder`
 - **JSON**: `TypeDecoder`, `ExpressionDecoder`, `PlanDecoder`
 
-All 93 expression types and 20 plan node types are handled.
+All 100 expression types and 27 plan node types are handled.
 
 ### 3.3 SparkPlanEncoder
 
@@ -604,7 +604,7 @@ inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] = ${ deriveImpl[T]
 
 ### 4.3 Performance
 
-`InlineRowSerializer` with compile-time specialization: 3–27x faster than Spark's `ExpressionEncoder`.
+`InlineRowSerializer` with compile-time specialization (no runtime reflection on the hot path; measured per-row numbers in `docs/scala3-encoder/REPORT.md` §10).
 
 268 unit tests, 26 Spark parity tests.
 
@@ -631,12 +631,12 @@ inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] = ${ deriveImpl[T]
 1. **Physical plan layer**: What cost model for `ProtoPhysicalPlan`? See [ROADMAP Phase 9](../../ROADMAP.md).
 2. **Backend lowerings**: Direct lowering vs intermediate physical plan? See [ROADMAP Phase 10](../../ROADMAP.md).
 3. **ML as plan operator**: How to vectorize `ComputeGraph` evaluation over Arrow `RecordBatch`? See [ROADMAP Phase 11](../../ROADMAP.md).
-4. **Spark 4.0 Scala 3**: When upstream adds Scala 3 support, bridge `ProtoEncoder` → `AgnosticEncoder`.
+4. **Spark Scala 3**: the `ProtoEncoder` → `AgnosticEncoder` bridge exists (`encoder-spark`, Spark 4.1.2); see `docs/scala3-encoder/REPORT.md`.
 
 ### C. Related Work
 
 - **Substrait**: Cross-engine query plan interchange format. We chose to stay independent — see [ADR-002](../decisions/ADR-002-independent-ir.md).
-- **Spark Catalyst**: Runtime query optimizer. ProtoCatalyst moves 48 rules to compile time; Spark handles CBO and physical planning at runtime.
+- **Spark Catalyst**: Runtime query optimizer. ProtoCatalyst moves 41 rules to compile time; Spark handles CBO and physical planning at runtime.
 - **Spark Connect**: Wire protocol for Spark client-server. Complementary — ProtoCatalyst could serialize to Spark Connect's protobuf format as a backend lowering.
 - **DataFusion**: Arrow-native query engine in Rust. Future backend target.
 - **Velox**: C++ vectorized execution library. Future backend target (physical plan level).
@@ -649,7 +649,7 @@ inline def derived[T](using m: Mirror.Of[T]): ProtoEncoder[T] = ${ deriveImpl[T]
 |------|------------|
 | ProtoType | Compile-time type representation (26 variants) |
 | LiteralValue | Type-safe literal enum (15 variants) |
-| ProtoExpr | Compile-time expression tree (93 variants) |
+| ProtoExpr | Compile-time expression tree (100 variants) |
 | ProtoLogicalPlan | Compile-time logical plan (20 node types) |
 | SchemaContract | Expected schema for a relation, validated at runtime |
 | SchemaFingerprint | 64-bit structural hash of schema fields |
