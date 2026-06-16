@@ -15,7 +15,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 | Source lines | ~51,000 |
 | Test lines | ~42,000 |
 | Test cases | ~2,700 |
-| Modules | 15 |
+| Modules | 14 |
 | Optimizer rules | 49 (41 SQL + 8 ML) |
 | IR expression types | 100 |
 | IR logical plan node types | 27 |
@@ -181,27 +181,20 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
 - **Why SQL Transpilation?** — Engine-independent approach works for any SQL-compatible backend (DataFusion, DuckDB, PostgreSQL, Trino, Snowflake)
 - **Why ADBC?** — Arrow-native API, 33% faster than JDBC, stable specification (v1.1.0), pure JVM (no native code management)
 
-### Phase 11c: Substrait Converter (Partial) 🚧
+### Phase 11c: Substrait Converter (prototyped, then retired)
 
-- **Substrait Module** — new `substrait` module with Substrait Java bindings (io.substrait:core:0.78.0)
-- **SubstraitTypeConverter** — `ProtoType` → Substrait Type conversion (fully working)
-  - Handles all primitive types (Boolean, Int, Long, Float, Double, String, Binary, Date, Timestamp, Decimal)
-  - Supports complex types (Array, Map, Struct) with nested structures
-  - 19 type converter tests passing
-- **SubstraitExprConverter** — `ProtoExpr` → Substrait Expression conversion (partially working)
-  - **Literals**: All types working (Boolean, Int, Long, Float, Double, String, Binary, Date, Timestamp, Decimal)
-  - **Cast**: Fully working with proper failure behavior
-  - **Alias**: Working (passes through child expression)
-  - **Functions**: Documented but blocked by Substrait extension system complexity
-  - 24 expression converter tests passing
-- **SubstraitFunctionRegistry** — Function mapping stub (documents required integration work)
-  - Maps ProtoCatalyst function names → Substrait function names
-  - Documents Substrait's YAML-based function extension system
-  - Full implementation requires loading extension files and resolving function anchors (~500-1000 lines)
-- **Blocker**: Substrait's function extension system is complex and requires substantial integration work beyond current scope
-- **Alternative**: SQL transpiler backend (Phase 11b) works today without function mapping complexity
-- **Status**: Types + literals + cast working; functions, aggregates, window functions, and plan conversion deferred
-- **Tests**: 43 Substrait tests passing (19 type + 24 expression)
+A `substrait` module was prototyped against `io.substrait:core:0.78.0` to evaluate Substrait as an
+interchange format. It reached `ProtoType` → Substrait `Type` conversion and a narrow `ProtoExpr`
+slice (literals, `Cast`, `Alias`), but **never reached plan conversion**, and every function-shaped
+expression was blocked by Substrait's function-extension system (functions live in external YAML
+extension files and require anchor registration — a `SubstraitFunctionRegistry` stub documented the
+work but always threw). Nothing in the codebase depended on the module.
+
+The prototype **confirmed the decision recorded in [ADR-002](docs/decisions/ADR-002-independent-ir.md)
+to stay independent** (see "Why not Substrait?" below), so the module was **removed**. The
+**SQL transpiler backend (Phase 11b)** is the chosen engine-independent interchange path and works
+today. The detailed IR comparison the prototype informed is retained in
+[ADR-003](docs/decisions/ADR-003-protocatalyst-vs-substrait-ir.md).
 
 ---
 

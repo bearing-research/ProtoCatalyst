@@ -61,9 +61,10 @@ against the code before assuming a frozen module is current. Full detail: `ROADM
   - `spark-catalyst` (2.13) — Spark execution bridge + parity tests.
   - `executor` (3) — standalone Arrow engine + DataFusion backend (SQL transpiler + ADBC Flight SQL).
   - `ml-core` / `ml-query` (3) — tensor IR, autograd, ONNX, 8 ML rules, ML-in-SQL `Predict`/`Fit`.
-  - `substrait` (3) — 🚧 **partial**: types/literals/cast only; functions/plan deferred (blocked on Substrait YAML extensions — SQL transpiler is the chosen path).
   - `proto` (Java) — protobuf schema, consumed by both Scala versions.
-- **Removed:** the dead `spark/` module (superseded by `encoder-spark` + `spark-catalyst`).
+- **Removed:** the dead `spark/` module (superseded by `encoder-spark` + `spark-catalyst`); the
+  `substrait` prototype (types/exprs only, never reached plan conversion — SQL transpiler is the
+  chosen interchange path; see ADR-002/ADR-003).
 - **Not started:** Velox backend.
 
 ## Common commands

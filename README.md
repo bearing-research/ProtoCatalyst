@@ -147,7 +147,6 @@ See [REPORT.md](docs/scala3-encoder/REPORT.md) for the precise, caveated numbers
 | `arrow` | 3 | Arrow columnar format integration |
 | `query` | 3 | Type-safe DSL (`quote { }`), compiled query artifacts |
 | `sql-parser` | 3 | Compile-time SQL parsing and AST transformation |
-| `substrait` | 3 | Substrait IR conversion (Java bindings, protobuf-based) |
 | `executor` | 3 | Execution backend (ADBC core API) |
 | `ml-core` | 3 | ML core types and operators |
 | `ml-query` | 3 | ML query DSL |

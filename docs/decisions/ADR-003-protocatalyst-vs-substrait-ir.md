@@ -6,6 +6,8 @@
 
 Companion to [ADR-002](ADR-002-independent-ir.md), which records the decision to stay independent. This document provides a detailed structural comparison of the two IRs, informed by our Phase 11c implementation experience integrating with `io.substrait:core:0.78.0`.
 
+> **Update:** the prototype `substrait` module that informed this comparison has since been **retired**. It only ever reached type and a narrow expression conversion (no plan conversion; function calls were blocked by Substrait's extension system), nothing depended on it, and it confirmed rather than changed the ADR-002 decision. The SQL transpiler is the chosen interchange path. This document is retained for the IR comparison itself.
+
 ---
 
 ## 1. Design Philosophy
