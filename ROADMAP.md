@@ -173,7 +173,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
   - Defensive design: throws clear exceptions for unsupported features (Pivot, Unpivot, Generate, LateralJoin, ML nodes)
   - 138 transpiler tests (33 TypeSqlGenerator + 77 ExprSqlGenerator + 28 SqlGenerator)
 - **DataFusion Backend** — third execution backend via ADBC Flight SQL driver
-  - `DataFusionBackend` — executes `ProtoLogicalPlan` by transpiling to SQL and sending to DataFusion Flight SQL server via ADBC
+  - `DataFusionBackend` — executes `ProtoLogicalPlan` by transpiling to SQL and sending to a DataFusion Flight SQL server via ADBC (the server is in [`tools/datafusion-server`](tools/datafusion-server), a small Rust binary)
   - `FlightSqlConfig` — connection configuration (host, port, TLS, authentication)
   - Arrow-native data transfer (zero-copy RecordBatches → `VectorSchemaRoot` → `Batch`)
   - ADBC dependencies: `adbc-core`, `adbc-driver-manager`, `adbc-driver-flight-sql` (0.15.0)

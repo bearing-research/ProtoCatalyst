@@ -95,9 +95,6 @@ sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
 - **Commit messages** must end with:
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 - **Push only when explicitly told.** Branch first if on `main` and the user wants a PR.
-- **Do not stage the pre-existing untracked WIP**: `tools/datafusion-server/` (Rust Flight SQL server)
-  and `executor/.../FlightSqlConnectTest.scala` — the DataFusion backend's server side, in progress.
-  Leave them out of any commit unless explicitly told. (`scripts/__pycache__/` is now gitignored.)
 
 ## Status (2026-06)
 

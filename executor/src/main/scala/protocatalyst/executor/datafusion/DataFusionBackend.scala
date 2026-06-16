@@ -23,9 +23,10 @@ import protocatalyst.sql.SqlGenerator
   *   1. Reading results as Arrow RecordBatches
   *   1. Converting to ProtoCatalyst Batch
   *
-  * **Prerequisites**: Requires a running DataFusion Flight SQL server. Start server with:
+  * **Prerequisites**: Requires a running DataFusion Flight SQL server (`tools/datafusion-server`).
+  * Start it with:
   * {{{
-  * datafusion-flight-sql-server --data-path /path/to/data --host 0.0.0.0 --port 50051
+  * cd tools/datafusion-server && cargo run --release   // listens on 0.0.0.0:50051
   * }}}
   *
   * **Architecture**: `ProtoLogicalPlan` → SQL string (transpiler) → ADBC Flight SQL driver →
