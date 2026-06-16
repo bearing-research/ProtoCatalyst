@@ -45,6 +45,27 @@ one build:
 The seam that makes this work: `ExpressionEncoder.apply[T](enc: AgnosticEncoder[T])` — the no-`TypeTag`
 overload, callable from Scala 3. `AgnosticEncoderBridge.toAgnostic` produces the `AgnosticEncoder`.
 
+## Modules & status
+
+Two bodies of work. The **Scala-3 reflection-replacement thesis** is the active focus; the broader
+**query compiler** (Phases 1–11) is feature-complete and mostly **frozen since ~Feb 2026** — verify
+against the code before assuming a frozen module is current. Full detail: `ROADMAP.md`; encoder docs:
+`docs/scala3-encoder/`.
+
+- **Active (encoder / Scala 3):** `encoder` (`ProtoEncoder` derivation, `InlineRowSerializer`),
+  `encoder-spark` (the `AgnosticEncoderBridge`), `spark-reflection-patch` (the wall patch),
+  `benchmarks` + `benchmark-spark`. `core` (shared IR) still moves with this work.
+- **Frozen / feature-complete:**
+  - `core` (3) — IR (ProtoExpr 100 / ProtoLogicalPlan 27 / ProtoPhysicalPlan 30), 41-rule SQL optimizer, JSON+protobuf codec.
+  - `sql-parser`, `query` (`quote {}` DSL), `arrow` (+ Parquet) — Scala 3, complete.
+  - `spark-catalyst` (2.13) — Spark execution bridge + parity tests.
+  - `executor` (3) — standalone Arrow engine + DataFusion backend (SQL transpiler + ADBC Flight SQL).
+  - `ml-core` / `ml-query` (3) — tensor IR, autograd, ONNX, 8 ML rules, ML-in-SQL `Predict`/`Fit`.
+  - `substrait` (3) — 🚧 **partial**: types/literals/cast only; functions/plan deferred (blocked on Substrait YAML extensions — SQL transpiler is the chosen path).
+  - `proto` (Java) — protobuf schema, consumed by both Scala versions.
+- **Removed:** the dead `spark/` module (superseded by `encoder-spark` + `spark-catalyst`).
+- **Not started:** Velox backend.
+
 ## Common commands
 
 ```bash
@@ -73,9 +94,9 @@ sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
 - **Commit messages** must end with:
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 - **Push only when explicitly told.** Branch first if on `main` and the user wants a PR.
-- **Do not stage the pre-existing untracked WIP**: `tools/`,
-  `executor/.../FlightSqlConnectTest.scala`, `scripts/__pycache__/`. These are unrelated in-progress
-  work — leave them out of any commit.
+- **Do not stage the pre-existing untracked WIP**: `tools/datafusion-server/` (Rust Flight SQL server)
+  and `executor/.../FlightSqlConnectTest.scala` — the DataFusion backend's server side, in progress.
+  Leave them out of any commit unless explicitly told. (`scripts/__pycache__/` is now gitignored.)
 
 ## Status (2026-06)
 
