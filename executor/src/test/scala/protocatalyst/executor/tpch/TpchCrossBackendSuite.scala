@@ -92,6 +92,10 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       |FROM lineitem
       |GROUP BY returnflag, linestatus""".stripMargin
 
+  // Same grouped aggregate with an ORDER BY, so both backends emit groups in the same deterministic
+  // order — lets us compare the actual result *values* row-for-row, not just the group count.
+  private val q1GroupedSorted = q1Grouped + "\nORDER BY returnflag, linestatus"
+
   // The full TPC-H Q6 — adds the `DATE '…'` shipdate predicates the SQL parser doesn't yet support
   // (the remaining gap for full Q6). Kept here (ignored) as the goal.
   private val q6 =
@@ -169,6 +173,58 @@ class TpchCrossBackendSuite extends munit.FunSuite:
         System.err.println(s"[DataFusion] unavailable/failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
         None
 
+  /** Read a Batch into normalized rows for cross-backend value comparison. Numbers are coerced to
+    * Double (Local sums in Double, DataFusion in Decimal — same value, different carrier type);
+    * everything else compares by its string form. */
+  private def readRows(batch: Batch): Vector[Vector[Any]] =
+    (0 until batch.rowCount).map { r =>
+      (0 until batch.numColumns).map { c =>
+        Batch.getValue(batch.column(c), r) match
+          case null                => null
+          case n: java.lang.Number => n.doubleValue
+          case other               => other.toString
+      }.toVector
+    }.toVector
+
+  /** Row-for-row equality with a relative tolerance on numeric cells (Double-vs-Decimal rounding). */
+  private def rowsAgree(a: Vector[Vector[Any]], b: Vector[Vector[Any]]): Boolean =
+    a.size == b.size && a.zip(b).forall { (ra, rb) =>
+      ra.size == rb.size && ra.zip(rb).forall {
+        case (x: Double, y: Double) => math.abs(x - y) <= 1e-6 * math.max(1.0, math.abs(x))
+        case (x, y)                 => x == y
+      }
+    }
+
+  /** Run a plan on the Local executor, returning its result rows (normalized). */
+  private def runLocalRows(plan: ProtoLogicalPlan, tables: Seq[String] = Seq("lineitem")): Vector[Vector[Any]] =
+    val allocator = new RootAllocator()
+    val catalog = new Catalog()
+    tables.foreach { t =>
+      catalog.registerTable(t, loadTable(t, allocator))
+      catalog.registerStatistics(t, ParquetIO.readStatistics(partFiles(t).head))
+    }
+    val physical = PhysicalPlanner(catalog.statsProvider).plan(plan)
+    val batch = PhysicalPlanExecutor(catalog, allocator).execute(physical)
+    val rows = readRows(batch)
+    batch.close()
+    rows
+
+  /** Run a plan on DataFusion, returning its result rows (normalized), or None if unavailable. */
+  private def runDataFusionRows(plan: ProtoLogicalPlan): Option[Vector[Vector[Any]]] =
+    val allocator = new RootAllocator()
+    try
+      val backend = DataFusionBackend.localhost(allocator)
+      try
+        val batch = backend.execute(plan)
+        val rows = readRows(batch)
+        batch.close()
+        Some(rows)
+      finally backend.close()
+    catch
+      case e: Exception =>
+        System.err.println(s"[DataFusion] unavailable/failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
+        None
+
   private def lineitemSchema: ProtoSchema = ParquetIO.readSchema(partFiles("lineitem").head)
 
   test("Q6 selection (project+filter) — runs on the Local Arrow executor"):
@@ -214,6 +270,19 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     runDataFusion(plan) match
       case None     => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
       case Some(df) => assertEquals(df, local) // same number of groups from the same compiled plan
+
+  test("Q1 grouped aggregate (ORDER BY) — Local and DataFusion agree row-for-row"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    // The strongest cross-backend check: the same compiled plan must produce the same result
+    // *values*, not merely the same number of groups. ORDER BY makes both backends' output order
+    // identical so we can compare row-for-row.
+    val plan = compile(q1GroupedSorted, "lineitem", lineitemSchema)
+    val local = runLocalRows(plan)
+    assert(local.size > 1, s"expected several groups, got ${local.size}")
+    runDataFusionRows(plan) match
+      case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) =>
+        assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
 
   // A two-table join with qualified columns — TPC-H tables share column names (both nation and
   // region have `regionkey`), so this only resolves with a per-table schema catalog (gap #4).
