@@ -26,15 +26,17 @@ import protocatalyst.sql.transform.AstToProtoTransform
   * restricts redistribution; regenerate via `scripts/gen-tpch.sh`). Tests skip when it's absent. The
   * DataFusion comparison additionally needs `tools/datafusion-server` running; it skips otherwise.
   *
-  * Status: the project+filter selection runs and *agrees* across Local and DataFusion. The server is
-  * started with the TPC-H data dir so it pre-registers the tables —
+  * Status: project+filter, global aggregate, and a two-table join all run and *agree* across Local
+  * and DataFusion. The server is started with the TPC-H data dir so it pre-registers the tables —
   * `cargo run -- <repo>/data/tpch/sf-0.01-parquet` (datafusion-flight-sql-server has no DDL, so
-  * tables can't be created over the wire). Remaining coverage backlog:
-  *   1. SQL parser — no `DATE '…'` typed literals (blocks the date predicates).
-  *   2. Local executor — global aggregate (`SUM` with no `GROUP BY`): "Aggregate expressions must be
-  *      evaluated by AggregateOp".
-  *   3. Multi-table joins — need a per-table schema catalog in `AstToProtoTransform` (it currently
-  *      applies one schema to all tables).
+  * tables can't be created over the wire).
+  *
+  * All four original coverage gaps are now closed: (1) `DATE '…'` typed literals in the parser;
+  * (2) global aggregate (`SUM`/`COUNT(*)` with no `GROUP BY`) in the executor; (3) server-side table
+  * pre-registration (no DDL over the wire); (4) per-table schema catalog in `AstToProtoTransform` for
+  * multi-table joins. The only remaining Local/DataFusion divergence is a data-precision artifact:
+  * DataFusion's strict decimal arithmetic overflows on Q6's `SUM(extendedprice * discount)` over the
+  * wide-decimal columns, so full Q6 is asserted on Local only.
   */
 class TpchCrossBackendSuite extends munit.FunSuite:
 
