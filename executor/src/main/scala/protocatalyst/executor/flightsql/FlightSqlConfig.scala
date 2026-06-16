@@ -1,4 +1,4 @@
-package protocatalyst.executor.datafusion
+package protocatalyst.executor.flightsql
 
 /** Configuration for connecting to a Flight SQL server (e.g., DataFusion).
   *

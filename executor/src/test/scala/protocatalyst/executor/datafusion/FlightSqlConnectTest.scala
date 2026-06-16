@@ -2,6 +2,8 @@ package protocatalyst.executor.datafusion
 
 import org.apache.arrow.memory.RootAllocator
 
+import protocatalyst.executor.flightsql.FlightSqlConfig
+
 /** Quick connectivity test — prints error details instead of swallowing exceptions. */
 object FlightSqlConnectTest:
   def main(args: Array[String]): Unit =

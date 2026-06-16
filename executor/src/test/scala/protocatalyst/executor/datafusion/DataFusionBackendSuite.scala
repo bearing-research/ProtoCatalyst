@@ -3,6 +3,7 @@ package protocatalyst.executor.datafusion
 import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
 
 import protocatalyst.executor.exec.ExecutionException
+import protocatalyst.executor.flightsql.FlightSqlConfig
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.plan.ProtoLogicalPlan
 import protocatalyst.schema.{FieldContract, ProtoSchema, SchemaContract, SchemaFingerprint}

@@ -173,7 +173,7 @@ ProtoCatalyst moves safe, deterministic parts of Spark SQL/Catalyst from runtime
   - Defensive design: throws clear exceptions for unsupported features (Pivot, Unpivot, Generate, LateralJoin, ML nodes)
   - 138 transpiler tests (33 TypeSqlGenerator + 77 ExprSqlGenerator + 28 SqlGenerator)
 - **DataFusion Backend** — third execution backend via ADBC Flight SQL driver
-  - `DataFusionBackend` — executes `ProtoLogicalPlan` by transpiling to SQL and sending to a DataFusion Flight SQL server via ADBC (the server is in [`tools/datafusion-server`](tools/datafusion-server), a small Rust binary)
+  - `FlightSqlBackend` — executes `ProtoLogicalPlan` by transpiling to SQL and sending it to **any** Arrow Flight SQL server via ADBC; engine-agnostic, with only the Parquet-registration DDL injected per engine. `DataFusionBackend` is a thin preset of it (DataFusion's `CREATE EXTERNAL TABLE` DDL; the server is in [`tools/datafusion-server`](tools/datafusion-server), a small Rust binary). The same backend reaches Dremio, InfluxDB 3.x, Apache Doris, Ballista, etc. by pointing `FlightSqlConfig` at a different host
   - `FlightSqlConfig` — connection configuration (host, port, TLS, authentication)
   - Arrow-native data transfer (zero-copy RecordBatches → `VectorSchemaRoot` → `Batch`)
   - ADBC dependencies: `adbc-core`, `adbc-driver-manager`, `adbc-driver-flight-sql` (0.15.0)
@@ -233,7 +233,7 @@ Build direct lowerings from `ProtoLogicalPlan` / `ProtoPhysicalPlan` to target r
 
 - [x] **Spark backend** — `ProtoLogicalPlan` → Spark `LogicalPlan` via `SparkQueryRunner`
 - [x] **Local executor** — single-node Arrow-columnar pipeline via `PhysicalPlanExecutor`
-- [x] **DataFusion backend** — `ProtoLogicalPlan` → SQL transpiler → ADBC Flight SQL → DataFusion server
+- [x] **Flight SQL backend** — `ProtoLogicalPlan` → SQL transpiler → ADBC Flight SQL → any Flight SQL server (`FlightSqlBackend`; `DataFusionBackend` is a preset)
 - [ ] **Velox backend** — `ProtoPhysicalPlan` → Velox `PlanNode` (C++ FFI)
 
 ### Ongoing: Spark Integration
