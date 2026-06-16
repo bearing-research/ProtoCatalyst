@@ -177,18 +177,6 @@ lazy val query = project
     commonSettings
   )
 
-// Spark integration module
-// Note: Disabled until Spark 4.0 publishes Scala 3 artifacts
-// lazy val spark = project
-//   .in(file("spark"))
-//   .dependsOn(core, encoder, query)
-//   .settings(
-//     name := "protocatalyst-spark",
-//     commonSettings,
-//     libraryDependencies ++= Seq(
-//       "org.apache.spark" %% "spark-sql" % "4.1.2" % Provided
-//     )
-//   )
 
 // Benchmarks module (Scala 3) - JMH benchmarks for ProtoCatalyst encoders
 lazy val benchmarks = project
