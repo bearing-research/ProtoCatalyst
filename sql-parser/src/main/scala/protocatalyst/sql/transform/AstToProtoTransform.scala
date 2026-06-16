@@ -549,6 +549,14 @@ object AstToProtoTransform:
       case SqlExpr.StringLit(value) =>
         Right(ProtoExpr.lit(value))
 
+      case SqlExpr.DateLit(value) =>
+        scala.util
+          .Try(java.time.LocalDate.parse(value).toEpochDay.toInt)
+          .toEither
+          .left
+          .map(e => TransformError.InvalidExpression(s"invalid DATE literal '$value': ${e.getMessage}"))
+          .map(days => ProtoExpr.Literal(LiteralValue.DateValue(days)))
+
       case SqlExpr.BoolLit(value) =>
         Right(ProtoExpr.lit(value))
 

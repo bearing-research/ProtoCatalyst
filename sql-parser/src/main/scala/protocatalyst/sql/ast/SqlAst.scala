@@ -151,6 +151,7 @@ enum SqlExpr:
   case StringLit(value: String)
   case BoolLit(value: Boolean)
   case NullLit
+  case DateLit(value: String) // a `DATE 'yyyy-mm-dd'` typed literal
 
   // Column reference
   case ColumnRef(name: String, qualifier: Option[String])

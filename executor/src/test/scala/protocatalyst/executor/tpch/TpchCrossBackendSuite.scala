@@ -172,8 +172,11 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       case None     => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
       case Some(df) => assertEquals(df, local)
 
-  test("Q6 full (with DATE predicates) — pending: parser DATE '…' literals".ignore):
+  test("Q6 full (DATE predicates + global SUM) — runs on Local"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    // Local only: DataFusion overflows on SUM(extendedprice*discount) given the wide-decimal data.
     val plan = compile(q6, "lineitem", lineitemSchema)
-    runLocal(plan)
+    val rows = runLocal(plan)
+    assertEquals(rows, 1L)
 
 end TpchCrossBackendSuite

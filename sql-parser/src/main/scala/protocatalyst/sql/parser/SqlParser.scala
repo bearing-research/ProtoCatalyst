@@ -1074,6 +1074,15 @@ class SqlParser(tokens: Vector[Token]):
         advance()
         Right(SqlExpr.Star(None))
 
+      // `DATE 'yyyy-mm-dd'` typed literal (DATE isn't a keyword, so it lexes as an identifier).
+      case Token.Identifier(name)
+          if name.equalsIgnoreCase("DATE") && pos + 1 < tokens.length &&
+            tokens(pos + 1).isInstanceOf[Token.StringLiteral] =>
+        advance() // past DATE
+        val lit = current.asInstanceOf[Token.StringLiteral]
+        advance() // past the string literal
+        Right(SqlExpr.DateLit(lit.value))
+
       case Token.Identifier(name) =>
         advance()
         if check(Token.LParen) then

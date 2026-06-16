@@ -398,6 +398,7 @@ object SqlMacro:
       case SqlExpr.IntLit(v)         => '{ SqlExpr.IntLit(${ Expr(v) }) }
       case SqlExpr.DoubleLit(v)      => '{ SqlExpr.DoubleLit(${ Expr(v) }) }
       case SqlExpr.StringLit(v)      => '{ SqlExpr.StringLit(${ Expr(v) }) }
+      case SqlExpr.DateLit(v)        => '{ SqlExpr.DateLit(${ Expr(v) }) }
       case SqlExpr.BoolLit(v)        => '{ SqlExpr.BoolLit(${ Expr(v) }) }
       case SqlExpr.NullLit           => '{ SqlExpr.NullLit }
       case SqlExpr.ColumnRef(n, q)   => '{ SqlExpr.ColumnRef(${ Expr(n) }, ${ Expr(q) }) }
