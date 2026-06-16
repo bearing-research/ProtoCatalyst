@@ -53,8 +53,12 @@ object SqlGenerator:
       val selectExprs = (groupingExprs ++ aggregateExprs).map(ExprSqlGenerator.generate)
       val selectList = selectExprs.mkString(", ")
       val childSql = wrapAsSubquery(child)
-      val groupByList = groupingExprs.map(ExprSqlGenerator.generate).mkString(", ")
-      s"SELECT $selectList FROM $childSql GROUP BY $groupByList"
+      // A global aggregate (empty grouping, e.g. `SELECT SUM(x) ...`) has no GROUP BY clause —
+      // emitting a trailing `GROUP BY` with no keys is a syntax error.
+      if groupingExprs.isEmpty then s"SELECT $selectList FROM $childSql"
+      else
+        val groupByList = groupingExprs.map(ExprSqlGenerator.generate).mkString(", ")
+        s"SELECT $selectList FROM $childSql GROUP BY $groupByList"
 
     case ProtoLogicalPlan.Sort(order, child) =>
       val orderByList = order.map(ExprSqlGenerator.generateSortOrder).mkString(", ")

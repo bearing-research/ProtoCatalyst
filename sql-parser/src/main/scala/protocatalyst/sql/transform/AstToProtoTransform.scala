@@ -95,6 +95,10 @@ object AstToProtoTransform:
       aggregated <- stmt.groupBy match
         case Some(groupByClause) =>
           transformAggregate(stmt.projections, groupByClause, filtered, ctx)
+        case None if projectionsHaveAggregate(stmt.projections, ctx) =>
+          // A global aggregate (e.g. `SELECT SUM(x) FROM t`): no GROUP BY, but the projections
+          // contain aggregate functions. Build an Aggregate with empty grouping.
+          transformGlobalAggregate(stmt.projections, filtered, ctx)
         case None =>
           Right(filtered)
 
@@ -113,6 +117,8 @@ object AstToProtoTransform:
       projected <- stmt.groupBy match
         case Some(_) =>
           Right(distinctPlan) // Aggregate already handles the expressions
+        case None if projectionsHaveAggregate(stmt.projections, ctx) =>
+          Right(distinctPlan) // the global Aggregate already handles the expressions
         case None =>
           transformProjections(stmt.projections, ctx, distinctPlan)
 
@@ -409,6 +415,27 @@ object AstToProtoTransform:
       // Extract aggregate expressions from projections
       aggregateExprs <- extractAggregateExprs(projections, ctx)
     yield ProtoLogicalPlan.Aggregate(groupingExprs, aggregateExprs, child)
+
+  /** A global aggregate (aggregates in the SELECT, no GROUP BY): `Aggregate` with empty grouping. */
+  private def transformGlobalAggregate(
+      projections: Vector[Projection],
+      child: ProtoLogicalPlan,
+      ctx: TransformContext
+  ): Either[TransformError, ProtoLogicalPlan] =
+    extractAggregateExprs(projections, ctx).map { aggExprs =>
+      ProtoLogicalPlan.Aggregate(Vector.empty[ProtoExpr], aggExprs, child)
+    }
+
+  /** True if any projection contains an aggregate function (and isn't `*`). */
+  private def projectionsHaveAggregate(
+      projections: Vector[Projection],
+      ctx: TransformContext
+  ): Boolean =
+    projections.exists { proj =>
+      proj.expr match
+        case SqlExpr.Star(_) => false
+        case expr            => extractAggregates(expr, ctx).map(_.nonEmpty).getOrElse(false)
+    }
 
   /** Extract aggregate expressions from projections. */
   private def extractAggregateExprs(
