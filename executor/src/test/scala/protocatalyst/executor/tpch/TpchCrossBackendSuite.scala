@@ -5,6 +5,7 @@ import java.nio.file.{Files, Paths}
 import scala.jdk.CollectionConverters.*
 
 import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
+import org.apache.arrow.vector.util.VectorSchemaRootAppender
 
 import protocatalyst.arrow.parquet.ParquetIO
 import protocatalyst.executor.Catalog
@@ -25,15 +26,14 @@ import protocatalyst.sql.transform.AstToProtoTransform
   * restricts redistribution; regenerate via `scripts/gen-tpch.sh`). Tests skip when it's absent. The
   * DataFusion comparison additionally needs `tools/datafusion-server` running; it skips otherwise.
   *
-  * Status: the Local path runs a real TPC-H selection (project+filter over lineitem) end to end.
-  * Running this against more of TPC-H surfaced a concrete coverage backlog, across three layers:
+  * Status: the project+filter selection runs and *agrees* across Local and DataFusion. The server is
+  * started with the TPC-H data dir so it pre-registers the tables —
+  * `cargo run -- <repo>/data/tpch/sf-0.01-parquet` (datafusion-flight-sql-server has no DDL, so
+  * tables can't be created over the wire). Remaining coverage backlog:
   *   1. SQL parser — no `DATE '…'` typed literals (blocks the date predicates).
   *   2. Local executor — global aggregate (`SUM` with no `GROUP BY`): "Aggregate expressions must be
   *      evaluated by AggregateOp".
-  *   3. `datafusion-flight-sql-server` — no DDL: `CREATE EXTERNAL TABLE` hits an unimplemented
-  *      `do_put_statement_update`, so the client can't register tables (pre-register them in
-  *      `tools/datafusion-server`, or add a do_put shim, to enable the DataFusion comparison).
-  *   4. Multi-table joins — need a per-table schema catalog in `AstToProtoTransform` (it currently
+  *   3. Multi-table joins — need a per-table schema catalog in `AstToProtoTransform` (it currently
   *      applies one schema to all tables).
   */
 class TpchCrossBackendSuite extends munit.FunSuite:
@@ -88,13 +88,16 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       .fold(e => fail(s"transform error: $e"), identity)
     Optimizer.optimize(plan)
 
-  // Both backends read the *same single part file* so they see identical data — a clean
-  // engine-independence comparison. (Reading the whole multi-part directory is a follow-up: it needs
-  // ParquetIO directory support on the Local side and DataFusion's directory-LOCATION handling.)
-  private def lineitemPart: String = Paths.get(partFiles("lineitem").head).toAbsolutePath.toString
-
-  private def loadTable(path: String, allocator: BufferAllocator): Batch =
-    val (root, schema) = ParquetIO.read(path, allocator)
+  /** Read all part files of a table into one Batch (concatenated) — matches the full directory the
+    * DataFusion server registers, so both backends see identical data. */
+  private def loadTable(table: String, allocator: BufferAllocator): Batch =
+    val parts = partFiles(table)
+    val (root, schema) = ParquetIO.read(parts.head, allocator)
+    parts.tail.foreach { p =>
+      val (r, _) = ParquetIO.read(p, allocator)
+      VectorSchemaRootAppender.append(root, r)
+      r.close()
+    }
     Batch.fromRoot(root, schema)
 
   /** Run a plan on the Local Arrow executor; returns the result row count. (Per-run allocator is left
@@ -102,8 +105,8 @@ class TpchCrossBackendSuite extends munit.FunSuite:
   private def runLocal(plan: ProtoLogicalPlan): Long =
     val allocator = new RootAllocator()
     val catalog = new Catalog()
-    catalog.registerTable("lineitem", loadTable(lineitemPart, allocator))
-    catalog.registerStatistics("lineitem", ParquetIO.readStatistics(lineitemPart))
+    catalog.registerTable("lineitem", loadTable("lineitem", allocator))
+    catalog.registerStatistics("lineitem", ParquetIO.readStatistics(partFiles("lineitem").head))
     val physical = PhysicalPlanner(catalog.statsProvider).plan(plan)
     val batch = PhysicalPlanExecutor(catalog, allocator).execute(physical)
     val n = batch.rowCount.toLong
@@ -116,7 +119,8 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     try
       val backend = DataFusionBackend.localhost(allocator)
       try
-        backend.registerParquetTable("lineitem", lineitemPart) // same single part file as Local
+        // The `lineitem` table is pre-registered in the server (started with the data dir) — the
+        // server has no DDL, so we don't CREATE the table here, just query it.
         val batch = backend.execute(plan)
         val n = batch.rowCount.toLong
         batch.close()

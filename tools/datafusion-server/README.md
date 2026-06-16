@@ -14,9 +14,20 @@ cargo run --release
 # Starting DataFusion Flight SQL server on 0.0.0.0:50051
 ```
 
-It listens on `0.0.0.0:50051` — matching `FlightSqlConfig.localhost()` (`grpc://localhost:50051`). The
-DataFusion session starts **empty**; tables are registered by the client via `CREATE EXTERNAL TABLE`
-(e.g. `DataFusionBackend.registerParquetTable`).
+It listens on `0.0.0.0:50051` — matching `FlightSqlConfig.localhost()` (`grpc://localhost:50051`).
+
+**Pre-registering tables.** `datafusion-flight-sql-server` leaves DDL (`do_put_statement_update`)
+unimplemented, so `CREATE EXTERNAL TABLE` over the wire fails. Instead, pass a data directory and the
+server registers every `<name>.parquet` entry (a file, or a directory of part files) as table
+`<name>` at startup:
+
+```sh
+cargo run -- ../../data/tpch/sf-0.01-parquet
+# Registered table 'lineitem' from .../lineitem.parquet
+# ...
+```
+
+(Also reads `DATAFUSION_DATA_DIR`.) Used by `TpchCrossBackendSuite` for the cross-backend comparison.
 
 ## Used by
 

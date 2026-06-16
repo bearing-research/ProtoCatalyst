@@ -5,7 +5,7 @@ use arrow_flight::{
     Action, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
     HandshakeResponse, PollInfo, SchemaResult, Ticket,
 };
-use datafusion::prelude::SessionContext;
+use datafusion::prelude::{ParquetReadOptions, SessionContext};
 use datafusion_flight_sql_server::service::FlightSqlService;
 use futures::{stream, Stream};
 use tonic::transport::Server;
@@ -112,6 +112,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting DataFusion Flight SQL server on {addr}");
 
     let ctx = SessionContext::new();
+
+    // Optionally pre-register parquet tables from a data directory (first CLI arg, or
+    // DATAFUSION_DATA_DIR). Each `<name>.parquet` entry (a file, or a directory of part files) is
+    // registered as table `<name>`. This is how clients get tables: datafusion-flight-sql-server
+    // leaves do_put_statement_update (DDL such as CREATE EXTERNAL TABLE) unimplemented, so the table
+    // set is fixed at startup rather than created over the wire.
+    if let Some(dir) = std::env::args()
+        .nth(1)
+        .or_else(|| std::env::var("DATAFUSION_DATA_DIR").ok())
+    {
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if let Some(table) = file_name.strip_suffix(".parquet") {
+                let location = path.to_string_lossy().to_string();
+                ctx.register_parquet(table, &location, ParquetReadOptions::default())
+                    .await?;
+                println!("Registered table '{table}' from {location}");
+            }
+        }
+    }
+
     let inner = FlightSqlService::new(ctx.state());
     let service = FlightServiceServer::new(HandshakeShim { inner });
 
