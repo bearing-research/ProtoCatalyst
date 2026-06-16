@@ -111,13 +111,29 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     }
     Batch.fromRoot(root, schema)
 
+  private def schemaOf(table: String): ProtoSchema = ParquetIO.readSchema(partFiles(table).head)
+
+  /** A catalog (table name → schema) for the multi-table transform. */
+  private def catalogOf(tables: String*): Map[String, ProtoSchema] =
+    tables.map(t => t -> schemaOf(t)).toMap
+
+  /** SQL → optimized plan against a multi-table catalog (for joins). */
+  private def compileMulti(sql: String, catalog: Map[String, ProtoSchema]): ProtoLogicalPlan =
+    val stmt = SqlParser.parse(sql).fold(e => fail(s"parse error: $e"), identity)
+    val plan = AstToProtoTransform
+      .transformStmt(stmt, catalog)
+      .fold(e => fail(s"transform error: $e"), identity)
+    Optimizer.optimize(plan)
+
   /** Run a plan on the Local Arrow executor; returns the result row count. (Per-run allocator is left
-    * open — reclaimed at JVM exit — to avoid leak detection on the catalog's registered table.) */
-  private def runLocal(plan: ProtoLogicalPlan): Long =
+    * open — reclaimed at JVM exit — to avoid leak detection on the catalog's registered tables.) */
+  private def runLocal(plan: ProtoLogicalPlan, tables: Seq[String] = Seq("lineitem")): Long =
     val allocator = new RootAllocator()
     val catalog = new Catalog()
-    catalog.registerTable("lineitem", loadTable("lineitem", allocator))
-    catalog.registerStatistics("lineitem", ParquetIO.readStatistics(partFiles("lineitem").head))
+    tables.foreach { t =>
+      catalog.registerTable(t, loadTable(t, allocator))
+      catalog.registerStatistics(t, ParquetIO.readStatistics(partFiles(t).head))
+    }
     val physical = PhysicalPlanner(catalog.statsProvider).plan(plan)
     val batch = PhysicalPlanExecutor(catalog, allocator).execute(physical)
     val n = batch.rowCount.toLong
@@ -178,5 +194,19 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     val plan = compile(q6, "lineitem", lineitemSchema)
     val rows = runLocal(plan)
     assertEquals(rows, 1L)
+
+  // A two-table join with qualified columns — TPC-H tables share column names (both nation and
+  // region have `regionkey`), so this only resolves with a per-table schema catalog (gap #4).
+  test("Join (nation ⋈ region) — Local and DataFusion agree"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    val plan = compileMulti(
+      """SELECT COUNT(*) AS n
+        |FROM nation JOIN region ON nation.regionkey = region.regionkey""".stripMargin,
+      catalogOf("nation", "region")
+    )
+    val local = runLocal(plan, Seq("nation", "region"))
+    runDataFusion(plan) match
+      case None     => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) => assertEquals(df, local)
 
 end TpchCrossBackendSuite

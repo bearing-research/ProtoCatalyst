@@ -10,18 +10,29 @@ import protocatalyst.types._
 object AstToProtoTransform:
 
   /** Transform any SQL statement to a ProtoLogicalPlan. */
+  /** Transform a statement against a multi-table catalog (table name → schema). The single-table
+    * `transformStmt(stmt, schema, tableName)` overload below delegates here with `Map(tableName ->
+    * schema)`. */
+  def transformStmt(
+      stmt: SqlStatement,
+      catalog: Map[String, ProtoSchema]
+  ): Either[TransformError, ProtoLogicalPlan] =
+    val defaultSchema = catalog.values.headOption.getOrElse(ProtoSchema(Vector.empty))
+    transformStmt(stmt, defaultSchema, catalog.keys.headOption.getOrElse(""), catalog)
+
   def transformStmt(
       stmt: SqlStatement,
       schema: ProtoSchema,
-      tableName: String
+      tableName: String,
+      catalog: Map[String, ProtoSchema] = Map.empty
   ): Either[TransformError, ProtoLogicalPlan] =
     stmt match
       case s: SqlStatement.SelectStatement =>
-        transform(s, schema, tableName)
+        transform(s, schema, tableName, catalog)
       case SqlStatement.CompoundStatement(left, op, right) =>
         for
-          leftPlan <- transformStmt(left, schema, tableName)
-          rightPlan <- transformStmt(right, schema, tableName)
+          leftPlan <- transformStmt(left, schema, tableName, catalog)
+          rightPlan <- transformStmt(right, schema, tableName, catalog)
         yield op match
           case SetOperation.Union(all) =>
             ProtoLogicalPlan.Union(
@@ -34,7 +45,7 @@ object AstToProtoTransform:
           case SetOperation.Except(all) =>
             ProtoLogicalPlan.Except(leftPlan, rightPlan, isAll = all)
       case SqlStatement.WithStatement(ctes, recursive, query) =>
-        transformWithStatement(ctes, recursive, query, schema, tableName)
+        transformWithStatement(ctes, recursive, query, schema, tableName, catalog)
 
   /** Transform a WITH statement (CTEs) to a ProtoLogicalPlan. */
   private def transformWithStatement(
@@ -42,14 +53,15 @@ object AstToProtoTransform:
       recursive: Boolean,
       query: SqlStatement,
       schema: ProtoSchema,
-      tableName: String
+      tableName: String,
+      catalog: Map[String, ProtoSchema] = Map.empty
   ): Either[TransformError, ProtoLogicalPlan] =
     // Transform each CTE definition into a plan
     val cteResults = ctes
       .foldLeft[Either[TransformError, Vector[(String, ProtoLogicalPlan)]]](Right(Vector.empty)) {
         case (Right(acc), CteDefinition(cteName, columnAliases, cteQuery)) =>
           // Transform the CTE query
-          transformStmt(cteQuery, schema, tableName).map { ctePlan =>
+          transformStmt(cteQuery, schema, tableName, catalog).map { ctePlan =>
             // Wrap with SubqueryAlias if needed and apply column aliases
             val aliasedPlan = columnAliases match
               case Some(_) =>
@@ -65,7 +77,7 @@ object AstToProtoTransform:
 
     // Transform the main query and wrap with With
     cteResults.flatMap { cteRelations =>
-      transformStmt(query, schema, tableName).map { mainPlan =>
+      transformStmt(query, schema, tableName, catalog).map { mainPlan =>
         ProtoLogicalPlan.With(cteRelations, recursive, mainPlan)
       }
     }
@@ -74,10 +86,11 @@ object AstToProtoTransform:
   def transform(
       stmt: SqlStatement.SelectStatement,
       schema: ProtoSchema,
-      tableName: String
+      tableName: String,
+      catalog: Map[String, ProtoSchema] = Map.empty
   ): Either[TransformError, ProtoLogicalPlan] =
-    // Build context with all table schemas
-    val schemas = collectTableSchemas(stmt.from, schema, tableName)
+    // Build context with each table's own schema (from the catalog; empty = single-table fallback).
+    val schemas = collectTableSchemas(stmt.from, schema, catalog)
     val ctx = TransformContext(schemas, schema)
 
     for
@@ -148,26 +161,28 @@ object AstToProtoTransform:
   private def collectTableSchemas(
       from: FromClause,
       defaultSchema: ProtoSchema,
-      defaultTableName: String
+      catalog: Map[String, ProtoSchema]
   ): Map[String, ProtoSchema] =
     from match
       case FromClause.Table(ref) =>
+        // Each table gets its own schema from the catalog (by table name), keyed by alias-or-name.
+        // Falls back to `defaultSchema` for the single-table case (empty catalog).
         val key = ref.alias.getOrElse(ref.name)
-        Map(key -> defaultSchema)
+        Map(key -> catalog.getOrElse(ref.name, defaultSchema))
       case FromClause.Join(left, right, _, _) =>
-        collectTableSchemas(left, defaultSchema, defaultTableName) ++
-          collectTableSchemas(right, defaultSchema, defaultTableName)
+        collectTableSchemas(left, defaultSchema, catalog) ++
+          collectTableSchemas(right, defaultSchema, catalog)
       case FromClause.Subquery(stmt, alias) =>
         // For subqueries, derive schema from the subquery's projections
         // For now, use the default schema (proper schema inference would require type analysis)
         Map(alias -> defaultSchema)
       case FromClause.Pivot(source, _, alias) =>
         // For PIVOT, collect schemas from the source and optionally add alias
-        val sourceSchemas = collectTableSchemas(source, defaultSchema, defaultTableName)
+        val sourceSchemas = collectTableSchemas(source, defaultSchema, catalog)
         alias.map(a => sourceSchemas + (a -> defaultSchema)).getOrElse(sourceSchemas)
       case FromClause.Unpivot(source, _, alias) =>
         // For UNPIVOT, collect schemas from the source and optionally add alias
-        val sourceSchemas = collectTableSchemas(source, defaultSchema, defaultTableName)
+        val sourceSchemas = collectTableSchemas(source, defaultSchema, catalog)
         alias.map(a => sourceSchemas + (a -> defaultSchema)).getOrElse(sourceSchemas)
       case FromClause.Lateral(_, alias) =>
         // For LATERAL subqueries, use the alias as the schema key
@@ -175,7 +190,7 @@ object AstToProtoTransform:
       case FromClause.LateralView(source, _) =>
         // For LATERAL VIEW, only collect schemas from source
         // The table alias refers to the generated columns, not the source columns
-        collectTableSchemas(source, defaultSchema, defaultTableName)
+        collectTableSchemas(source, defaultSchema, catalog)
       case FromClause.Values(_, alias, _) =>
         // For VALUES, use the alias as the schema key
         Map(alias -> defaultSchema)
@@ -189,7 +204,9 @@ object AstToProtoTransform:
   ): Either[TransformError, ProtoLogicalPlan] =
     from match
       case FromClause.Table(ref) =>
-        Right(createRelationRef(ref.name, ref.alias, schema))
+        // Use the table's own schema (per the catalog, via ctx) — not the single default schema.
+        val key = ref.alias.getOrElse(ref.name)
+        Right(createRelationRef(ref.name, ref.alias, ctx.tableSchemas.getOrElse(key, schema)))
       case FromClause.Join(left, right, joinType, condition) =>
         for
           leftPlan <- transformFromClause(left, schema, tableName, ctx)
