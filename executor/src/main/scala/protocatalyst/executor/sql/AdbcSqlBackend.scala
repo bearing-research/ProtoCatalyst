@@ -48,6 +48,15 @@ abstract class AdbcSqlBackend(
       case e: AdbcException =>
         throw ExecutionException(s"Failed to connect to $connectionDescription: ${e.getMessage}", e)
 
+  // One connection for the backend's lifetime, reused per query. A connection-per-query model
+  // closes the underlying connection each time, which breaks engines that back it with a single
+  // (e.g. in-memory) connection like DuckDB-over-JDBC; reuse is also cheaper for the server case.
+  private val connection: AdbcConnection =
+    try database.connect()
+    catch
+      case e: AdbcException =>
+        throw ExecutionException(s"Failed to connect to $connectionDescription: ${e.getMessage}", e)
+
   /** Dialect-specific SQL to register a Parquet file as a table. */
   protected def parquetRegisterSql(tableName: String, parquetPath: String): String
 
@@ -56,12 +65,10 @@ abstract class AdbcSqlBackend(
 
   final def executeSql(sql: String): Batch =
     try
-      Using.resource(database.connect()) { connection =>
-        Using.resource(connection.createStatement()) { statement =>
-          statement.setSqlQuery(sql)
-          Using.resource(statement.executeQuery()) { queryResult =>
-            readAllBatches(queryResult.getReader)
-          }
+      Using.resource(connection.createStatement()) { statement =>
+        statement.setSqlQuery(sql)
+        Using.resource(statement.executeQuery()) { queryResult =>
+          readAllBatches(queryResult.getReader)
         }
       }
     catch
@@ -76,11 +83,9 @@ abstract class AdbcSqlBackend(
 
   final def executeUpdate(sql: String): Unit =
     try
-      Using.resource(database.connect()) { connection =>
-        Using.resource(connection.createStatement()) { statement =>
-          statement.setSqlQuery(sql)
-          statement.executeUpdate()
-        }
+      Using.resource(connection.createStatement()) { statement =>
+        statement.setSqlQuery(sql)
+        statement.executeUpdate()
       }
     catch
       case e: AdbcException =>
@@ -95,7 +100,9 @@ abstract class AdbcSqlBackend(
     executeUpdate(parquetRegisterSql(tableName, parquetPath))
 
   final def close(): Unit =
-    try if database != null then database.close()
+    try
+      if connection != null then connection.close()
+      if database != null then database.close()
     catch
       case e: Exception =>
         System.err.println(s"Warning: Error closing ${getClass.getSimpleName}: ${e.getMessage}")
