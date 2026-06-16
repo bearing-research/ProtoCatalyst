@@ -8,7 +8,7 @@ A Scala 3 library that moves safe, deterministic parts of Spark SQL/Catalyst wor
 - **Type-Safe Query DSL**: `quote { Table[User]("users").filter(_.age > 18).select(_.name) }` — fully type-checked at compile time
 - **Compile-Time SQL Parsing**: SQL strings parsed, validated, and optimized during compilation
 - **Compile-Time Encoder Derivation**: Type-safe encoder derivation using Scala 3 `inline` and `Mirror` — no runtime reflection
-- **InlineRowSerializer**: 3–27x faster roundtrip serialization than Spark's ExpressionEncoder
+- **InlineRowSerializer**: compile-time-specialized row serialization with no runtime reflection
 - **Dual Serialization Formats**: JSON and Protobuf artifact formats with PCAT binary container
 - **Spark Execution Bridge**: `SparkQueryRunner.execute(bytes, spark)` — pre-optimized plans run as DataFrames
 - **Arrow Integration**: Compile-time specialized Arrow columnar format writes
@@ -123,17 +123,18 @@ See [DSL Reference](docs/compiler/DSL_REFERENCE.md) for the complete API.
 
 ## Performance Highlights
 
-Benchmarked against Spark 4.0's ExpressionEncoder (JDK 21, Apple Silicon):
+Measured against Spark 4.1.2 (JDK 21, Apple Silicon). See
+[REPORT.md](docs/scala3-encoder/REPORT.md) §9–§10 for methodology and caveats:
 
-| Operation | Spark | ProtoCatalyst | Speedup |
-|-----------|-------|---------------|---------|
-| Roundtrip Simple | 158 ns | 5.9 ns | **27x** |
-| Roundtrip Person (nested) | 590 ns | 60 ns | **10x** |
-| Roundtrip Team (List[Person]) | 1,281 ns | 390 ns | **3.3x** |
-| Deserialize (all types) | - | - | **7–49x** |
-| Schema Derivation | 228–960 μs | **0** | **∞ (compile-time)** |
+- **Encoder derivation** — compile-time derivation is ~389× faster single-threaded than Spark's
+  reflective `ScalaReflection.encoderFor`, and eliminates the ~1 s per-JVM reflective cold-start that
+  short-lived drivers pay per run (§9).
+- **Per-row serializers** (byte-identical to Spark's output) — `UnsafeRowSerializer` is ~1.16× faster
+  (geomean, 12 microbenchmarks); the Arrow serializer is ~8% faster with ~43% less per-row allocation
+  (§10).
 
-See [benchmarks/README.md](benchmarks/README.md) for details.
+See [REPORT.md](docs/scala3-encoder/REPORT.md) for the precise, caveated numbers and
+[benchmarks/README.md](benchmarks/README.md) for how to run the suite.
 
 ## Modules
 
@@ -142,13 +143,18 @@ See [benchmarks/README.md](benchmarks/README.md) for details.
 | `proto` | Java | Protobuf schema definitions (`.proto` files, generated Java classes) |
 | `core` | 3 | Types, schema, IR, optimizer (48 rules), codec (JSON + Protobuf) |
 | `encoder` | 3 | Compile-time encoder derivation (ProtoEncoder, InlineRowSerializer) |
+| `encoder-spark` | 3 | ProtoEncoder → Spark `AgnosticEncoder` bridge (Spark 2.13 jars via `for3Use2_13`) |
 | `arrow` | 3 | Arrow columnar format integration |
 | `query` | 3 | Type-safe DSL (`quote { }`), compiled query artifacts |
 | `sql-parser` | 3 | Compile-time SQL parsing and AST transformation |
-| `mock-runtime` | 3 | Testing without Spark dependency |
+| `substrait` | 3 | Substrait IR conversion (Java bindings, protobuf-based) |
+| `executor` | 3 | Execution backend (ADBC core API) |
+| `ml-core` | 3 | ML core types and operators |
+| `ml-query` | 3 | ML query DSL |
+| `benchmarks` | 3 | JMH benchmarks (Scala 3 side) |
+| `benchmark-spark` | 2.13 | Spark comparison benchmarks + parity-golden generator |
 | `spark-catalyst` | 2.13 | Spark integration — plan decoders, SparkQueryRunner, parity tests |
-| `benchmarks` | 3 | JMH benchmarks (Scala 3) |
-| `benchmark-spark` | 2.13 | Spark comparison benchmarks |
+| `spark-reflection-patch` | 2.13 | 2-line patched `ScalaReflection` (execution-wall demonstrator, REPORT §3) |
 
 ## Project Stats
 
