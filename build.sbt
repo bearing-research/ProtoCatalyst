@@ -120,11 +120,11 @@ lazy val executor = project
     commonSettings,
     libraryDependencies ++= Seq(
       // ADBC Core API
-      "org.apache.arrow.adbc" % "adbc-core" % "0.15.0",
+      "org.apache.arrow.adbc" % "adbc-core" % "0.23.0",
       // ADBC Driver Manager
-      "org.apache.arrow.adbc" % "adbc-driver-manager" % "0.15.0",
+      "org.apache.arrow.adbc" % "adbc-driver-manager" % "0.23.0",
       // ADBC Flight SQL Driver (connects to DataFusion Flight SQL server)
-      "org.apache.arrow.adbc" % "adbc-driver-flight-sql" % "0.15.0"
+      "org.apache.arrow.adbc" % "adbc-driver-flight-sql" % "0.23.0"
     ),
     Test / javaOptions ++= Seq(
       "--add-opens=java.base/java.nio=ALL-UNNAMED",

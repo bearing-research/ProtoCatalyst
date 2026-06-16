@@ -1399,9 +1399,12 @@ dependencies = [
 name = "datafusion-server"
 version = "0.1.0"
 dependencies = [
+ "arrow-flight",
  "datafusion",
  "datafusion-flight-sql-server",
+ "futures",
  "tokio",
+ "tonic",
 ]
 
 [[package]]

@@ -46,8 +46,9 @@ class DataFusionBackendSuite extends munit.FunSuite:
       try
         val testBackend = new DataFusionBackend(FlightSqlConfig.localhost(), testAllocator)
         try
-          // Try executing a simple query
-          testBackend.executeSql("SELECT 1")
+          // Try executing a simple query (close the result Batch so testAllocator can close
+          // cleanly — otherwise a successful query leaks memory and the close below throws).
+          testBackend.executeSql("SELECT 1").close()
           true
         finally testBackend.close()
       finally testAllocator.close()
