@@ -39,8 +39,10 @@ object SqlGenerator:
     // ========== Unary operators ==========
     case ProtoLogicalPlan.Project(projectList, child) =>
       val selectList = projectList.map(ExprSqlGenerator.generate).mkString(", ")
-      val childSql = wrapAsSubquery(child)
-      s"SELECT $selectList FROM $childSql"
+      // A projection over the unit relation (one empty row, no columns) is a literal SELECT with
+      // no FROM — `SELECT 42`. `... FROM (VALUES ())` is both invalid and zero-row in DataFusion.
+      if isUnitRelation(child) then s"SELECT $selectList"
+      else s"SELECT $selectList FROM ${wrapAsSubquery(child)}"
 
     case ProtoLogicalPlan.Filter(condition, child) =>
       val whereSql = ExprSqlGenerator.generate(condition)
@@ -171,9 +173,23 @@ object SqlGenerator:
       name
     case ProtoLogicalPlan.SubqueryAlias(alias, _) =>
       generateInternal(plan) // Already has alias
+    case ProtoLogicalPlan.Values(_, schema) if schema.fields.nonEmpty =>
+      // `(VALUES ...)` columns are named column1, column2, … by DataFusion; alias them to the
+      // schema's names so downstream references (e.g. `WHERE id > 1`) resolve.
+      val alias = s"__subquery_$subqueryCounter"
+      subqueryCounter += 1
+      val cols = schema.fields.map(_.name).mkString(", ")
+      s"(${generateInternal(plan)}) AS $alias($cols)"
     case _ =>
       val alias = s"__subquery_$subqueryCounter"
       subqueryCounter += 1
       s"(${generateInternal(plan)}) AS $alias"
+
+  /** The unit relation: a single empty row with no columns (`Values` of one empty tuple, or no
+    * rows, with an empty schema). A projection over it is a `SELECT` with no `FROM`. */
+  private def isUnitRelation(plan: ProtoLogicalPlan): Boolean = plan match
+    case ProtoLogicalPlan.Values(rows, schema) =>
+      schema.fields.isEmpty && (rows.isEmpty || rows.forall(_.isEmpty))
+    case _ => false
 
 end SqlGenerator

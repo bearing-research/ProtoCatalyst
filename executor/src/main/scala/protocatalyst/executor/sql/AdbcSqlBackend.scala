@@ -6,7 +6,7 @@ import scala.util.Using
 
 import org.apache.arrow.adbc.core.*
 import org.apache.arrow.memory.BufferAllocator
-import org.apache.arrow.vector.VectorSchemaRoot
+import org.apache.arrow.vector.{NullVector, VectorSchemaRoot}
 import org.apache.arrow.vector.ipc.ArrowReader
 
 import protocatalyst.arrow.ArrowSchemaConverter
@@ -100,24 +100,29 @@ abstract class AdbcSqlBackend(
       case e: Exception =>
         System.err.println(s"Warning: Error closing ${getClass.getSimpleName}: ${e.getMessage}")
 
-  /** Materialize the first result batch into a [[Batch]] owned by this backend's allocator.
+  /** Materialize *all* result batches into a single [[Batch]] owned by this backend's allocator.
     *
-    * (Current limitation, carried over from the original implementation: only the first Arrow batch
-    * is read. Streaming/concatenation across batches is a future enhancement.)
+    * The ADBC/Flight reader reuses one `VectorSchemaRoot` per `loadNextBatch()`, so each batch is
+    * copied into the accumulating target before the next load overwrites it. `NullVector` columns
+    * (e.g. `SELECT NULL`) carry no data, so only the row count is advanced for them — `copyFromSafe`
+    * is unsupported on `NullVector`.
     */
   private def readAllBatches(reader: ArrowReader): Batch =
-    val schema = ArrowSchemaConverter.fromArrowSchema(reader.getVectorSchemaRoot.getSchema)
-    if reader.loadNextBatch() then
-      val sourceRoot = reader.getVectorSchemaRoot
-      val newRoot = VectorSchemaRoot.create(sourceRoot.getSchema, allocator)
-      newRoot.allocateNew()
-      newRoot.setRowCount(sourceRoot.getRowCount)
+    val sourceRoot = reader.getVectorSchemaRoot
+    val schema = ArrowSchemaConverter.fromArrowSchema(sourceRoot.getSchema)
+    val target = VectorSchemaRoot.create(sourceRoot.getSchema, allocator)
+    target.allocateNew()
+    var total = 0
+    while reader.loadNextBatch() do
+      val n = sourceRoot.getRowCount
       for i <- 0 until sourceRoot.getFieldVectors.size do
-        val sourceVec = sourceRoot.getVector(i)
-        val targetVec = newRoot.getVector(i)
-        for row <- 0 until sourceRoot.getRowCount do targetVec.copyFromSafe(row, row, sourceVec)
-      Batch.fromRoot(newRoot, schema)
-    else
-      Batch.empty(schema, allocator)
+        sourceRoot.getVector(i) match
+          case _: NullVector => () // no data buffer; row count handled by setRowCount below
+          case sourceVec =>
+            val targetVec = target.getVector(i)
+            for row <- 0 until n do targetVec.copyFromSafe(row, total + row, sourceVec)
+      total += n
+    target.setRowCount(total)
+    Batch.fromRoot(target, schema)
 
 end AdbcSqlBackend
