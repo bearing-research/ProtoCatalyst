@@ -25,5 +25,9 @@ tools/tpch-dbgen/
 # Benchmark results — generated artifacts, not committed.
 results/
 
+# Python (helper scripts under scripts/)
+__pycache__/
+*.pyc
+
 # macOS
 .DS_Store
