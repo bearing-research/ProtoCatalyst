@@ -465,19 +465,12 @@ object AstToProtoTransform:
           // Star expands to columns, not aggregates
           Right(Vector.empty[ProtoExpr])
         case expr =>
-          extractAggregates(expr, ctx).map { aggs =>
-            // If the expression contains aggregates, include them
-            // Otherwise, treat the whole expression as a grouping/result expression
-            if aggs.nonEmpty then aggs
-            else
-              transformExpr(expr, ctx)
-                .map { e =>
-                  proj.alias match
-                    case Some(name) => Vector(ProtoExpr.Alias(e, name))
-                    case None       => Vector(e)
-                }
-                .getOrElse(Vector.empty)
-          }
+          // `Aggregate.aggregateExprs` holds aggregate functions ONLY: both consumers add the
+          // grouping keys separately (`SqlGenerator` prepends `groupingExprs`; the executor's
+          // `AggregateOp` emits a group column per `groupingExpr`). A non-aggregate projection in a
+          // grouped query is therefore a grouping key already present in `groupingExprs` — drop it
+          // here so it isn't double-emitted (transpiler) or mistaken for an aggregate (executor).
+          extractAggregates(expr, ctx).map(aggs => if aggs.nonEmpty then aggs else Vector.empty)
     }
 
     // Sequence the results
@@ -543,6 +536,11 @@ object AstToProtoTransform:
           case None => branchAggs
       case SqlExpr.Cast(expr, _) =>
         extractAggregates(expr, ctx)
+      case g: SqlExpr.Grouping =>
+        // GROUPING(...) is evaluated per group (it reports whether a column was rolled up), so it
+        // belongs in `aggregateExprs` alongside the aggregate functions — not treated as a plain
+        // grouping/passthrough column (which would now be dropped).
+        transformExpr(g, ctx).map(Vector(_))
       case _ =>
         Right(Vector.empty)
 

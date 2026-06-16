@@ -83,6 +83,15 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       |WHERE discount BETWEEN 0.05 AND 0.07
       |  AND quantity < 24""".stripMargin
 
+  // A TPC-H Q1-style *grouped* aggregate: GROUP BY two keys, multiple aggregates per group. Exercises
+  // the grouped-aggregate path (vs the global aggregate above) end-to-end on both backends. Uses
+  // COUNT(*) and SUM(quantity) — quantity is a narrow DECIMAL(15,2), so its grouped sum stays well
+  // within range (unlike Q6's extendedprice*discount product, which overflows DataFusion).
+  private val q1Grouped =
+    """SELECT returnflag, linestatus, COUNT(*) AS cnt, SUM(quantity) AS sum_qty
+      |FROM lineitem
+      |GROUP BY returnflag, linestatus""".stripMargin
+
   // The full TPC-H Q6 — adds the `DATE '…'` shipdate predicates the SQL parser doesn't yet support
   // (the remaining gap for full Q6). Kept here (ignored) as the goal.
   private val q6 =
@@ -196,6 +205,15 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     val plan = compile(q6, "lineitem", lineitemSchema)
     val rows = runLocal(plan)
     assertEquals(rows, 1L)
+
+  test("Q1 grouped aggregate (GROUP BY 2 keys, 2 aggregates) — Local and DataFusion agree"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    val plan = compile(q1Grouped, "lineitem", lineitemSchema)
+    val local = runLocal(plan)
+    assert(local > 1, s"expected several groups, got $local") // multiple (returnflag, linestatus) groups
+    runDataFusion(plan) match
+      case None     => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) => assertEquals(df, local) // same number of groups from the same compiled plan
 
   // A two-table join with qualified columns — TPC-H tables share column names (both nation and
   // region have `regionkey`), so this only resolves with a per-table schema catalog (gap #4).
