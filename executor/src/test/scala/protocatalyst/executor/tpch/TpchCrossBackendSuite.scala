@@ -42,9 +42,11 @@ import protocatalyst.sql.transform.AstToProtoTransform
   * `name` (the capstone exercises exactly this). Disambiguation needs an explicit table alias; an
   * *unaliased* join whose tables share a column name still resolves by bare suffix (first match).
   *
-  * One known Local/DataFusion divergence remains, engine-side (not a compiler issue): DataFusion's
-  * strict decimal arithmetic overflows on Q6's `SUM(extendedprice * discount)` over the wide-decimal
-  * columns, so full Q6 is asserted on Local only.
+  * The one remaining numeric divergence is engine-side, not a compiler issue: DataFusion's strict
+  * decimal arithmetic overflows on Q6's `SUM(extendedprice * discount)` over the wide-decimal columns
+  * (Local's arbitrary-precision BigDecimal does not). Computing the revenue in floating point
+  * (`CAST(… AS DOUBLE)`) sidesteps it, so the double-cast Q6 runs and agrees across both backends; the
+  * exact-decimal form is still asserted on Local only.
   */
 class TpchCrossBackendSuite extends munit.FunSuite:
 
@@ -104,10 +106,23 @@ class TpchCrossBackendSuite extends munit.FunSuite:
   // order — lets us compare the actual result *values* row-for-row, not just the group count.
   private val q1GroupedSorted = q1Grouped + "\nORDER BY returnflag, linestatus"
 
-  // The full TPC-H Q6 — adds the `DATE '…'` shipdate predicates the SQL parser doesn't yet support
-  // (the remaining gap for full Q6). Kept here (ignored) as the goal.
+  // The full TPC-H Q6, with the `DATE '…'` shipdate predicates. Its `SUM(extendedprice * discount)`
+  // overflows DataFusion: both columns are wide DECIMAL(38,18), so the product exceeds the max
+  // decimal precision under DataFusion's strict arithmetic (Local's BigDecimal is arbitrary-precision
+  // and doesn't). Asserted on Local only.
   private val q6 =
     """SELECT SUM(extendedprice * discount) AS revenue
+      |FROM lineitem
+      |WHERE shipdate >= DATE '1994-01-01'
+      |  AND shipdate < DATE '1995-01-01'
+      |  AND discount BETWEEN 0.05 AND 0.07
+      |  AND quantity < 24""".stripMargin
+
+  // Full Q6 computed in floating point: casting the operands to DOUBLE sidesteps DataFusion's decimal
+  // overflow, so the revenue aggregate runs and agrees across *both* backends (Local's SUM already
+  // accumulates in double).
+  private val q6Double =
+    """SELECT SUM(CAST(extendedprice AS DOUBLE) * CAST(discount AS DOUBLE)) AS revenue
       |FROM lineitem
       |WHERE shipdate >= DATE '1994-01-01'
       |  AND shipdate < DATE '1995-01-01'
@@ -274,6 +289,19 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     val plan = compile(q6, "lineitem", lineitemSchema)
     val rows = runLocal(plan)
     assertEquals(rows, 1L)
+
+  test("Q6 full revenue (double-cast) — Local and DataFusion agree row-for-row"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    // Casting to DOUBLE avoids DataFusion's decimal overflow, so the full revenue aggregate now runs
+    // and agrees across both backends — closing the last Local-only divergence for Q6.
+    val plan = compile(q6Double, "lineitem", lineitemSchema)
+    val local = runLocalRows(plan)
+    assertEquals(local.size, 1)
+    assert(local.head.head.asInstanceOf[Double] > 0.0, s"expected positive revenue, got ${local.head}")
+    runDataFusionRows(plan) match
+      case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) =>
+        assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
 
   test("Q1 grouped aggregate (GROUP BY 2 keys, 2 aggregates) — Local and DataFusion agree"):
     assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
