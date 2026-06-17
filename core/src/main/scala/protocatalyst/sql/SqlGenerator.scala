@@ -42,62 +42,37 @@ object SqlGenerator:
       // A projection over the unit relation (one empty row, no columns) is a literal SELECT with
       // no FROM — `SELECT 42`. `... FROM (VALUES ())` is both invalid and zero-row in DataFusion.
       if isUnitRelation(child) then s"SELECT $selectList"
-      else s"SELECT $selectList FROM ${wrapAsSubquery(child)}"
+      else s"SELECT $selectList FROM ${renderFromSource(child)}"
 
     case ProtoLogicalPlan.Filter(condition, child) =>
       val whereSql = ExprSqlGenerator.generate(condition)
-      val childSql = wrapAsSubquery(child)
-      s"SELECT * FROM $childSql WHERE $whereSql"
+      s"SELECT * FROM ${renderFromSource(child)} WHERE $whereSql"
 
-    case ProtoLogicalPlan.Aggregate(groupingExprs, aggregateExprs, child) =>
-      val selectExprs = (groupingExprs ++ aggregateExprs).map(ExprSqlGenerator.generate)
-      val selectList = selectExprs.mkString(", ")
-      val childSql = wrapAsSubquery(child)
-      // A global aggregate (empty grouping, e.g. `SELECT SUM(x) ...`) has no GROUP BY clause —
-      // emitting a trailing `GROUP BY` with no keys is a syntax error.
-      if groupingExprs.isEmpty then s"SELECT $selectList FROM $childSql"
-      else
-        val groupByList = groupingExprs.map(ExprSqlGenerator.generate).mkString(", ")
-        s"SELECT $selectList FROM $childSql GROUP BY $groupByList"
+    case agg: ProtoLogicalPlan.Aggregate =>
+      generateAggregate(agg)
 
     case ProtoLogicalPlan.Sort(order, child) =>
       val orderByList = order.map(ExprSqlGenerator.generateSortOrder).mkString(", ")
-      val childSql = wrapAsSubquery(child)
-      s"SELECT * FROM $childSql ORDER BY $orderByList"
+      // Merge ORDER BY into an aggregate/projection child rather than wrapping it in a subquery: a
+      // subquery boundary flattens away table qualifiers (`n.name` → `name`), so an `ORDER BY n.name`
+      // over `(SELECT n.name ...) AS __subquery` would fail to resolve. Emitting a single
+      // `... GROUP BY n.name ORDER BY n.name` keeps the qualifying relation in scope.
+      child match
+        case agg: ProtoLogicalPlan.Aggregate => s"${generateAggregate(agg)} ORDER BY $orderByList"
+        case _ => s"SELECT * FROM ${renderFromSource(child)} ORDER BY $orderByList"
 
     case ProtoLogicalPlan.Limit(limit, child) =>
-      val childSql = wrapAsSubquery(child)
-      s"SELECT * FROM $childSql LIMIT $limit"
+      s"SELECT * FROM ${renderFromSource(child)} LIMIT $limit"
 
     case ProtoLogicalPlan.Distinct(child) =>
-      val childSql = wrapAsSubquery(child)
-      s"SELECT DISTINCT * FROM $childSql"
+      s"SELECT DISTINCT * FROM ${renderFromSource(child)}"
 
     case ProtoLogicalPlan.SubqueryAlias(alias, child) =>
       s"(${generateInternal(child)}) AS $alias"
 
     // ========== Binary operators ==========
-    case ProtoLogicalPlan.Join(left, right, joinType, condition) =>
-      val leftSql = wrapAsSubquery(left)
-      val rightSql = wrapAsSubquery(right)
-      val joinTypeStr = joinType match
-        case JoinType.Inner      => "INNER JOIN"
-        case JoinType.LeftOuter  => "LEFT OUTER JOIN"
-        case JoinType.RightOuter => "RIGHT OUTER JOIN"
-        case JoinType.FullOuter  => "FULL OUTER JOIN"
-        case JoinType.LeftSemi   => "LEFT SEMI JOIN"
-        case JoinType.LeftAnti   => "LEFT ANTI JOIN"
-        case JoinType.Cross      => "CROSS JOIN"
-
-      condition match
-        case Some(cond) if joinType != JoinType.Cross =>
-          val condSql = ExprSqlGenerator.generate(cond)
-          s"SELECT * FROM $leftSql $joinTypeStr $rightSql ON $condSql"
-        case None if joinType == JoinType.Cross =>
-          s"SELECT * FROM $leftSql $joinTypeStr $rightSql"
-        case _ =>
-          // Cross join with condition, or join without condition (unusual but handle it)
-          s"SELECT * FROM $leftSql $joinTypeStr $rightSql"
+    case join: ProtoLogicalPlan.Join =>
+      s"SELECT * FROM ${renderJoin(join)}"
 
     // ========== Set operations ==========
     case ProtoLogicalPlan.Union(children, byName, allowMissingColumns) =>
@@ -188,6 +163,46 @@ object SqlGenerator:
       val alias = s"__subquery_$subqueryCounter"
       subqueryCounter += 1
       s"(${generateInternal(plan)}) AS $alias"
+
+  /** Render a plan as a FROM-clause source. Joins are inlined (`a JOIN b ON …`) rather than wrapped
+    * in a subquery, so the joined relations' aliases stay in scope for the parent's SELECT / WHERE /
+    * GROUP BY / ORDER BY. Everything else falls back to `wrapAsSubquery`. */
+  private def renderFromSource(plan: ProtoLogicalPlan): String = plan match
+    case join: ProtoLogicalPlan.Join => renderJoin(join)
+    case _                           => wrapAsSubquery(plan)
+
+  /** Render a join as a FROM-clause fragment (no leading `SELECT * FROM`), inlining nested joins. */
+  private def renderJoin(join: ProtoLogicalPlan.Join): String =
+    val leftSql = renderFromSource(join.left)
+    val rightSql = renderFromSource(join.right)
+    val kw = join.joinType match
+      case JoinType.Inner      => "INNER JOIN"
+      case JoinType.LeftOuter  => "LEFT OUTER JOIN"
+      case JoinType.RightOuter => "RIGHT OUTER JOIN"
+      case JoinType.FullOuter  => "FULL OUTER JOIN"
+      case JoinType.LeftSemi   => "LEFT SEMI JOIN"
+      case JoinType.LeftAnti   => "LEFT ANTI JOIN"
+      case JoinType.Cross      => "CROSS JOIN"
+    join.condition match
+      case Some(cond) if join.joinType != JoinType.Cross =>
+        s"$leftSql $kw $rightSql ON ${ExprSqlGenerator.generate(cond)}"
+      case _ =>
+        // Cross join (no ON), or the unusual cases of a cross join with a condition / a non-cross
+        // join without one — emit without an ON clause.
+        s"$leftSql $kw $rightSql"
+
+  /** Render an `Aggregate` node (shared by the top-level case and `Sort`-over-`Aggregate`, which
+    * appends an ORDER BY). `aggregateExprs` holds the aggregate functions; the grouping keys are
+    * prepended to the SELECT and emitted as the GROUP BY. */
+  private def generateAggregate(agg: ProtoLogicalPlan.Aggregate): String =
+    val selectList = (agg.groupingExprs ++ agg.aggregateExprs).map(ExprSqlGenerator.generate).mkString(", ")
+    val fromSql = renderFromSource(agg.child)
+    // A global aggregate (empty grouping, e.g. `SELECT SUM(x) …`) has no GROUP BY clause — emitting
+    // a trailing `GROUP BY` with no keys is a syntax error.
+    if agg.groupingExprs.isEmpty then s"SELECT $selectList FROM $fromSql"
+    else
+      val groupByList = agg.groupingExprs.map(ExprSqlGenerator.generate).mkString(", ")
+      s"SELECT $selectList FROM $fromSql GROUP BY $groupByList"
 
   /** The unit relation: a single empty row with no columns (`Values` of one empty tuple, or no
     * rows, with an empty schema). A projection over it is a `SELECT` with no `FROM`. */

@@ -26,17 +26,28 @@ import protocatalyst.sql.transform.AstToProtoTransform
   * restricts redistribution; regenerate via `scripts/gen-tpch.sh`). Tests skip when it's absent. The
   * DataFusion comparison additionally needs `tools/datafusion-server` running; it skips otherwise.
   *
-  * Status: project+filter, global aggregate, and a two-table join all run and *agree* across Local
-  * and DataFusion. The server is started with the TPC-H data dir so it pre-registers the tables —
+  * Status: project+filter, global aggregate, grouped aggregate (+ORDER BY, row-for-row), a two-table
+  * join, and a join⋈group-by⋈order-by capstone all run and *agree* across Local and DataFusion. The
+  * server is started with the TPC-H data dir so it pre-registers the tables —
   * `cargo run -- <repo>/data/tpch/sf-0.01-parquet` (datafusion-flight-sql-server has no DDL, so
   * tables can't be created over the wire).
   *
   * All four original coverage gaps are now closed: (1) `DATE '…'` typed literals in the parser;
   * (2) global aggregate (`SUM`/`COUNT(*)` with no `GROUP BY`) in the executor; (3) server-side table
   * pre-registration (no DDL over the wire); (4) per-table schema catalog in `AstToProtoTransform` for
-  * multi-table joins. The only remaining Local/DataFusion divergence is a data-precision artifact:
-  * DataFusion's strict decimal arithmetic overflows on Q6's `SUM(extendedprice * discount)` over the
-  * wide-decimal columns, so full Q6 is asserted on Local only.
+  * multi-table joins.
+  *
+  * Two known Local/DataFusion divergences remain, both engine-side (not compiler) and out of scope
+  * for this harness:
+  *   - Decimal precision: DataFusion's strict decimal arithmetic overflows on Q6's
+  *     `SUM(extendedprice * discount)` over the wide-decimal columns, so full Q6 is asserted on Local
+  *     only.
+  *   - Qualified columns across a join: the Local executor's join output carries bare column names,
+  *     so a reference like `n.name` can't be disambiguated from another table's `name` (it matches
+  *     the first by bare name — `ExprEvaluator.resolveColumn`). DataFusion resolves it correctly.
+  *     The capstone therefore groups/aggregates on columns unique across its two tables; a query that
+  *     relies on qualifier disambiguation between same-named join columns is not yet supported on the
+  *     Local backend (would need `JoinOp` to tag output columns with their source qualifier).
   */
 class TpchCrossBackendSuite extends munit.FunSuite:
 
@@ -297,5 +308,27 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     runDataFusion(plan) match
       case None     => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
       case Some(df) => assertEquals(df, local)
+
+  // Capstone: a single query that composes every cross-backend capability — a two-table join feeding
+  // a grouped aggregate (two aggregates) with ORDER BY — checked row-for-row. Groups orders by the
+  // customer's market segment; SUM(totalprice) is a narrow DECIMAL(15,2), so its grouped sum stays
+  // in range. The grouping/aggregate columns are chosen to be unique across the two tables
+  // (`mktsegment` from customer, `totalprice` from orders) — see the note below on the Local
+  // executor's handling of same-named columns across a join.
+  test("Join ⋈ GROUP BY ⋈ ORDER BY (orders/customer) — Local and DataFusion agree row-for-row"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    val plan = compileMulti(
+      """SELECT c.mktsegment, COUNT(*) AS cnt, SUM(o.totalprice) AS revenue
+        |FROM orders o JOIN customer c ON o.custkey = c.custkey
+        |GROUP BY c.mktsegment
+        |ORDER BY c.mktsegment""".stripMargin,
+      catalogOf("orders", "customer")
+    )
+    val local = runLocalRows(plan, Seq("orders", "customer"))
+    assert(local.size > 1, s"expected several market segments, got ${local.size}")
+    runDataFusionRows(plan) match
+      case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) =>
+        assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
 
 end TpchCrossBackendSuite
