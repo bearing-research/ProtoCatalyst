@@ -327,4 +327,26 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       case Some(df) =>
         assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
 
+  // A three-table chained join, maximally stressing per-table qualification: `name` collides across
+  // all three tables (region/nation/customer), `regionkey` across region+nation, `nationkey` across
+  // nation+customer. Grouping by `r.name` (region) only resolves if every join level qualifies
+  // correctly. Counts customers per region.
+  test("Join³ (region ⋈ nation ⋈ customer) GROUP BY region — Local and DataFusion agree row-for-row"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    val plan = compileMulti(
+      """SELECT r.name, COUNT(*) AS cnt
+        |FROM region r
+        |JOIN nation n ON r.regionkey = n.regionkey
+        |JOIN customer c ON n.nationkey = c.nationkey
+        |GROUP BY r.name
+        |ORDER BY r.name""".stripMargin,
+      catalogOf("region", "nation", "customer")
+    )
+    val local = runLocalRows(plan, Seq("region", "nation", "customer"))
+    assert(local.size > 1, s"expected several regions, got ${local.size}")
+    runDataFusionRows(plan) match
+      case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) =>
+        assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
+
 end TpchCrossBackendSuite
