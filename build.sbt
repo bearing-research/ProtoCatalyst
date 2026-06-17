@@ -334,6 +334,29 @@ lazy val sparkCatalyst = project
     Test / fork := true
   )
 
+// Truffle execution backend (Java) — exploratory AOT-clean executor.
+// See docs/compiler/TRUFFLE_EXPLORATION.md. Java-only on purpose: the Truffle DSL is a Java
+// annotation processor (@Specialization → generated *NodeGen classes) and cannot be hosted from
+// Scala (§2 of the plan). The ProtoPhysicalPlan→AST builder + harness integration will stay Scala
+// and call into this module's generated Java nodes. Deliberately NOT in the root aggregate while it
+// is a Phase-0 skeleton, so `sbt compile`/`sbt test` for the rest of the build are unaffected.
+lazy val truffleExec = project
+  .in(file("truffle-exec"))
+  .settings(
+    name := "protocatalyst-truffle-exec",
+    crossPaths := false,
+    autoScalaLibrary := false,
+    libraryDependencies ++= Seq(
+      "org.graalvm.truffle" % "truffle-api" % "25.0.2",
+      // The DSL annotation processor — compile-time only; javac auto-discovers it on the classpath.
+      "org.graalvm.truffle" % "truffle-dsl-processor" % "25.0.2" % Provided,
+      // jargraal optimizing runtime as a library (Truffle "unchained"); on a non-GraalVM JDK this is
+      // what could enable partial evaluation. Runtime-scope so it doesn't leak onto the compile path.
+      "org.graalvm.truffle" % "truffle-runtime" % "25.0.2" % Runtime
+    ),
+    run / fork := true
+  )
+
 // Execution-wall demonstrator (Scala 2.13). A verbatim copy of Spark 4.1.2's
 // `org.apache.spark.sql.catalyst.ScalaReflection` with two lines changed (lazy `universe`;
 // `encodeFieldNameToIdentifier` via NameTransformer). Compiled here against spark-catalyst 4.1.2 +
