@@ -194,6 +194,11 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       }.toVector
     }.toVector
 
+  /** True if any `[key, total, matched]` row has total > matched — i.e. the outer join produced
+    * unmatched (null) rows, confirming the null path is genuinely exercised. */
+  private def hasUnmatched(rows: Vector[Vector[Any]]): Boolean =
+    rows.exists(r => (r(1), r(2)) match { case (t: Double, m: Double) => t > m; case _ => false })
+
   /** Row-for-row equality with a relative tolerance on numeric cells (Double-vs-Decimal rounding). */
   private def rowsAgree(a: Vector[Vector[Any]], b: Vector[Vector[Any]]): Boolean =
     a.size == b.size && a.zip(b).forall { (ra, rb) =>
@@ -344,6 +349,46 @@ class TpchCrossBackendSuite extends munit.FunSuite:
     )
     val local = runLocalRows(plan, Seq("region", "nation", "customer"))
     assert(local.size > 1, s"expected several regions, got ${local.size}")
+    runDataFusionRows(plan) match
+      case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) =>
+        assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
+
+  // LEFT OUTER join with unmatched rows (some customers place no orders), so the right side is NULL
+  // for those rows. `COUNT(*)` counts every row; `COUNT(o.orderkey)` counts only matched (non-null)
+  // ones — the two diverge exactly where the outer join produced nulls. Row-level agreement across
+  // backends validates that null/outer-join semantics match.
+  test("LEFT OUTER join (customer ⟕ orders) with nulls — Local and DataFusion agree row-for-row"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    val plan = compileMulti(
+      """SELECT c.mktsegment, COUNT(*) AS total, COUNT(o.orderkey) AS with_orders
+        |FROM customer c LEFT JOIN orders o ON c.custkey = o.custkey
+        |GROUP BY c.mktsegment
+        |ORDER BY c.mktsegment""".stripMargin,
+      catalogOf("customer", "orders")
+    )
+    val local = runLocalRows(plan, Seq("customer", "orders"))
+    assert(local.size > 1, s"expected several segments, got ${local.size}")
+    assert(hasUnmatched(local), s"expected some customers without orders (null path), got $local")
+    runDataFusionRows(plan) match
+      case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
+      case Some(df) =>
+        assert(rowsAgree(df, local), s"row-level mismatch:\n  local=$local\n  df=$df")
+
+  // RIGHT OUTER mirror: keep all customers on the right. Equivalent result to the LEFT case, but
+  // drives the right-outer code path (unmatched right rows emitted with a null left side).
+  test("RIGHT OUTER join (orders ⟖ customer) with nulls — Local and DataFusion agree row-for-row"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    val plan = compileMulti(
+      """SELECT c.mktsegment, COUNT(*) AS total, COUNT(o.orderkey) AS with_orders
+        |FROM orders o RIGHT JOIN customer c ON o.custkey = c.custkey
+        |GROUP BY c.mktsegment
+        |ORDER BY c.mktsegment""".stripMargin,
+      catalogOf("customer", "orders")
+    )
+    val local = runLocalRows(plan, Seq("customer", "orders"))
+    assert(local.size > 1, s"expected several segments, got ${local.size}")
+    assert(hasUnmatched(local), s"expected some customers without orders (null path), got $local")
     runDataFusionRows(plan) match
       case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
       case Some(df) =>
