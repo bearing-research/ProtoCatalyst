@@ -354,6 +354,10 @@ lazy val truffleExec = project
       // what could enable partial evaluation. Runtime-scope so it doesn't leak onto the compile path.
       "org.graalvm.truffle" % "truffle-runtime" % "25.0.2" % Runtime
     ),
+    // This module runs on GraalVM (not the build's homebrew openjdk@21) so the optimizing Truffle
+    // runtime + partial evaluation are available, and native-image is reachable later (Phase 4).
+    // Isolated to this module; the rest of the build stays on openjdk@21 via .sbtopts.
+    javaHome := Some(file("/Library/Java/JavaVirtualMachines/graalvm-21.jdk/Contents/Home")),
     run / fork := true
   )
 

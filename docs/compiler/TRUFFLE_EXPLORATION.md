@@ -158,7 +158,16 @@ expensive payoff) runs only if the perf number survives.
   only. The rest of the build stays on JDK 21 via `.sbtopts`; this module is isolated.
 - Wire the Truffle DSL annotation processor into the Java module's sbt config.
 - Prove a "hello node" **PE-compiles** (confirm Graal is actually optimizing it, e.g. via
-  `-Dgraal.TraceTruffleCompilation=true`). De-risk the boring infra before writing real nodes.
+  `-Dpolyglot.engine.TraceCompilation=true`). De-risk the boring infra before writing real nodes.
+
+> **Status: DONE.** Module `truffle-exec` (Java, out of the root aggregate) with `truffle-api` +
+> `truffle-dsl-processor` (25.0.2). Findings: (1) the DSL annotation processor runs inside our sbt
+> build — `AddNode @Specialization` → generated `AddNodeGen`, no special wiring needed. (2) **The
+> optimizing runtime requires a GraalVM JDK.** Stock homebrew openjdk@21 reports the `Interpreted`
+> runtime even with `truffle-runtime` + `truffle-compiler` on the classpath and `-XX:+EnableJVMCI`
+> (homebrew's OpenJDK lacks the JVMCI-compiler integration). On Oracle GraalVM 21 the runtime is
+> `Oracle GraalVM` and the hello-node compiles through Tier 1 + Tier 2 (PE confirmed). The module
+> pins `javaHome` to GraalVM 21; the rest of the build stays on openjdk@21.
 
 ### Phase 1 — Minimal vertical slice
 - Expression nodes for ~6 ops: `Literal`, `ColumnRef`, `Add`, `Multiply`, `LessThan`, `And`.
