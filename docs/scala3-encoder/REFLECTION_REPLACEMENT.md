@@ -161,6 +161,17 @@ and structural parity (D6) is thereby upgraded to *observed* behavioral parity f
 This is strong report material: it's a concrete, minimal proof that *stock Spark cannot run on
 Scala 3*, and it pinpoints the entire surface.
 
+**This patch is scaffolding, not an end-state deliverable.** It exists to run Scala 3 against Spark's
+stock **2.13** jars without forking. A Scala-3 Spark has no `scala.reflect.runtime.universe` on the
+classpath, so there is no eager `val universe` to make lazy and no `TermName` mangler to swap — that
+code simply isn't written. The end-state therefore *deletes* the reflective surface rather than
+patching it: `encoderFor` becomes the Mirror macro (M7), and the two non-derivation utilities relocate
+(`encodeFieldNameToIdentifier` → `NameTransformer`, pure string work; `findConstructor` → Java
+reflection), after which the `ScalaReflection` object can be removed. So the migration decouples the
+typed pipeline from **Scala runtime** reflection by deletion. That scope is exact: *Java* reflection
+and Janino runtime codegen stay on the execution path — removing those is the separate AOT track
+([`AOT_ROADMAP.md`](AOT_ROADMAP.md)), not part of this migration.
+
 ---
 
 ## 3. The key design decision (resolved — see §0, D1)

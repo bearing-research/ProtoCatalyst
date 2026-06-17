@@ -172,6 +172,12 @@ ser/deser and reproduces the input. Structural parity (§8) remains the broad or
 type surface; the end-to-end spec is the existence proof that identical structure does yield
 identical runtime behavior — and that the wall is a two-line change, not a rewrite.
 
+This patch is *transitional*: it exists only to run Scala 3 against Spark's stock **2.13** jars here.
+A Scala-3 Spark has no eager `val universe` to defer and no `TermName` mangler to swap — that code
+isn't written. So the migration does not "patch the wall"; the wall is an artifact of stock-2.13-jar
+execution, and the Scala-3 end-state simply *deletes* the reflective surface (see §12, *End-state vs.
+transitional*). The two lines measure how shallow the downstream coupling is, not a fix Spark must carry.
+
 ## §4. A global lock serializes encoder derivation
 
 Even on Scala 2.13, `encoderFor` is expensive in a way that is easy to miss. Its dispatch is a long
@@ -621,15 +627,31 @@ cannot represent (a data-carrying ADT, §7) — is today a **runtime** rejection
 ## §12. What this unlocks — and what it doesn't
 
 **Unlocks.** Spark can begin publishing Scala 3 artifacts for the typed API; the community can use
-Scala 3 language features (enums, opaque types, better inlining) in `Dataset` code; the global
-derivation lock and the per-JVM reflection cold-start go away; and a native-image **Spark Connect
-client** becomes viable (the client's encoding is closure-based and now reflection-free).
+Scala 3 language features (enums, opaque types, better inlining) in `Dataset` code; and the global
+derivation lock and the per-JVM reflection cold-start go away. It also clears the *first* of the
+**Spark Connect client**'s native-image blockers — the realistic near-term AOT target (≈6 client-side
+blockers in total, the remainder individually tractable; inventory in [`AOT_ROADMAP.md`](AOT_ROADMAP.md)).
+That is "moves within reach," not "done."
 
-**Does not unlock.** The encoder is one of ~15 AOT blockers in Spark 4.1; the structural one —
-Catalyst whole-stage codegen via Janino — is untouched by this work, so full Spark is not close to a
-native-image binary. Capturing the per-row *serializer* advantage inside Spark core would require replacing
-that codegen, a separate and much larger project. This report's claim is bounded: the *derivation* is
-the Scala-3 blocker, and replacing it is narrow in scope, faithful, and low-cost.
+**End-state vs. transitional.** The two-line de-reflected `ScalaReflection` (§3) is *transitional
+scaffolding*: it exists only to run Scala-3-derived encoders against Spark's stock **2.13** jars
+without forking. A Scala-3 Spark has no such object to patch — `scala.reflect.runtime.universe` is not
+on the classpath, so `encoderFor`'s reflective body is *replaced* by the macro, and its two
+non-derivation utilities relocate (`encodeFieldNameToIdentifier` is pure identifier mangling →
+`NameTransformer`; `findConstructor` is *Java* reflection) — the `ScalaReflection` object is then
+deleted. So the migration does not "patch Spark"; its end-state *removes* the object, fully decoupling
+the typed pipeline from **Scala runtime** reflection. The scope of that decoupling is exactly that
+much: *Java* reflection and Janino runtime codegen remain on the execution path.
+
+**Does not unlock.** Removing those — the path to a native-image binary — is a separate, much larger
+track. The encoder is one of ~15 native-image blockers in Spark 4.1 (`AOT_ROADMAP.md` §3); the
+structural one, Catalyst whole-stage codegen via Janino, is untouched here and has **no** drop-in
+workaround (interpreted-only is 3–10× slower; a compile-time-codegen rewrite is typed-query-only and
+hits a hard cliff on dynamic SQL; a Truffle re-expression is research-grade). So full-Spark
+native-image is **not** a near-term outcome of this work, and the report does not claim it. Likewise,
+capturing the per-row *serializer* advantage (§10) inside Spark core would require replacing that same
+codegen. This report's claim is bounded: the *derivation* is the Scala-3 blocker, and replacing it is
+narrow in scope, faithful, and low-cost — the AOT/native gains are downstream and separately scoped.
 
 ## §12b. Related work
 
