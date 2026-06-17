@@ -445,12 +445,34 @@ Python, Ruby, R, and LLVM bitcode as AOT-compiled native binaries.
   types are *already* statically known via Catalyst's schema —
   Truffle's specialization machinery might add overhead rather
   than buying you anything.
-- **Performance characterization is open.** Truffle hits ~1.5–3×
-  of hand-tuned JIT code on language-interpreter workloads.
-  Spark's WSCG is at the high end of what hand-tuned JIT
-  achieves. A Truffle-based Catalyst executor might land within
-  2–3× of current Spark, which could be a 2–3× regression for
-  CPU-bound queries — unacceptable for production analytics.
+- **Performance characterization is open — and the baseline is the
+  catch.** Truffle reaches ~1.5–3× of hand-tuned compiled code on
+  language-interpreter workloads. That number is a *fraction of a
+  ceiling*, and which way it cuts depends entirely on the baseline.
+  For Python/Ruby it is a huge **win**: the realistic alternative —
+  a naive tree-walking interpreter — is 10–100× slower, so Truffle
+  climbs most of the way up to the ceiling. Spark has the opposite
+  baseline: WSCG already *is* that ceiling (it emits fused Java the
+  JIT turns into near-hand-tuned machine code). So the same
+  "1.5–3× of hand-tuned" that is a triumph for Python reads as a
+  **1.5–3× regression** for Spark — you would be subtracting from a
+  fast baseline, not climbing toward it. Truffle is built to make
+  *slow* interpreters fast; Spark is not running a slow interpreter.
+  Two compounding reasons it would likely land *below* WSCG
+  specifically: **(a)** Truffle's headline mechanism is runtime
+  *self-specialization* on observed types, but Catalyst already
+  knows every column's type from the schema at plan time — so that
+  machinery mostly adds overhead here instead of paying off (the
+  bullet above); and **(b)** WSCG *fuses* operators into one loop
+  with no intermediate row materialization, whereas Truffle executes
+  an AST of nodes — Graal's partial evaluation flattens much of that
+  but is not guaranteed to recover the same fused-loop structure and
+  register allocation. **This is a risk, not a measurement:** nobody
+  has run Truffle on a columnar/big-data engine, so the figure is
+  extrapolated from interpreters; batch-shaped nodes might do
+  better. The uncertainty *over an already-high baseline* is what
+  makes it research-grade — you would adopt Truffle for AOT-safety,
+  and pay for it in (probable) throughput.
 - **Strategic coupling.** Truffle is Oracle-controlled (part of
   GraalVM). Spark adopting Truffle would tie a fundamental layer
   of the architecture to a single vendor's framework. The Apache
