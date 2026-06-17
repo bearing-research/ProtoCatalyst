@@ -383,7 +383,10 @@ class PhysicalPlanExecutorSuite extends munit.FunSuite:
     val result = executor.execute(physical)
     assertEquals(result.rowCount, 3)
     val rows = collect(result)
-    val aliceRows = rows.filter(_("name") == "Alice")
+    // The tables are scanned under aliases (`u`/`o`), so the raw join output qualifies its columns
+    // (`u.name`) — this is what lets a later `n.name`-style reference disambiguate same-named join
+    // columns. A projection on top would restore bare names (ProjectOp.extractName).
+    val aliceRows = rows.filter(_("u.name") == "Alice")
     assertEquals(aliceRows.size, 2)
 
   // ── Set operations: Intersect and Except ──

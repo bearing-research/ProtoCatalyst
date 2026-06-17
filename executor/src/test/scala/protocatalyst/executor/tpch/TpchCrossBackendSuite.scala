@@ -37,17 +37,14 @@ import protocatalyst.sql.transform.AstToProtoTransform
   * pre-registration (no DDL over the wire); (4) per-table schema catalog in `AstToProtoTransform` for
   * multi-table joins.
   *
-  * Two known Local/DataFusion divergences remain, both engine-side (not compiler) and out of scope
-  * for this harness:
-  *   - Decimal precision: DataFusion's strict decimal arithmetic overflows on Q6's
-  *     `SUM(extendedprice * discount)` over the wide-decimal columns, so full Q6 is asserted on Local
-  *     only.
-  *   - Qualified columns across a join: the Local executor's join output carries bare column names,
-  *     so a reference like `n.name` can't be disambiguated from another table's `name` (it matches
-  *     the first by bare name — `ExprEvaluator.resolveColumn`). DataFusion resolves it correctly.
-  *     The capstone therefore groups/aggregates on columns unique across its two tables; a query that
-  *     relies on qualifier disambiguation between same-named join columns is not yet supported on the
-  *     Local backend (would need `JoinOp` to tag output columns with their source qualifier).
+  * Qualified columns across a join now resolve on the Local backend: an aliased scan qualifies its
+  * columns (`c.*`/`n.*`), so `ExprEvaluator.resolveColumn` can disambiguate `n.name` from `customer`'s
+  * `name` (the capstone exercises exactly this). Disambiguation needs an explicit table alias; an
+  * *unaliased* join whose tables share a column name still resolves by bare suffix (first match).
+  *
+  * One known Local/DataFusion divergence remains, engine-side (not a compiler issue): DataFusion's
+  * strict decimal arithmetic overflows on Q6's `SUM(extendedprice * discount)` over the wide-decimal
+  * columns, so full Q6 is asserted on Local only.
   */
 class TpchCrossBackendSuite extends munit.FunSuite:
 
@@ -310,22 +307,21 @@ class TpchCrossBackendSuite extends munit.FunSuite:
       case Some(df) => assertEquals(df, local)
 
   // Capstone: a single query that composes every cross-backend capability — a two-table join feeding
-  // a grouped aggregate (two aggregates) with ORDER BY — checked row-for-row. Groups orders by the
-  // customer's market segment; SUM(totalprice) is a narrow DECIMAL(15,2), so its grouped sum stays
-  // in range. The grouping/aggregate columns are chosen to be unique across the two tables
-  // (`mktsegment` from customer, `totalprice` from orders) — see the note below on the Local
-  // executor's handling of same-named columns across a join.
-  test("Join ⋈ GROUP BY ⋈ ORDER BY (orders/customer) — Local and DataFusion agree row-for-row"):
+  // a grouped aggregate (two aggregates) with ORDER BY — checked row-for-row. Crucially it groups by
+  // `n.name` while `customer` *also* has a `name` column: this only resolves because aliased scans
+  // qualify their columns (`c.*`/`n.*`), so the Local executor can disambiguate `n.name` from
+  // `c.name`. SUM(c.acctbal) is a narrow DECIMAL(15,2), so its grouped sum stays in range.
+  test("Join ⋈ GROUP BY ⋈ ORDER BY (customer/nation, ambiguous name) — Local and DataFusion agree"):
     assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
     val plan = compileMulti(
-      """SELECT c.mktsegment, COUNT(*) AS cnt, SUM(o.totalprice) AS revenue
-        |FROM orders o JOIN customer c ON o.custkey = c.custkey
-        |GROUP BY c.mktsegment
-        |ORDER BY c.mktsegment""".stripMargin,
-      catalogOf("orders", "customer")
+      """SELECT n.name, COUNT(*) AS cnt, SUM(c.acctbal) AS total_bal
+        |FROM customer c JOIN nation n ON c.nationkey = n.nationkey
+        |GROUP BY n.name
+        |ORDER BY n.name""".stripMargin,
+      catalogOf("customer", "nation")
     )
-    val local = runLocalRows(plan, Seq("orders", "customer"))
-    assert(local.size > 1, s"expected several market segments, got ${local.size}")
+    val local = runLocalRows(plan, Seq("customer", "nation"))
+    assert(local.size > 1, s"expected several nations, got ${local.size}")
     runDataFusionRows(plan) match
       case None => assume(false, "DataFusion comparison unavailable (server down, or no DDL/table registration)")
       case Some(df) =>

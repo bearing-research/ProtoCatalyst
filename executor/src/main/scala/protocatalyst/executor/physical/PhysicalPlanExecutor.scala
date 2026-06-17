@@ -10,6 +10,7 @@ import protocatalyst.executor.Catalog
 import protocatalyst.executor.exec._
 import protocatalyst.executor.exec.operators._
 import protocatalyst.plan._
+import protocatalyst.schema.ProtoSchema
 
 /** Executes ProtoPhysicalPlan trees against in-memory Arrow batches.
   *
@@ -37,13 +38,21 @@ class PhysicalPlanExecutor(
 
   def execute(plan: ProtoPhysicalPlan): Batch = plan match
     // ── Leaf nodes ──
-    case ProtoPhysicalPlan.TableScan(name, _, _, _) =>
-      cteContext.getOrElse(
+    case ProtoPhysicalPlan.TableScan(name, alias, _, _) =>
+      val base = cteContext.getOrElse(
         name,
         catalog
           .getTable(name)
           .getOrElse(throw ExecutionException(s"Table not found: $name"))
       )
+      // When the table is scanned under an explicit alias, qualify its columns (`c.col`) so that
+      // downstream references can disambiguate same-named columns across a join — e.g. `n.name` vs
+      // another table's `name`. Column lookup (ExprEvaluator.resolveColumn) matches a bare reference
+      // against the unqualified suffix, so unqualified references still resolve. Unaliased scans keep
+      // their bare names (the common single-table case, and what most callers expect).
+      alias match
+        case Some(a) => qualifyFields(base, a)
+        case None    => base
 
     case ProtoPhysicalPlan.PhysicalValues(rows, schema) =>
       Batch.fromValues(rows, schema, allocator)
@@ -220,3 +229,12 @@ class PhysicalPlanExecutor(
 
       root.setRowCount(indices.size)
       Batch.fromRoot(root, batch.schema)
+
+  /** Return a view of `batch` whose schema field names are prefixed with `qualifier.` (unless already
+    * qualified). Shares the underlying Arrow root — column access is by ordinal, so only the
+    * `ProtoSchema` names change. Lets `resolveColumn` disambiguate same-named columns after a join. */
+  private def qualifyFields(batch: Batch, qualifier: String): Batch =
+    val qualified = ProtoSchema(batch.schema.fields.map { f =>
+      if f.name.contains('.') then f else f.copy(name = s"$qualifier.${f.name}")
+    })
+    Batch.fromRoot(batch.root, qualified)

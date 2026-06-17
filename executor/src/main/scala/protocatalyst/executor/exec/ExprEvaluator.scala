@@ -257,19 +257,30 @@ class ExprEvaluator(allocator: BufferAllocator):
   // ============================================================
 
   private def resolveColumn(name: String, qualifier: Option[String], batch: Batch): FieldVector =
-    qualifier match
+    val fields = batch.schema.fields
+    // The unqualified suffix of a (possibly `qualifier.col`) field name.
+    def suffix(fieldName: String): String =
+      val i = fieldName.lastIndexOf('.')
+      if i >= 0 then fieldName.substring(i + 1) else fieldName
+
+    val idx = qualifier match
       case Some(q) =>
-        // Try qualified name first: "qualifier.name"
-        val qualifiedName = s"$q.$name"
-        val idx = batch.schema.fields.indexWhere(f =>
-          f.name.equalsIgnoreCase(qualifiedName) || f.name.equalsIgnoreCase(name)
-        )
-        if idx < 0 then throw ExecutionException(s"Column not found: $qualifiedName")
-        batch.root.getVector(idx)
+        // Prefer an exact `qualifier.name` match (this is what lets a join's same-named columns be
+        // disambiguated, since scans qualify their fields). Fall back to a bare/suffix match for
+        // batches whose fields aren't qualified (e.g. an aggregate's bare output columns).
+        val exact = fields.indexWhere(_.name.equalsIgnoreCase(s"$q.$name"))
+        if exact >= 0 then exact
+        else fields.indexWhere(f => f.name.equalsIgnoreCase(name) || suffix(f.name).equalsIgnoreCase(name))
       case None =>
-        val idx = batch.schema.fields.indexWhere(_.name.equalsIgnoreCase(name))
-        if idx < 0 then throw ExecutionException(s"Column not found: $name")
-        batch.root.getVector(idx)
+        // Prefer an exact bare match, else match on the unqualified suffix (so a column referenced
+        // without its table qualifier still resolves against a qualified scan field).
+        val exact = fields.indexWhere(_.name.equalsIgnoreCase(name))
+        if exact >= 0 then exact
+        else fields.indexWhere(f => suffix(f.name).equalsIgnoreCase(name))
+
+    if idx < 0 then
+      throw ExecutionException(s"Column not found: ${qualifier.map(_ + ".").getOrElse("")}$name")
+    batch.root.getVector(idx)
 
   // ============================================================
   // Literal materialization
