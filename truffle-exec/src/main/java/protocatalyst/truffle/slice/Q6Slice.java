@@ -26,12 +26,14 @@ public final class Q6Slice {
 
         CallTarget rowTarget = Q6SliceAst.rowAst().getCallTarget();
         CallTarget batchTarget = Q6SliceAst.batchAst().getCallTarget();
+        CallTarget selTarget = Q6SliceAst.selAst().getCallTarget();
 
-        // Warm both targets past the compilation threshold so PE kicks in.
+        // Warm all targets past the compilation threshold so PE kicks in.
         double[] scratch = new double[rows];
         for (int iter = 0; iter < 20_000; iter++) {
             rowTarget.call(batch, scratch);
             batchTarget.call(batch, scratch);
+            selTarget.call(batch, scratch);
         }
 
         double[] rowOut = new double[rows];
@@ -42,14 +44,25 @@ public final class Q6Slice {
         int batchK = (int) batchTarget.call(batch, batchOut);
         double batchSum = sum(batchOut, batchK);
 
+        double[] selOut = new double[rows];
+        int selK = (int) selTarget.call(batch, selOut);
+        double selSum = sum(selOut, selK);
+
         System.out.println("rows in         : " + rows);
         System.out.println("row   matches   : " + rowK + "  sum(ep*disc) = " + rowSum);
         System.out.println("batch matches   : " + batchK + "  sum(ep*disc) = " + batchSum);
+        System.out.println("sel   matches   : " + selK + "  sum(ep*disc) = " + selSum);
 
-        boolean agree = rowK == batchK && rowSum == batchSum && resultsEqual(rowOut, batchOut, rowK);
-        System.out.println("PARITY          : " + (agree ? "OK (row == batch)" : "MISMATCH"));
+        boolean agree =
+                rowK == batchK
+                        && rowK == selK
+                        && rowSum == batchSum
+                        && rowSum == selSum
+                        && resultsEqual(rowOut, batchOut, rowK)
+                        && resultsEqual(rowOut, selOut, rowK);
+        System.out.println("PARITY          : " + (agree ? "OK (row == batch == sel)" : "MISMATCH"));
         if (!agree) {
-            throw new AssertionError("row and batch shapes disagree");
+            throw new AssertionError("node shapes disagree");
         }
     }
 

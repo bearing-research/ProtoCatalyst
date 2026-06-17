@@ -49,6 +49,7 @@ public class Q6SliceBench {
     private ColumnBatch batch;
     private CallTarget rowTarget;
     private CallTarget batchTarget;
+    private CallTarget selTarget;
     private double[] out;
     private double[] ep;
     private double[] disc;
@@ -59,6 +60,7 @@ public class Q6SliceBench {
         batch = Q6SliceAst.synthetic(rows);
         rowTarget = Q6SliceAst.rowAst().getCallTarget();
         batchTarget = Q6SliceAst.batchAst().getCallTarget();
+        selTarget = Q6SliceAst.selAst().getCallTarget();
         out = new double[rows];
         ep = batch.cols[Q6SliceAst.EXTENDEDPRICE];
         disc = batch.cols[Q6SliceAst.DISCOUNT];
@@ -73,6 +75,11 @@ public class Q6SliceBench {
     @Benchmark
     public int batch() {
         return (int) batchTarget.call(batch, out);
+    }
+
+    @Benchmark
+    public int sel() {
+        return (int) selTarget.call(batch, out);
     }
 
     /** The fused loop WSCG would emit, hand-written. The ceiling row/batch are compared against. */

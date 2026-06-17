@@ -184,22 +184,29 @@ expensive payoff) runs only if the perf number survives.
   point for a vectorized engine). If it clears the bar → continue.
 
 > **Status (preliminary, Q6 filter→project slice).** GraalVM 21, JMH `-f2 -wi5 -i8`, avg µs/op (16
-> obs). `rawJava` = a hand-written fused loop (WSCG proxy / ceiling):
+> obs). `rawJava` = a hand-written fused loop (WSCG proxy / ceiling). Three Truffle shapes: `row`
+> (fused row-at-a-time), `sel` (selection-vector vectorized — the Photon/Velox model), `batch` (naive
+> full-materialization vectorized).
 >
-> | rows | rawJava | row (fused) | batch (vectorized) |
-> |---|---|---|---|
-> | 4096 | 3.73 ± 0.02 | 6.24 ± 0.26 (1.67×) | 15.04 ± 0.31 (4.0×) |
-> | 65536 | 63.0 ± 3.9 | 97.3 ± 1.9 (1.54×) | 238.7 ± 2.3 (3.8×) |
+> | rows | rawJava | row (fused) | sel (selection-vec) | batch (naive) |
+> |---|---|---|---|---|
+> | 4096 | 3.69 | **6.05 (1.64×)** | 8.02 (2.18×) | 15.59 (4.2×) |
+> | 65536 | 59.8 | **95.8 (1.60×)** | 133.6 (2.23×) | 237.3 (4.0×) |
 >
-> Findings: (1) **fused row-at-a-time Truffle is ~1.5–1.7× the raw ceiling** — squarely in Truffle's
+> Findings: (1) **Fused row-at-a-time Truffle is ~1.6× the raw ceiling** — squarely in Truffle's
 > published band, and an encouraging AOT result (an AOT-safe interpreter within ~1.6× of codegen).
-> (2) **Naive batch is ~2.4× *slower* than row**, inverting the working hypothesis. After node-owned
-> buffer reuse made it allocation-free (variance collapsed; allocation was the first run's noise), the
-> residual cost is **memory traffic**: the materialized batch makes ~7 passes over the columns vs the
-> fused loop's single register-resident pass. For a *cheap*, memory-bound pipeline like Q6, **fusion
-> beats naive vectorization** — the classic tradeoff. Batch would need selection-vector pushdown +
-> SIMD (Photon/Velox refinements) to compete; that is the open question, not "vectorize and win."
-> Still outstanding for the gate: the Scala-interpreter baseline (needs the AST builder).
+> (2) The hypothesis that *batch* would be the contribution was **inverted, then partly recovered**.
+> Naive batch is ~4× the ceiling — not allocation (node-owned reusable buffers fixed that; variance
+> collapsed) but **memory traffic**: ~7 full-column passes vs the fused loop's single
+> register-resident pass. (3) **Selection vectors — the fair test of vectorization — recovered most of
+> that loss** (4×→2.2×, and from 2.4× slower than row to ~1.35×), but **fusion still wins for this
+> query**: for a cheap, memory-bound 3-predicate-and-a-multiply, the fused single pass beats
+> selection-pushdown's multiple passes + gather/scatter + bookkeeping. Selection vectors pull ahead
+> when predicates are very selective early, per-tuple compute is heavier, or pipelines are long —
+> none true for Q6. **Defensible conclusion: vectorization got its best shot and fusion still wins for
+> this query shape; the AOT headline is fused Truffle at ~1.6× codegen.** Still outstanding for the
+> gate: the Scala-interpreter baseline (needs the AST builder), and other query shapes (heavier
+> compute, longer pipelines) where the row-vs-sel ordering may flip.
 
 ### Phase 3 — Correctness via the harness
 - Add `runTruffle(plan)` as the **third backend** in `TpchCrossBackendSuite`; assert row-parity

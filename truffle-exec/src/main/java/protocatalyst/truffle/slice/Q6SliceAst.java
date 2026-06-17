@@ -38,6 +38,16 @@ public final class Q6SliceAst {
         return new BatchFilterProjectRoot(null, predicate, projection);
     }
 
+    public static SelFilterProjectRoot selAst() {
+        SelPredicate[] predicates = {
+            new SelCompareConst(DISCOUNT, Cmp.GE, 0.05),
+            new SelCompareConst(DISCOUNT, Cmp.LE, 0.07),
+            new SelCompareConst(QUANTITY, Cmp.LT, 24.0)
+        };
+        SelExpr projection = new SelMultiply(new SelColumn(EXTENDEDPRICE), new SelColumn(DISCOUNT));
+        return new SelFilterProjectRoot(null, predicates, projection);
+    }
+
     /** Deterministic columnar data (no RNG), reproducible across runs and node shapes. */
     public static ColumnBatch synthetic(int rows) {
         double[] extendedprice = new double[rows];
