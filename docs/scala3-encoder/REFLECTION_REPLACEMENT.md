@@ -377,6 +377,18 @@ shows the same shape: Spark 538→437→403→402 ops/s across 1→2→4→8 thr
   classpath. `ExecutionWallSpec` then round-trips real values (11 cases across the corpus) through
   Spark's **unmodified** codegen ser/deser **from a Scala 3 process** — turning structural parity
   into observed behavioral parity. Full `encoder-spark` suite stays green.
+- **M7 — Single-macro upstream form — ✅ DONE (REPORT §11b).** The in-repo path is two layers
+  (`ProtoEncoder.derived` → `AgnosticEncoderBridge.toAgnostic`) only because `ProtoEncoder` also
+  targets non-Spark backends. Inside Spark there is no second IR, so the upstream artifact collapses to
+  a *single* `Mirror`/`inline` macro: `AgnosticDerivation.deriveAgnosticEncoder[T]` (`encoder-spark`)
+  emits `AgnosticEncoder` directly — no `ProtoType`, no bridge. `AgnosticDerivationSpec` validates it
+  against the **same** §3.4 goldens the bridge passes (full corpus + Scala-3 enum + UUID/Offset/Zoned
+  extensions, 20 cases), and `ExpressionEncoder` builds from it. One improvement the out-of-tree
+  runtime bridge can't make: a data-carrying ADT is rejected at **compile time**
+  (`scala.compiletime.error`), not at invocation. This is the file a `spark-sql-encoder-3` module would
+  ship in place of `encoderFor`. (It still consumes Spark's `AgnosticEncoder` from the 2.13 jars via
+  `for3Use2_13`; compiling `spark-sql-api` itself on Scala 3 — whose encoder closure couples through
+  `DataType` to the SQL parser + json4s — is the larger, separate step in REPORT §13.)
 
 ---
 

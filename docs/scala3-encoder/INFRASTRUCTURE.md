@@ -99,6 +99,9 @@ asserted on the 3 side:
   `encoder-spark/src/test/resources/agnostic-parity/`.
 - `encoder-spark` (3) — `AgnosticEncoderBridgeSpec` derives the same type with `ProtoEncoder.derived`
   + the bridge and asserts its canonical dump equals the golden.
+- `encoder-spark` (3) — `AgnosticDerivationSpec` does the same against the **same goldens** for the
+  single-macro upstream form (`AgnosticDerivation.deriveAgnosticEncoder`, REPORT §11b), which emits
+  `AgnosticEncoder` directly with no `ProtoType`/bridge layer.
 
 The user case class lives in different packages on each side, so the canonical dump compares
 `ClassTag`s by *simple* name. This is the same cross-compile fixture pattern the Arrow wire-format
@@ -115,7 +118,8 @@ run is a fresh JVM (see §5 on why that matters for the numbers).
 sbt compile                                   # all modules (both Scala versions)
 sbt test                                       # full suite
 sbt encoderSpark/test                          # bridge parity + execution-wall e2e (Scala 3 side)
-sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'   # structural parity only
+sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'   # structural parity only (ProtoEncoder + bridge)
+sbt 'encoderSpark/testOnly *AgnosticDerivationSpec'      # same goldens, single-macro upstream form
 sbt 'encoderSpark/testOnly *ExecutionWallSpec'           # end-to-end round-trips (uses the patch)
 ```
 
