@@ -183,6 +183,24 @@ expensive payoff) runs only if the perf number survives.
   regression story dominates → **stop and write up the negative result** (still the first such data
   point for a vectorized engine). If it clears the bar → continue.
 
+> **Status (preliminary, Q6 filter→project slice).** GraalVM 21, JMH `-f2 -wi5 -i8`, avg µs/op (16
+> obs). `rawJava` = a hand-written fused loop (WSCG proxy / ceiling):
+>
+> | rows | rawJava | row (fused) | batch (vectorized) |
+> |---|---|---|---|
+> | 4096 | 3.73 ± 0.02 | 6.24 ± 0.26 (1.67×) | 15.04 ± 0.31 (4.0×) |
+> | 65536 | 63.0 ± 3.9 | 97.3 ± 1.9 (1.54×) | 238.7 ± 2.3 (3.8×) |
+>
+> Findings: (1) **fused row-at-a-time Truffle is ~1.5–1.7× the raw ceiling** — squarely in Truffle's
+> published band, and an encouraging AOT result (an AOT-safe interpreter within ~1.6× of codegen).
+> (2) **Naive batch is ~2.4× *slower* than row**, inverting the working hypothesis. After node-owned
+> buffer reuse made it allocation-free (variance collapsed; allocation was the first run's noise), the
+> residual cost is **memory traffic**: the materialized batch makes ~7 passes over the columns vs the
+> fused loop's single register-resident pass. For a *cheap*, memory-bound pipeline like Q6, **fusion
+> beats naive vectorization** — the classic tradeoff. Batch would need selection-vector pushdown +
+> SIMD (Photon/Velox refinements) to compete; that is the open question, not "vectorize and win."
+> Still outstanding for the gate: the Scala-interpreter baseline (needs the AST builder).
+
 ### Phase 3 — Correctness via the harness
 - Add `runTruffle(plan)` as the **third backend** in `TpchCrossBackendSuite`; assert row-parity
   against Local + DataFusion.
