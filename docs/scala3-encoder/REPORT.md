@@ -36,6 +36,12 @@ measurement-validity rationale behind §9).
 > compile-time-specialized `UnsafeRow`/Arrow encoders — is faster on the per-row hot path, but is not
 > required for, and does not follow from, the derivation replacement. It is summarized in §10 and
 > documented in the archived [`REPORT_encoder_perf.md`](archive/REPORT_encoder_perf.md).
+>
+> **Broader context.** This encoder work sits inside a larger compile-time query compiler whose IR is
+> designed to be engine-independent. That thesis is exercised separately by a cross-backend harness
+> that compiles a query once and runs the same plan on two unrelated engines (a local Arrow executor
+> and DataFusion), comparing results — see [`../compiler/CROSS_BACKEND.md`](../compiler/CROSS_BACKEND.md).
+> It is independent of, and not load-bearing for, the encoder argument here.
 
 ---
 
