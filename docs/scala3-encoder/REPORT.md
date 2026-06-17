@@ -586,6 +586,16 @@ inherits one new file that maps 1:1 onto `encoderFor` — not a new type system.
 *derivation algorithm* (the `Mirror`/`inline` walk, the inline-given that composes case-class
 elements, cycle handling, decimal/temporal defaults); only its output target changes.
 
+This collapsed form is implemented and validated in-repo, not just argued: `AgnosticDerivation`
+(`encoder-spark`) is a single `Mirror`/`inline` macro, `deriveAgnosticEncoder[T]`, that emits Spark's
+`AgnosticEncoder` directly — no `ProtoType`, no bridge. `AgnosticDerivationSpec` checks its output
+against the **same** Scala-2.13 goldens (`ScalaReflection.encoderFor`) that the two-layer bridge passes
+in §8, across the full corpus (primitives boxed/unboxed, decimals, temporal, `Option`, collections,
+`Map`, nested products, tuples, tuple-of-case-class) plus the Scala-3 enum and extension types — 20
+cases, all green. It also takes the one improvement the out-of-tree runtime bridge cannot: a
+data-carrying ADT (§7) is rejected at **compile time** (`scala.compiletime.error`), not at invocation.
+This is the artifact a `spark-sql-encoder-3` module would ship in place of `encoderFor`.
+
 Migration checklist (the end-to-end upstream validation in §13 is the last two boxes):
 
 - [ ] Implement `ExpressionEncoder.apply[T]()` on the Scala 3 build via `deriveAgnosticEncoder[T]` — a
@@ -673,6 +683,10 @@ in [`AOT_ROADMAP.md`](AOT_ROADMAP.md).
   working Spark counterpart to match against — `java.util.Date`, and `LocalTime`, for which Spark
   4.1.2 *derives* a `LocalTimeEncoder` but its `ExpressionEncoder` then rejects `TimeType` at
   serializer-construction time (`[UNSUPPORTED_TIME_TYPE]`), so there is no Spark golden to compare.
-- **Upstream**: prototype the `spark-sql-encoder-3` module against a Scala-3 build of `spark-sql-api`
-  and run the typed-`Dataset` test suite — the definitive end-to-end validation that §3's wall is
-  the last derivation-side obstacle.
+- **Upstream**: the single-macro form the upstream module would ship is now built and golden-verified
+  (`AgnosticDerivation`, §11b). The remaining step is to compile it *inside* a Scala-3 build of
+  `spark-sql-api` (rather than against the 2.13 jars via `for3Use2_13`) and run the typed-`Dataset`
+  test suite — the definitive end-to-end validation that §3's wall is the last derivation-side
+  obstacle. (Scoping note: `spark-sql-api`'s encoder closure couples through `DataType` to the SQL
+  parser and json4s, so compiling the whole module on Scala 3 is a larger task than the encoder
+  derivation itself.)
