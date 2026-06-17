@@ -18,19 +18,14 @@ import com.oracle.truffle.api.Truffle;
  */
 public final class Q6Slice {
 
-    // Column ordinals in the synthetic batch.
-    private static final int EXTENDEDPRICE = 0;
-    private static final int DISCOUNT = 1;
-    private static final int QUANTITY = 2;
-
     public static void main(String[] args) {
         System.out.println("Truffle runtime : " + Truffle.getRuntime().getName());
 
         int rows = 4096;
-        ColumnBatch batch = syntheticBatch(rows);
+        ColumnBatch batch = Q6SliceAst.synthetic(rows);
 
-        CallTarget rowTarget = buildRowAst().getCallTarget();
-        CallTarget batchTarget = buildBatchAst().getCallTarget();
+        CallTarget rowTarget = Q6SliceAst.rowAst().getCallTarget();
+        CallTarget batchTarget = Q6SliceAst.batchAst().getCallTarget();
 
         // Warm both targets past the compilation threshold so PE kicks in.
         double[] scratch = new double[rows];
@@ -56,47 +51,6 @@ public final class Q6Slice {
         if (!agree) {
             throw new AssertionError("row and batch shapes disagree");
         }
-    }
-
-    /** {@code discount >= .05 AND discount <= .07 AND quantity < 24}, project {@code ep * discount}. */
-    private static RowFilterProjectRoot buildRowAst() {
-        RowPredicate predicate =
-                new RowAnd(
-                        new RowAnd(
-                                new RowCompareConst(new RowColumn(DISCOUNT), Cmp.GE, 0.05),
-                                new RowCompareConst(new RowColumn(DISCOUNT), Cmp.LE, 0.07)),
-                        new RowCompareConst(new RowColumn(QUANTITY), Cmp.LT, 24.0));
-        RowExpr projection = new RowMultiply(new RowColumn(EXTENDEDPRICE), new RowColumn(DISCOUNT));
-        return new RowFilterProjectRoot(null, predicate, projection);
-    }
-
-    private static BatchFilterProjectRoot buildBatchAst() {
-        BatchPredicate predicate =
-                new BatchAnd(
-                        new BatchAnd(
-                                new BatchCompareConst(new BatchColumn(DISCOUNT), Cmp.GE, 0.05),
-                                new BatchCompareConst(new BatchColumn(DISCOUNT), Cmp.LE, 0.07)),
-                        new BatchCompareConst(new BatchColumn(QUANTITY), Cmp.LT, 24.0));
-        BatchExpr projection =
-                new BatchMultiply(new BatchColumn(EXTENDEDPRICE), new BatchColumn(DISCOUNT));
-        return new BatchFilterProjectRoot(null, predicate, projection);
-    }
-
-    /** Deterministic data so row/batch parity and reruns are reproducible (no RNG). */
-    private static ColumnBatch syntheticBatch(int rows) {
-        double[] extendedprice = new double[rows];
-        double[] discount = new double[rows];
-        double[] quantity = new double[rows];
-        for (int i = 0; i < rows; i++) {
-            extendedprice[i] = 1000.0 + (i % 9000);
-            discount[i] = (i % 11) * 0.01; // 0.00 .. 0.10 — includes .05/.06/.07
-            quantity[i] = i % 50; // 0 .. 49 — < 24 selects ~half
-        }
-        double[][] cols = new double[3][];
-        cols[EXTENDEDPRICE] = extendedprice;
-        cols[DISCOUNT] = discount;
-        cols[QUANTITY] = quantity;
-        return new ColumnBatch(cols, rows);
     }
 
     private static double sum(double[] values, int count) {

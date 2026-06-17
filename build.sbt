@@ -342,6 +342,7 @@ lazy val sparkCatalyst = project
 // is a Phase-0 skeleton, so `sbt compile`/`sbt test` for the rest of the build are unaffected.
 lazy val truffleExec = project
   .in(file("truffle-exec"))
+  .enablePlugins(JmhPlugin)
   .settings(
     name := "protocatalyst-truffle-exec",
     crossPaths := false,
@@ -358,7 +359,8 @@ lazy val truffleExec = project
     // runtime + partial evaluation are available, and native-image is reachable later (Phase 4).
     // Isolated to this module; the rest of the build stays on openjdk@21 via .sbtopts.
     javaHome := Some(file("/Library/Java/JavaVirtualMachines/graalvm-21.jdk/Contents/Home")),
-    run / fork := true
+    run / fork := true,
+    Jmh / fork := true
   )
 
 // Execution-wall demonstrator (Scala 2.13). A verbatim copy of Spark 4.1.2's
