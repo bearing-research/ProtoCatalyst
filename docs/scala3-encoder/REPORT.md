@@ -621,10 +621,51 @@ native-image binary. Capturing the per-row *serializer* advantage inside Spark c
 that codegen, a separate and much larger project. This report's claim is bounded: the *derivation* is
 the Scala-3 blocker, and replacing it is narrow in scope, faithful, and low-cost.
 
+## §12b. Related work
+
+**Compile-time encoders for Spark.** Frameless's `TypedEncoder` is the closest prior art: a
+type-class–based, compile-time derivation of Spark encoders that backs a type-safe `TypedDataset`
+API. Two differences matter here. First, Frameless is built on Scala 2 with shapeless `Generic`, so it
+does not address — and cannot itself run on — the Scala-3 blocker; it is gated on a Scala 3 port
+rather than enabling one. Second, it sits *beside* Spark: it derives a `TypedEncoder` that ultimately
+produces a stock `ExpressionEncoder`, layering safety on top of the reflective machinery rather than
+replacing it. This work instead targets the upstream derivation seam (`encoderFor`) directly, is
+Scala-3 native, and proposes the in-tree change that would also let Frameless drop its own derivation
+and delegate (§11).
+
+**Generic-derivation mechanisms.** The derivation uses Scala 3's `scala.deriving.Mirror` with
+`inline`/`summonInline` directly, not a derivation library such as Magnolia or shapeless-3 (both of
+which abstract derivation across Scala versions behind one API). That is deliberate: the bridge must
+map onto Spark's *exact* `AgnosticEncoder` node set — re-splitting `BigInt`/`BigDecimal`, recovering
+`ClassTag` leaves, matching Spark's `EncoderField` nullability rule (§6) — and a thin hand-written
+`Mirror` walk keeps that mapping explicit and dependency-free. The reusable IP is the walk itself
+(§11b), not a new abstraction layer over it.
+
+**Spark's reflection-free seam.** `AgnosticEncoder` — the pure-ADT encoder description this work
+targets — exists precisely to decouple the encoder *description* from reflective derivation, and is
+what makes Spark Connect's "derive on the client, ship the ADT, deserialize on the server" model
+possible (§9b, §9d). This report is a direct continuation of that decoupling: Spark already built the
+reflection-free *downstream*; what is missing is a reflection-free *front end* so the seam is reachable
+without a `TypeTag`. Spark Connect is therefore both the strongest evidence that the seam is real and
+the first concrete beneficiary — a native-image Connect client (§12).
+
+**Scala 3 migration of Spark.** Cross-building Spark for Scala 3 has been a standing community goal,
+and the typed-encoder derivation is the structural obstacle repeatedly identified; the rest of the
+`TypeTag`/reflection surface is mechanical (§2). This report scopes the problem to exactly that
+obstacle and shows it is removable, rather than attempting the whole port.
+
+**AOT / native-image.** Eliminating runtime reflection is the precondition for GraalVM `native-image`
+and the broader ahead-of-time push in the JVM ecosystem (framework-level AOT in Quarkus, Spring, and
+similar). Removing reflective derivation is one such step for Spark's typed API — necessary but not
+sufficient, since Catalyst's Janino whole-stage codegen remains (§12). The wider blocker inventory is
+in [`AOT_ROADMAP.md`](AOT_ROADMAP.md).
+
 ## §13. Future work
 
-- **Publication-fidelity derivation benchmark** (`-f3`) plus a cross-architecture sweep
-  (Graviton/Intel/AMD), to confirm the §9 numbers generalize beyond the development laptop.
+- **Cross-architecture benchmark sweep** (Graviton/Intel/AMD): the §9 figures are already at
+  publication time-axis fidelity (`-f3 -wi5 -i10`, 30 data points), but on a single Apple-M1. A
+  multi-arch sweep would confirm the ratios are not a silicon artifact; the sweep tooling is in place
+  (`INFRASTRUCTURE.md`).
 - **Tail of the type surface**: the faithful Scala subset is now complete through tuple-of-case-class
   (§8), and the bridge adds the beyond-Spark extensions UUID/OffsetDateTime/ZonedDateTime as
   String-backed `TransformingEncoder`s (§7). What remains is *out of scope*: Java-bean and Java-enum
