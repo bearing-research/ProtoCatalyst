@@ -38,6 +38,7 @@ Start with the report; the rest are companions.
 | [compiler/DSL_REFERENCE.md](compiler/DSL_REFERENCE.md) | The query DSL / IR / optimizer API, with Spark Catalyst comparison. |
 | [compiler/SQL_PARSER.md](compiler/SQL_PARSER.md) | The compile-time SQL parser. |
 | [compiler/CROSS_BACKEND.md](compiler/CROSS_BACKEND.md) | One plan, two engines: the cross-backend TPC-H harness (Local Arrow vs DataFusion) — evidence for the engine-independent-compiler thesis. |
+| [compiler/TRUFFLE_EXPLORATION.md](compiler/TRUFFLE_EXPLORATION.md) | **Plan (doc-only).** Truffle as an AOT-clean execution backend — the executable counterpart to AOT_ROADMAP §6 Option B; turns the "regression risk" into a measurement, with a Spark parity + migration path. |
 | [compiler/SPARK_CATALYST_REFERENCE.md](compiler/SPARK_CATALYST_REFERENCE.md) | Spark Catalyst internals reference. |
 | [compiler/SPARK_TEST_PATTERNS_ANALYSIS.md](compiler/SPARK_TEST_PATTERNS_ANALYSIS.md) | Spark Catalyst test patterns vs ours. |
 
