@@ -71,6 +71,14 @@ differences are large and affect the migration calculus.
   reachable at build time runs.
 - **Cold start**: order-of-magnitude reduction (Spring Boot 3.2:
   1.42 s → 407 ms; Quarkus apps to ~50 ms).
+- **Memory**: no resident JIT compiler and no metaspace for loaded
+  classes — a smaller baseline, typically several-fold less RAM at
+  startup.
+- **Peak throughput**: often *lower* than the JVM. The JIT compiles
+  hot code using runtime profile data (PGO) the AOT compiler lacks,
+  so a long-running CPU-bound loop can be faster on the JVM once
+  warm. Native-image trades "slow-until-warm, then very fast" for
+  "fixed AOT speed from instruction one."
 - **Compatibility**: hostile to runtime reflection, dynamic
   classloading, runtime bytecode generation, native code that
   initializes lazily.
@@ -95,6 +103,8 @@ differences are large and affect the migration calculus.
 |---|---|---|
 | Output | Native binary | JVM + AOT cache |
 | Cold start | ~10× reduction | ~30–50% reduction |
+| Memory at startup | Several-fold lower | ≈ JVM |
+| Peak throughput | Often below JVM (no PGO) | = JVM (keeps JIT) |
 | Open-world | No | Yes |
 | Reflection allowed | Only via metadata | Yes |
 | Janino-compatible | No | Yes |
@@ -109,6 +119,19 @@ ship Leyden-friendly training runs. Sources:
 [inside.java JVMLS '25](https://inside.java/2025/10/21/jvmls-assembling-project-leyden/),
 [inside.java AOT cache Jan 2026](https://inside.java/2026/01/09/run-aot-cache/),
 [Spring Boot Leyden integration](https://github.com/spring-projects/spring-tools/wiki/Leyden-AOT-Cache-Usage-and-Configuration).
+
+Note which trade-off lands where. Native-image's peak-throughput
+sacrifice is *harmless* for a **short-lived client** — it never runs
+long enough to reach JIT peak, so it loses nothing and pockets the
+cold-start and memory wins — but it is a *real cost* for a
+**long-running executor**, which amortizes startup to nothing and
+depends on JIT peak for its hot data-crunching loops. That, not just
+the blocker inventory in §3, is the underlying reason §4 targets the
+Connect *client* for native-image while §6's Phase 3 keeps **Leyden**
+(which preserves the JIT, so no peak-throughput loss) for the
+driver/executor. In one line: you adopt native-image where startup
+and footprint dominate and the process is too short-lived to miss the
+JIT — and you avoid it where sustained throughput is the whole point.
 
 The rest of this document treats native-image as the more ambitious
 goal and Leyden as the easier-to-pitch first step.
