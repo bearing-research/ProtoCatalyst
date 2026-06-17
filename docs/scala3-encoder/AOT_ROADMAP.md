@@ -308,15 +308,64 @@ output.
 **What doesn't work:**
 - Dynamic SQL — `spark.sql(userInput)` where the query string is
   constructed at runtime. The plan isn't known at compile time, so
-  no macro can emit code for it. **This is a hard cliff**: any
-  Spark application that takes SQL from a web form, API request,
-  CLI argument, etc. can't be native-image-compiled under this
-  scheme. For analytics-platform style usage (Databricks notebooks,
-  Spark SQL CLI, Spark Connect server) this is the entire workload.
+  no macro can emit code for it. **This is a hard cliff for
+  codegen *alone*** (closed by a vectorized Tier 2 — see below): a
+  Spark application that takes SQL from a web form, API request, or
+  CLI argument has no compile-time plan to specialize. For
+  analytics-platform style usage (Databricks notebooks, Spark SQL
+  CLI, Spark Connect server) this is the entire workload.
 - Plans built up incrementally by user code that branches on
   runtime data — `if (cond) df.filter(...) else df` where `cond`
   isn't a constant. The branch makes the final plan shape
   unknowable at compile time.
+
+**Covering the dynamic-SQL gap: a vectorized Tier 2.** The cliff
+above is a cliff for *compile-time codegen specifically* — a macro
+can't emit code for a plan it never saw. It is **not** a dead end
+for the system, because dynamic SQL doesn't need codegen at all; it
+needs a runtime-composable execution mode that is AOT-legal.
+Building and optimizing a plan at runtime is plain allocation +
+tree rewriting (allowed under native-image); only *emitting new
+bytecode* is forbidden. So the design is two-tier:
+
+- **Tier 1 (this option):** plan known at `scalac` time (typed
+  `Dataset`, DSL, inlined SQL) → macro-fused specialized code,
+  full WSCG-class speed.
+- **Tier 2:** plan known only at runtime (`spark.sql(userInput)`) →
+  execute by composing **pre-compiled, type-specialized
+  operator/expression kernels**. No codegen.
+
+The naive Tier 2 is row-at-a-time interpretation (Option C below,
+3–10× slower). The performant one is **vectorized columnar
+execution** — the DuckDB / Photon / Velox model: each kernel
+processes a whole column/batch per call, amortizing dispatch over
+thousands of rows and exposing SIMD-friendly inner loops. That
+lands much closer to WSCG (a small factor, sometimes faster), not
+3–10×. The type-specialization that tempts people toward runtime
+codegen is handled **ahead of time**: the vocabulary is finite
+(~93 expressions × ~25 operators × a closed primitive-type set), so
+the specialized kernels are *pre-instantiated at build time*
+(template-instantiation style, exactly DuckDB's C++ approach) and
+the runtime only selects and composes them — bounded, codegen-free.
+
+This is not hypothetical. **DataFusion** is a native-compiled,
+vectorized SQL engine that runs dynamic SQL with **no** runtime
+codegen — a direct existence proof. And ProtoCatalyst's own **Arrow
+executor** already parses SQL at runtime (`SqlParser.parse` →
+`ProtoLogicalPlan` → optimize → execute over Arrow column vectors);
+the cross-backend harness ([`../compiler/CROSS_BACKEND.md`](../compiler/CROSS_BACKEND.md))
+runs runtime-parsed TPC-H queries through it *and* DataFusion. It is
+a columnar interpreter — the seed of a Tier-2 engine (expression
+eval is already column-at-a-time; some operators, e.g. the
+nested-loop join, aren't yet perf-tuned), not a finished Velox.
+
+**Caveat.** A *competitive* vectorized engine is Velox/Photon-scale
+(years), and it routes *around* Catalyst's WSCG rather than making
+WSCG itself AOT-clean — an alternative-engine strategy, the same
+architectural fork that puts full-driver-native at "decade
+horizon." So the dynamic-SQL gap is closable and the path is proven
+elsewhere; the cost is "build a modern columnar engine," not "find
+a trick."
 
 **Engineering cost.** Catalyst's expression layer alone has ~93
 expression types (Add, GreaterThan, Cast, GetStructField, Coalesce,
@@ -338,11 +387,16 @@ direct code. Microsoft's LINQ / IQueryable family does
 compile-time codegen for typed queries; the same pattern would
 apply.
 
-**Bottom line.** Achievable for typed-only Spark applications
-(typed Dataset[T] + DSL, no dynamic SQL). **Not** achievable for
-"native-image any Spark application." A 12–18 month focused
-engineering effort would yield a typed-only AOT path; converting
-all of Catalyst is a multi-year rewrite.
+**Bottom line.** Compile-time codegen *alone* is achievable for
+typed-only Spark applications (typed Dataset[T] + DSL, no dynamic
+SQL) — a 12–18 month focused effort yields that typed-only AOT
+path. Paired with a **vectorized Tier 2** (above) it extends to
+dynamic SQL as well, with near-WSCG performance — but Tier 2 is
+itself a columnar-engine build (Velox/Photon-scale, multi-year). So
+the honest framing is not "typed-only forever," but "typed-only
+cheaply via codegen; dynamic SQL via a separate vectorized engine."
+Converting all of Catalyst's WSCG itself to AOT-clean code remains a
+multi-year rewrite either way.
 
 #### Option B: Re-express Catalyst as a GraalVM Truffle language
 
@@ -460,9 +514,15 @@ is probably:
 | Option | Effort | Coverage | Perf | Realistic? |
 |---|---|---|---|---|
 | A (compile-time codegen) | 1–2 years | Typed-only | ≈ Spark | Yes, but constrained |
+| A + vectorized Tier 2 | ~3–5 years | Full | ≈ Spark (vectorized) | Yes — alternative-engine build |
 | B (Truffle) | 2–3 years | Full Spark | 2–3× regression? | Research-grade |
 | C (interpreted-only) | weeks | Full Spark | 3–10× regression | Tooling-only |
 | Wait for Catalyst rewrite | indefinite | n/a | n/a | Indefinite |
+
+The "A + vectorized Tier 2" row is the one path that is both *generally applicable*
+(dynamic SQL included) and *performant* (vectorized, not 3–10× interpreted). Its cost is
+building a modern columnar engine — which is exactly the direction ProtoCatalyst's executor
+track already points (the Arrow executor + DataFusion backend run runtime-parsed SQL today).
 
 This is why the recommendations in §7 of this document **don't
 prescribe full-Spark native-image** as a near-term goal. The path
