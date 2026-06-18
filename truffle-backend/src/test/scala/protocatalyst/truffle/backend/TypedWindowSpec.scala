@@ -51,7 +51,12 @@ class TypedWindowSpec extends FunSuite:
 
   private def readRows(b: Batch): Vector[Vector[Any]] =
     (0 until b.rowCount).map { r =>
-      (0 until b.numColumns).map(c => b.column(c).getObject(r).asInstanceOf[java.lang.Number].doubleValue: Any).toVector
+      (0 until b.numColumns).map { c =>
+        b.column(c).getObject(r) match
+          case null                => null
+          case x: java.lang.Number => x.doubleValue: Any
+          case other               => other.toString: Any
+      }.toVector
     }.toVector
 
   private def checkWindow(plan: ProtoPhysicalPlan): Unit =
@@ -106,5 +111,16 @@ class TypedWindowSpec extends FunSuite:
       ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
     )
     checkWindow(plan)
+
+  test("LAG/LEAD/NTILE OVER (PARTITION BY category ORDER BY orderkey)"):
+    val (_, schema) = buildBatch(new RootAllocator())
+    val score = colRef("score")
+    val one = ProtoExpr.Literal(LiteralValue.IntValue(1))
+    val exprs = Vector(
+      ProtoExpr.Alias(ProtoExpr.Lag(score, one, None), "lg"),
+      ProtoExpr.Alias(ProtoExpr.Lead(score, one, None), "ld"),
+      ProtoExpr.Alias(ProtoExpr.Ntile(ProtoExpr.Literal(LiteralValue.IntValue(2))), "nt")
+    )
+    checkWindow(windowPlan(schema, exprs, "orderkey"))
 
 end TypedWindowSpec

@@ -174,6 +174,21 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"expected an integer literal, got ${other.getClass.getSimpleName}")
 
+  /** A constant literal as a boxed value (for window LAG/LEAD defaults), normalized like the engine's
+    * output: numbers as Long/Double, decimals as BigDecimal, strings as String. */
+  private def constBoxed(e: ProtoExpr): AnyRef =
+    e match
+      case ProtoExpr.Literal(LiteralValue.IntValue(v))     => java.lang.Long.valueOf(v.toLong)
+      case ProtoExpr.Literal(LiteralValue.LongValue(v))    => java.lang.Long.valueOf(v)
+      case ProtoExpr.Literal(LiteralValue.ShortValue(v))   => java.lang.Long.valueOf(v.toLong)
+      case ProtoExpr.Literal(LiteralValue.ByteValue(v))    => java.lang.Long.valueOf(v.toLong)
+      case ProtoExpr.Literal(LiteralValue.DoubleValue(v))  => java.lang.Double.valueOf(v)
+      case ProtoExpr.Literal(LiteralValue.FloatValue(v))   => java.lang.Double.valueOf(v.toDouble)
+      case ProtoExpr.Literal(LiteralValue.DecimalValue(v)) => v.bigDecimal
+      case ProtoExpr.Literal(LiteralValue.StringValue(v))  => v
+      case other =>
+        throw UnsupportedPlanException(s"window default must be a literal, got ${other.getClass.getSimpleName}")
+
   /** Resolve an ORDER BY key to (output column, direction, null ordering). The key must reference an
     * output column by name (the common case after projection). */
   private def sortKey(so: SortOrder, names: Vector[String]): SortKey =
@@ -241,6 +256,12 @@ object TypedTruffleCompiler:
       case ProtoExpr.Min(c)                  => WindowFn(WindowFnKind.Min, aggCol(c, names), name)
       case ProtoExpr.Max(c)                  => WindowFn(WindowFnKind.Max, aggCol(c, names), name)
       case ProtoExpr.Avg(c)                  => WindowFn(WindowFnKind.Avg, aggCol(c, names), name)
+      case ProtoExpr.Lead(c, off, dflt) =>
+        WindowFn(WindowFnKind.Lead, aggCol(c, names), name, constInt(off), dflt.map(constBoxed).orNull)
+      case ProtoExpr.Lag(c, off, dflt) =>
+        WindowFn(WindowFnKind.Lag, aggCol(c, names), name, constInt(off), dflt.map(constBoxed).orNull)
+      case ProtoExpr.Ntile(nExpr) =>
+        WindowFn(WindowFnKind.Ntile, -1, name, constInt(nExpr))
       case other =>
         throw UnsupportedPlanException(s"unsupported window function: ${other.getClass.getSimpleName}")
 
@@ -416,11 +437,17 @@ final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQue
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
 
 enum WindowFnKind:
-  case RowNumber, Rank, DenseRank, Sum, Count, Min, Max, Avg
+  case RowNumber, Rank, DenseRank, Sum, Count, Min, Max, Avg, Lead, Lag, Ntile
 
-/** A window function: its kind, the input column index it aggregates (-1 for ranking and COUNT(*)),
-  * and its output name. */
-final case class WindowFn(kind: WindowFnKind, inputCol: Int, name: String)
+/** A window function: its kind, the input column index (-1 for ranking / COUNT(*) / NTILE), output
+  * name, and — for LAG/LEAD/NTILE — a constant `offset` (the offset, or bucket count) and `default`. */
+final case class WindowFn(
+    kind: WindowFnKind,
+    inputCol: Int,
+    name: String,
+    offset: Int = 0,
+    default: AnyRef = null
+)
 
 /** Window functions over PARTITION BY + ORDER BY. Ranking (ROW_NUMBER/RANK/DENSE_RANK) is per-row by
   * partition order; aggregate windows (SUM/COUNT/MIN/MAX/AVG OVER) are whole-partition (every row gets
@@ -463,6 +490,9 @@ final class WindowQuery(
             case WindowFnKind.RowNumber => java.lang.Long.valueOf((pos + 1).toLong)
             case WindowFnKind.Rank      => java.lang.Long.valueOf(rank(pos))
             case WindowFnKind.DenseRank => java.lang.Long.valueOf(dense(pos))
+            case WindowFnKind.Lead      => offsetValue(ordered, pos + fn.offset, fn, rows)
+            case WindowFnKind.Lag       => offsetValue(ordered, pos - fn.offset, fn, rows)
+            case WindowFnKind.Ntile     => java.lang.Long.valueOf(ntileBucket(pos, m, fn.offset).toLong)
             case _                      => aggVals(fi)
           ): AnyRef
         }
@@ -470,6 +500,21 @@ final class WindowQuery(
         pos += 1
     }
     new TypedResult(outputNames, result.toVector)
+
+  /** LAG/LEAD: the input column of the partition row at `target` (ordered position), or the default. */
+  private def offsetValue(ordered: Vector[Int], target: Int, fn: WindowFn, rows: Vector[Vector[AnyRef]]): AnyRef =
+    if target >= 0 && target < ordered.size then rows(ordered(target))(fn.inputCol) else fn.default
+
+  /** NTILE bucket (1-based) for position `pos` in a partition of `m` rows split into `n` buckets:
+    * the first `m % n` buckets get one extra row. */
+  private def ntileBucket(pos: Int, m: Int, n: Int): Int =
+    if n <= 0 then 1
+    else
+      val base = m / n
+      val rem = m % n
+      val bigCount = rem * (base + 1)
+      if pos < bigCount then pos / (base + 1) + 1
+      else rem + (pos - bigCount) / math.max(1, base) + 1
 
   private def partitionAggregate(fn: WindowFn, idxs: IndexedSeq[Int], rows: Vector[Vector[AnyRef]]): AnyRef =
     fn.kind match
