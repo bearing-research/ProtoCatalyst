@@ -56,14 +56,14 @@ demonstration of a runtime-planned query engine executing in a native image with
   (3VL), `IS [NOT] NULL`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, real `Cast`, `UPPER`/`LOWER`/
   `LENGTH`, `ABS`/`SQRT`/`FLOOR`/`CEIL`/`ROUND`, `IN`, `LIKE`.
 - **Operators:** filter, projection, global + grouped aggregate (null-aware), `ORDER BY`/`LIMIT`/
-  `DISTINCT`, and inner equi-join.
+  `DISTINCT`, and inner + outer (LEFT/RIGHT/FULL) equi-joins.
 
 **Positioning.** A research prototype + case study (the first application of Truffle to a big-data
 execution engine), **not** a Spark-merge deliverable — see the goal/positioning note above and §6/§8.
 
 **Not done (honest scope):** decimal arithmetic with Spark precision/scale and ANSI edge cases (Layer
-4), outer joins / window / non-equi conditions, the long tail of functions, and the Layer-5 `SparkPlan`
-front-end that any real Spark integration would require.
+4), window functions, non-equi / under-join filters, the long tail of scalar functions, and the
+Layer-5 `SparkPlan` front-end that any real Spark integration would require.
 
 ---
 
@@ -379,8 +379,10 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    distinct). **Inner equi-join** is now in too — `JoinQuery` (a `TypedKeysRoot` extracts build/probe
    keys via the typed nodes; a hash table on the right is probed by the left; NULL keys never match;
    decimal keys value-normalized), emitting `left ++ right`. `nation ⋈ region` matches the interpreter
-   *exactly* (column order + values). Remaining Layer 3: outer joins (LEFT/RIGHT with null padding),
-   join conditions beyond equi-keys, filters/projects *under* a join, and window.
+   *exactly* (column order + values). **Outer joins** are in too — LEFT/RIGHT/FULL with null padding
+   (track matched build rows; emit unmatched left with null-right, unmatched right with null-left),
+   parity-checked exactly including the NULLs. Remaining Layer 3: join conditions beyond equi-keys,
+   filters/projects *under* a join, and window.
 4. **Semantics parity (the oracle).** Match Spark exactly: type coercion, decimal precision/scale,
    null propagation, overflow (ANSI vs legacy), collation, rounding. Validated against Spark.
 5. **Front-end swap — the actual Spark graft.** Replace the `ProtoPhysicalPlan` builder with one

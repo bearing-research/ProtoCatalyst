@@ -42,12 +42,13 @@ class TypedJoinSpec extends FunSuite:
     val schema = ProtoSchema(fields)
     (Batch.fromRoot(root, schema), schema)
 
+  // nation N3 has regionkey 3 (no such region) → unmatched on the left.
   private def nation(alloc: BufferAllocator): (Batch, ProtoSchema) =
     batchOf(
       6,
       Seq(
         bigint("nationkey", alloc, 0L to 5L),
-        bigint("regionkey", alloc, (0 to 5).map(i => (i % 3).toLong)),
+        bigint("regionkey", alloc, Seq(0L, 1L, 2L, 3L, 0L, 1L)),
         varchar("nname", alloc, (0 to 5).map("N" + _))
       ),
       Vector(
@@ -57,12 +58,13 @@ class TypedJoinSpec extends FunSuite:
       )
     )
 
+  // region R4 (regionkey 4) is referenced by no nation → unmatched on the right.
   private def region(alloc: BufferAllocator): (Batch, ProtoSchema) =
     batchOf(
-      3,
+      4,
       Seq(
-        bigint("regionkey", alloc, 0L to 2L),
-        varchar("rname", alloc, (0 to 2).map("R" + _))
+        bigint("regionkey", alloc, Seq(0L, 1L, 2L, 4L)),
+        varchar("rname", alloc, Seq("R0", "R1", "R2", "R4"))
       ),
       Vector(
         ProtoStructField("regionkey", ProtoType.LongType, false),
@@ -80,15 +82,15 @@ class TypedJoinSpec extends FunSuite:
       }.toVector
     }.toVector
 
-  test("nation ⋈ region on regionkey — inner equi-join matches the interpreter"):
+  private def checkJoin(joinType: JoinType, expectedRows: Int): Unit =
     val alloc = new RootAllocator()
     val (nationBatch, nationSchema) = nation(alloc)
     val (regionBatch, regionSchema) = region(alloc)
     val key = ProtoExpr.ColumnRef("regionkey", None, ProtoType.LongType, false)
     val plan = ProtoPhysicalPlan.HashJoin(
       ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600)),
-      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(3, 300)),
-      JoinType.Inner,
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      joinType,
       Vector(key),
       Vector(key),
       None,
@@ -99,13 +101,23 @@ class TypedJoinSpec extends FunSuite:
     catalog.registerTable("nation", nationBatch)
     catalog.registerTable("region", regionBatch)
     catalog.registerStatistics("nation", Statistics(6, 600))
-    catalog.registerStatistics("region", Statistics(3, 300))
+    catalog.registerStatistics("region", Statistics(4, 400))
     val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan)).sortBy(_.mkString("|"))
+    val typedRows =
+      TypedTruffleCompiler.compileJoin(plan).run(nationBatch, regionBatch).rows.sortBy(_.mkString("|"))
 
-    val typedRows = TypedTruffleCompiler.compileJoin(plan).run(nationBatch, regionBatch).rows.sortBy(_.mkString("|"))
+    assertEquals(typedRows.size, expectedRows)
+    assertEquals(typedRows, localRows, "join output must match the interpreter")
 
-    assertEquals(typedRows.size, 6, "each of 6 nations joins exactly one region")
-    assertEquals(typedRows.size, localRows.size)
-    assertEquals(typedRows, localRows, s"join output must match the interpreter")
+  test("INNER join on regionkey — matches the interpreter (5 matched rows)"):
+    checkJoin(JoinType.Inner, 5)
+
+  test("LEFT OUTER join — unmatched left nation gets a null-padded region"):
+    // 5 matches + nation N3 (regionkey 3, no region) with NULL right
+    checkJoin(JoinType.LeftOuter, 6)
+
+  test("RIGHT OUTER join — unmatched right region gets a null-padded nation"):
+    // 5 matches + region R4 (regionkey 4, no nation) with NULL left
+    checkJoin(JoinType.RightOuter, 6)
 
 end TypedJoinSpec

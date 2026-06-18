@@ -4,7 +4,7 @@ import com.oracle.truffle.api.CallTarget
 
 import protocatalyst.executor.exec.Batch
 import protocatalyst.expr.ProtoExpr
-import protocatalyst.plan.{NullOrdering, ProtoPhysicalPlan, SortDirection, SortOrder}
+import protocatalyst.plan.{JoinType, NullOrdering, ProtoPhysicalPlan, SortDirection, SortOrder}
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.truffle.exec.AggKind
 import protocatalyst.truffle.typed.*
@@ -187,10 +187,10 @@ object TypedTruffleCompiler:
   /** Compile an equi-join into an inner hash join over its two table inputs. Outer joins, join
     * conditions beyond the equi-keys, and filters/projects *under* the join are not yet handled. */
   def compileJoin(plan: ProtoPhysicalPlan): JoinQuery =
-    val (left, right, leftKeys, rightKeys) = plan match
-      case ProtoPhysicalPlan.HashJoin(l, r, _, lk, rk, _, _)          => (l, r, lk, rk)
-      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, _, lk, rk, _, _) => (l, r, lk, rk)
-      case ProtoPhysicalPlan.SortMergeJoin(l, r, _, lk, rk, _)        => (l, r, lk, rk)
+    val (left, right, joinType, leftKeys, rightKeys) = plan match
+      case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, _, _)          => (l, r, jt, lk, rk)
+      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, _, _) => (l, r, jt, lk, rk)
+      case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, _)        => (l, r, jt, lk, rk)
       case other =>
         throw UnsupportedPlanException(s"not a supported equi-join: ${other.getClass.getSimpleName}")
     val leftSchema = scanSchema(left)
@@ -198,7 +198,7 @@ object TypedTruffleCompiler:
     val leftKeyTarget = TypedKeysRoot(null, leftKeys.map(k => buildExpr(k, leftSchema)).toArray).getCallTarget
     val rightKeyTarget = TypedKeysRoot(null, rightKeys.map(k => buildExpr(k, rightSchema)).toArray).getCallTarget
     val outputNames = leftSchema.fields.map(_.name) ++ rightSchema.fields.map(_.name)
-    JoinQuery(leftSchema, rightSchema, leftKeyTarget, rightKeyTarget, leftKeys.size, outputNames)
+    JoinQuery(leftSchema, rightSchema, leftKeyTarget, rightKeyTarget, leftKeys.size, joinType, outputNames)
 
   private def scanSchema(p: ProtoPhysicalPlan): ProtoSchema =
     p match
@@ -350,23 +350,33 @@ final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQue
 
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
 
-/** Inner equi hash join: build a hash table on the right keys, probe with the left, emit `left ++
-  * right` for each match. NULL keys never match (SQL inner-join semantics); decimal keys are
-  * value-normalized. Two explicit inputs (joins are inherently multi-input). */
+/** Equi hash join (inner + outer): build a hash table on the right keys, probe with the left, emit
+  * `left ++ right` for each match. NULL keys never match (SQL semantics); decimal keys are
+  * value-normalized. For LEFT/FULL OUTER, unmatched left rows are emitted with a null-padded right;
+  * for RIGHT/FULL OUTER, unmatched right rows with a null-padded left. Two explicit inputs (joins are
+  * inherently multi-input). */
 final class JoinQuery(
     leftSchema: ProtoSchema,
     rightSchema: ProtoSchema,
     leftKeyTarget: CallTarget,
     rightKeyTarget: CallTarget,
     numKeys: Int,
+    joinType: JoinType,
     val outputNames: Vector[String]
 ):
+
+  private val emitUnmatchedLeft = joinType == JoinType.LeftOuter || joinType == JoinType.FullOuter
+  private val emitUnmatchedRight = joinType == JoinType.RightOuter || joinType == JoinType.FullOuter
 
   def run(leftBatch: Batch, rightBatch: Batch): TypedResult =
     val left = TypedColumnsDecoder.decode(leftBatch, leftSchema)
     val right = TypedColumnsDecoder.decode(rightBatch, rightSchema)
     val leftKeys = evalKeys(leftKeyTarget, left)
     val rightKeys = evalKeys(rightKeyTarget, right)
+    val numLeftCols = leftSchema.fields.size
+    val numRightCols = rightSchema.fields.size
+    val nullLeft = Vector.fill[AnyRef](numLeftCols)(null)
+    val nullRight = Vector.fill[AnyRef](numRightCols)(null)
 
     val table =
       scala.collection.mutable.HashMap[List[AnyRef], scala.collection.mutable.ArrayBuffer[Int]]()
@@ -376,26 +386,37 @@ final class JoinQuery(
         table.getOrElseUpdate(key, scala.collection.mutable.ArrayBuffer[Int]()) += ri
       }
       ri += 1
+    val matchedRight = Array.fill(right.rowCount)(false)
 
-    val numLeftCols = leftSchema.fields.size
-    val numRightCols = rightSchema.fields.size
     val rows = scala.collection.mutable.ArrayBuffer[Vector[AnyRef]]()
     var li = 0
     while li < left.rowCount do
-      keyAt(leftKeys, li).foreach { key =>
-        table.get(key).foreach { matches =>
+      val leftRow = rowBoxed(left, li, numLeftCols)
+      keyAt(leftKeys, li).flatMap(table.get) match
+        case Some(matches) =>
           matches.foreach { rj =>
-            val row = new Array[AnyRef](numLeftCols + numRightCols)
-            var c = 0
-            while c < numLeftCols do { row(c) = left.getBoxed(c, li); c += 1 }
-            c = 0
-            while c < numRightCols do { row(numLeftCols + c) = right.getBoxed(c, rj); c += 1 }
-            rows += row.toVector
+            rows += (leftRow ++ rowBoxed(right, rj, numRightCols))
+            matchedRight(rj) = true
           }
-        }
-      }
+        case None =>
+          if emitUnmatchedLeft then rows += (leftRow ++ nullRight)
       li += 1
+
+    if emitUnmatchedRight then
+      var rj = 0
+      while rj < right.rowCount do
+        if !matchedRight(rj) then rows += (nullLeft ++ rowBoxed(right, rj, numRightCols))
+        rj += 1
+
     new TypedResult(outputNames, rows.toVector)
+
+  private def rowBoxed(cols: TypedColumns, row: Int, numCols: Int): Vector[AnyRef] =
+    val v = new Array[AnyRef](numCols)
+    var c = 0
+    while c < numCols do
+      v(c) = cols.getBoxed(c, row)
+      c += 1
+    v.toVector
 
   private def evalKeys(target: CallTarget, cols: TypedColumns): Array[Array[AnyRef]] =
     val out = Array.ofDim[AnyRef](numKeys, math.max(1, cols.rowCount))
