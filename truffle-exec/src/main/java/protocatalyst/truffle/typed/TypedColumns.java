@@ -42,4 +42,21 @@ public final class TypedColumns {
     public java.math.BigDecimal getDecimal(int col, int row) {
         return ((java.math.BigDecimal[]) columns[col])[row];
     }
+
+    /** The cell's value as a boxed object (Long/Double/String/BigDecimal), or {@code null} for SQL
+     * NULL — used to materialize join output rows regardless of column kind. */
+    public Object getBoxed(int col, int row) {
+        if (isNull(col, row)) {
+            return null;
+        }
+        Object c = columns[col];
+        if (c instanceof long[]) {
+            return Long.valueOf(((long[]) c)[row]);
+        }
+        if (c instanceof double[]) {
+            return Double.valueOf(((double[]) c)[row]);
+        }
+        return ((Object[]) c)[row]; // String[] or BigDecimal[]
+    }
 }
+

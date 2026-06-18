@@ -184,6 +184,30 @@ object TypedTruffleCompiler:
     val i = names.indexWhere(_.equalsIgnoreCase(name))
     if i < 0 then throw UnsupportedPlanException(s"sort key not in output: $name") else i
 
+  /** Compile an equi-join into an inner hash join over its two table inputs. Outer joins, join
+    * conditions beyond the equi-keys, and filters/projects *under* the join are not yet handled. */
+  def compileJoin(plan: ProtoPhysicalPlan): JoinQuery =
+    val (left, right, leftKeys, rightKeys) = plan match
+      case ProtoPhysicalPlan.HashJoin(l, r, _, lk, rk, _, _)          => (l, r, lk, rk)
+      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, _, lk, rk, _, _) => (l, r, lk, rk)
+      case ProtoPhysicalPlan.SortMergeJoin(l, r, _, lk, rk, _)        => (l, r, lk, rk)
+      case other =>
+        throw UnsupportedPlanException(s"not a supported equi-join: ${other.getClass.getSimpleName}")
+    val leftSchema = scanSchema(left)
+    val rightSchema = scanSchema(right)
+    val leftKeyTarget = TypedKeysRoot(null, leftKeys.map(k => buildExpr(k, leftSchema)).toArray).getCallTarget
+    val rightKeyTarget = TypedKeysRoot(null, rightKeys.map(k => buildExpr(k, rightSchema)).toArray).getCallTarget
+    val outputNames = leftSchema.fields.map(_.name) ++ rightSchema.fields.map(_.name)
+    JoinQuery(leftSchema, rightSchema, leftKeyTarget, rightKeyTarget, leftKeys.size, outputNames)
+
+  private def scanSchema(p: ProtoPhysicalPlan): ProtoSchema =
+    p match
+      case ProtoPhysicalPlan.TableScan(_, _, schema, _) => schema
+      case ProtoPhysicalPlan.PhysicalFilter(_, child)   => scanSchema(child)
+      case ProtoPhysicalPlan.PhysicalProject(_, child)  => scanSchema(child)
+      case other =>
+        throw UnsupportedPlanException(s"join child must be a scan, got ${other.getClass.getSimpleName}")
+
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
     e match
       case ProtoExpr.ColumnRef(name, _, _, _) =>
@@ -325,6 +349,71 @@ final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQue
   def run(input: Batch): TypedResult = child.run(input).sortedBy(keys)
 
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
+
+/** Inner equi hash join: build a hash table on the right keys, probe with the left, emit `left ++
+  * right` for each match. NULL keys never match (SQL inner-join semantics); decimal keys are
+  * value-normalized. Two explicit inputs (joins are inherently multi-input). */
+final class JoinQuery(
+    leftSchema: ProtoSchema,
+    rightSchema: ProtoSchema,
+    leftKeyTarget: CallTarget,
+    rightKeyTarget: CallTarget,
+    numKeys: Int,
+    val outputNames: Vector[String]
+):
+
+  def run(leftBatch: Batch, rightBatch: Batch): TypedResult =
+    val left = TypedColumnsDecoder.decode(leftBatch, leftSchema)
+    val right = TypedColumnsDecoder.decode(rightBatch, rightSchema)
+    val leftKeys = evalKeys(leftKeyTarget, left)
+    val rightKeys = evalKeys(rightKeyTarget, right)
+
+    val table =
+      scala.collection.mutable.HashMap[List[AnyRef], scala.collection.mutable.ArrayBuffer[Int]]()
+    var ri = 0
+    while ri < right.rowCount do
+      keyAt(rightKeys, ri).foreach { key =>
+        table.getOrElseUpdate(key, scala.collection.mutable.ArrayBuffer[Int]()) += ri
+      }
+      ri += 1
+
+    val numLeftCols = leftSchema.fields.size
+    val numRightCols = rightSchema.fields.size
+    val rows = scala.collection.mutable.ArrayBuffer[Vector[AnyRef]]()
+    var li = 0
+    while li < left.rowCount do
+      keyAt(leftKeys, li).foreach { key =>
+        table.get(key).foreach { matches =>
+          matches.foreach { rj =>
+            val row = new Array[AnyRef](numLeftCols + numRightCols)
+            var c = 0
+            while c < numLeftCols do { row(c) = left.getBoxed(c, li); c += 1 }
+            c = 0
+            while c < numRightCols do { row(numLeftCols + c) = right.getBoxed(c, rj); c += 1 }
+            rows += row.toVector
+          }
+        }
+      }
+      li += 1
+    new TypedResult(outputNames, rows.toVector)
+
+  private def evalKeys(target: CallTarget, cols: TypedColumns): Array[Array[AnyRef]] =
+    val out = Array.ofDim[AnyRef](numKeys, math.max(1, cols.rowCount))
+    target.call(new TRow(cols), out)
+    out
+
+  /** The key tuple for a row, or None if any component is NULL (NULL never joins). */
+  private def keyAt(keys: Array[Array[AnyRef]], row: Int): Option[List[AnyRef]] =
+    val acc = scala.collection.mutable.ListBuffer[AnyRef]()
+    var k = 0
+    while k < numKeys do
+      val v = keys(k)(row)
+      if v == null then return None
+      acc += (v match
+        case d: java.math.BigDecimal => d.stripTrailingZeros
+        case other                   => other)
+      k += 1
+    Some(acc.toList)
 
 /** Typed result rows (boxed Long/Double/String/BigDecimal/null), with the result-level transforms and
   * a normalized `rows` view for comparison (numbers → Double, NULL → null) — the cross-backend harness

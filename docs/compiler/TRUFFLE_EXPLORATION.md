@@ -331,7 +331,11 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    **ORDER BY / LIMIT / DISTINCT** are also in — result-level transforms (`TypedQuery` wrappers)
    honoring each sort key's direction and `NULLS FIRST/LAST`, parity-checked. The single-input
    operator surface is now complete (filter, project, global + grouped aggregate, sort, limit,
-   distinct). Remaining Layer 3: **joins** (the multi-input structural lift) and window.
+   distinct). **Inner equi-join** is now in too — `JoinQuery` (a `TypedKeysRoot` extracts build/probe
+   keys via the typed nodes; a hash table on the right is probed by the left; NULL keys never match;
+   decimal keys value-normalized), emitting `left ++ right`. `nation ⋈ region` matches the interpreter
+   *exactly* (column order + values). Remaining Layer 3: outer joins (LEFT/RIGHT with null padding),
+   join conditions beyond equi-keys, filters/projects *under* a join, and window.
 4. **Semantics parity (the oracle).** Match Spark exactly: type coercion, decimal precision/scale,
    null propagation, overflow (ANSI vs legacy), collation, rounding. Validated against Spark.
 5. **Front-end swap — the actual Spark graft.** Replace the `ProtoPhysicalPlan` builder with one
