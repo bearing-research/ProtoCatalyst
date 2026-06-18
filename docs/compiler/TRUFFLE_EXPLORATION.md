@@ -274,9 +274,12 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    nullable typed columns, `@Specialization` arithmetic/comparison, hand-written 3VL `AND`/`OR`).
    `TypedNodesSpec` proves typed long/double dispatch, `long→double` promotion, null propagation, and
    `TRUE AND NULL` / `FALSE OR NULL` correctly failing WHERE. Null is threaded through the DSL via
-   `UnexpectedResultException` on the typed path → fallback to the generic/NULL specialization. Not yet
-   wired into `ProtoTruffleCompiler` (that swaps the double-only `GNodes` for the typed nodes and is
-   the next step); strings/decimals/temporal column kinds are still to come.
+   `UnexpectedResultException` on the typed path → fallback to the generic/NULL specialization.
+   **Now wired to real plans:** `TypedTruffleCompiler` compiles a `Filter` over a `TableScan` into the
+   typed nodes, decoding Arrow columns *with their validity bitmaps* (`TypedColumnsDecoder`).
+   `TypedBackendParitySpec` shows it matching the interpreter's 3VL on **nullable** data — where the
+   double-only `GNodes` path can't even run (Arrow's `get()` throws on a NULL slot). Remaining for
+   Layer 1: typed multi-column projection/aggregate *output*, and string/decimal/temporal column kinds.
 2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
    string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
    needs Catalyst-exact semantics, not just a plausible implementation.
