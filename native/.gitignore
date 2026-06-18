@@ -1,0 +1,6 @@
+# native-image build artifacts (regenerate via build-tpch-native.sh)
+tpch-native
+tpch-native.o
+*.dylib
+svm_err_*.md
+reports/

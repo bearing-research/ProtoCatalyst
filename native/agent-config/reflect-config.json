@@ -1,0 +1,97 @@
+[
+{
+  "name":"[B"
+},
+{
+  "name":"[Ljava.lang.Integer;"
+},
+{
+  "name":"[Ljava.lang.Object;"
+},
+{
+  "name":"[Ljava.lang.String;"
+},
+{
+  "name":"[Ljava.math.BigDecimal;"
+},
+{
+  "name":"[Lprotocatalyst.truffle.exec.AggKind;"
+},
+{
+  "name":"[Lprotocatalyst.truffle.typed.TExpr;"
+},
+{
+  "name":"com.fasterxml.jackson.databind.ext.Java7SupportImpl",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"java.lang.ClassValue"
+},
+{
+  "name":"java.nio.Buffer",
+  "fields":[{"name":"address"}]
+},
+{
+  "name":"java.nio.DirectByteBuffer",
+  "methods":[{"name":"<init>","parameterTypes":["long","long"] }]
+},
+{
+  "name":"java.util.concurrent.atomic.AtomicReference",
+  "fields":[{"name":"value"}]
+},
+{
+  "name":"org.apache.arrow.memory.unsafe.DefaultAllocationManagerFactory",
+  "fields":[{"name":"FACTORY"}]
+},
+{
+  "name":"org.apache.arrow.vector.types.pojo.ArrowType",
+  "allDeclaredFields":true,
+  "queryAllDeclaredMethods":true,
+  "queryAllDeclaredConstructors":true
+},
+{
+  "name":"org.apache.arrow.vector.types.pojo.ArrowType$Int",
+  "allDeclaredFields":true,
+  "queryAllDeclaredMethods":true,
+  "queryAllDeclaredConstructors":true
+},
+{
+  "name":"org.apache.arrow.vector.types.pojo.ArrowType$PrimitiveType",
+  "allDeclaredFields":true,
+  "queryAllDeclaredMethods":true
+},
+{
+  "name":"org.apache.arrow.vector.types.pojo.DictionaryEncoding",
+  "allDeclaredFields":true,
+  "queryAllDeclaredMethods":true,
+  "queryAllDeclaredConstructors":true
+},
+{
+  "name":"org.apache.arrow.vector.types.pojo.Field",
+  "allDeclaredFields":true,
+  "queryAllDeclaredMethods":true,
+  "queryAllDeclaredConstructors":true
+},
+{
+  "name":"org.apache.arrow.vector.types.pojo.Schema",
+  "allDeclaredFields":true,
+  "queryAllDeclaredMethods":true,
+  "queryAllDeclaredConstructors":true
+},
+{
+  "name":"protocatalyst.schema.ProtoSchema",
+  "fields":[{"name":"byName$lzy1"}, {"name":"fieldNames$lzy1"}]
+},
+{
+  "name":"scala.collection.immutable.ArraySeq$",
+  "fields":[{"name":"emptyImpl$lzy1"}]
+},
+{
+  "name":"scala.math.BigDecimal$",
+  "fields":[{"name":"cache$lzy1"}]
+},
+{
+  "name":"sun.misc.Unsafe",
+  "fields":[{"name":"theUnsafe"}]
+}
+]
