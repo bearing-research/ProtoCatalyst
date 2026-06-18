@@ -58,23 +58,26 @@ memory; the Truffle path produces GC'd heap rows and does not leak, but is decod
 | Q1    |  696 ms | — | — |
 | Q3    |  689 ms | — | — |
 | Q5    | 1073 ms | — | — |
-| Q6    |  170 ms | **6105 ms** | 3503 ms |
+| Q6    |  170 ms | **1956 ms** (was 6105 pre-pruning) | 3503 ms |
 | Q10   |  715 ms | — | — |
 
-**The crossover is real and large: at SF=1 Spark is ~36× faster than the Truffle backend on Q6**
-(170 ms vs 6.1 s). Two compounding reasons, both honest limitations of the current prototype:
+**Spark still leads at SF=1** — ~11× faster than the Truffle backend on Q6 (170 ms vs 1.96 s) — but the
+gap narrowed sharply after one optimization, and the Truffle backend now beats the interpreter at scale
+again. The two compounding costs:
 
-1. **Single-threaded.** Spark scans 6 M rows across all cores (`local[*]`); the Truffle backend runs
-   on one thread.
-2. **The decode tax.** The Truffle leaf decodes the full Arrow batch into primitive `long[]`/`double[]`
-   columns *per execution* (`TypedColumnsDecoder`). That copy is negligible at SF=0.01 but dominates
-   at 6 M rows — which is why the Truffle backend (6.1 s) is even slower than the interpreter (3.5 s),
-   which reads Arrow vectors directly. Partial evaluation accelerates the *AST*, not the decode.
+1. **The decode tax — now largely addressed.** The Truffle leaf decodes the Arrow batch into primitive
+   `long[]`/`double[]` columns per execution (`TypedColumnsDecoder`). It used to decode *every* column;
+   it now decodes **only the columns a query references** (Q6 touches 4 of lineitem's 16). That single
+   change cut Q6 from **6.1 s → 1.96 s (3.1×)** and moved the Truffle backend from *slower* than the
+   interpreter (which reads Arrow directly) to **faster** than it (3.5 s). Partial evaluation
+   accelerates the AST, not the decode — so pruning the decode is what mattered at scale.
+2. **Single-threaded.** Spark scans 6 M rows across all cores (`local[*]`); the Truffle backend runs on
+   one thread. Closing the remaining ~11× is a parallel-scan problem, not an interpretation-overhead
+   one — the expected next scaling step (along with executing directly over Arrow, eliminating the
+   materialized arrays entirely).
 
-The scaling path (future work) is to decode only referenced columns (or execute directly over Arrow,
-no materialized arrays) and to parallelize the scan. Neither is the prototype's thesis: the
-contribution is the **cold-start / small-or-filtered-data** regime (§3), where decode + single-thread
-costs are immaterial and startup dominates.
+Neither is the prototype's thesis: the contribution is the **cold-start / small-or-filtered-data**
+regime (§3), where decode + single-thread costs are immaterial and startup dominates.
 
 ---
 

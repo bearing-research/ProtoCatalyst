@@ -13,16 +13,24 @@ import protocatalyst.truffle.typed.TypedColumns
   */
 object TypedColumnsDecoder:
 
+  /** Decode every column (back-compat). */
   def decode(input: Batch, schema: ProtoSchema): TypedColumns =
+    decode(input, schema, (0 until schema.fields.size).toSet)
+
+  /** Decode only the columns in `needed` (the ones a query actually references); the rest are left
+    * `null` and never read. At scale this is the dominant saving — e.g. TPC-H Q6 touches 4 of
+    * lineitem's 16 columns, so eager full decode materialized 4× the primitive arrays it used. */
+  def decode(input: Batch, schema: ProtoSchema, needed: Set[Int]): TypedColumns =
     val n = input.rowCount
     val numCols = schema.fields.size
     val data = new Array[Object](numCols)
     val nulls = new Array[Array[Boolean]](numCols)
     var c = 0
     while c < numCols do
-      val vec = input.column(c)
-      data(c) = decodeColumn(vec, n)
-      nulls(c) = nullMask(vec, n)
+      if needed.contains(c) then
+        val vec = input.column(c)
+        data(c) = decodeColumn(vec, n)
+        nulls(c) = nullMask(vec, n)
       c += 1
     new TypedColumns(data, nulls, n)
 

@@ -32,7 +32,7 @@ object TypedTruffleCompiler:
       .map(c => buildPred(c, schema))
       .getOrElse(throw UnsupportedPlanException("expected a Filter over a TableScan"))
     val root = TFilterCountRoot(null, predicate)
-    TypedFilterCount(root.getCallTarget, schema, tableName)
+    TypedFilterCount(root.getCallTarget, schema, tableName, neededColumns(schema, filterOpt.toSeq))
 
   /** Compile `Project`/`Filter` over a `TableScan` into a typed, null-preserving filter→project. */
   def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTypedQuery =
@@ -40,7 +40,11 @@ object TypedTruffleCompiler:
     val projections = projList.map(e => buildExpr(e, schema)).toArray
     val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
     val root = TypedFilterProjectRoot(null, filterNode, projections)
-    CompiledTypedQuery(root.getCallTarget, schema, tableName, qualify(projList.map(outputName), alias))
+    CompiledTypedQuery(
+      root.getCallTarget, schema, tableName,
+      qualify(projList.map(outputName), alias),
+      neededColumns(schema, filterOpt.toSeq ++ projList)
+    )
 
   private def decompose(
       plan: ProtoPhysicalPlan
@@ -165,7 +169,10 @@ object TypedTruffleCompiler:
     val root = TypedGroupedAggRoot(null, filterNode, keyNodes, inputs, kinds)
     // Output columns: grouping keys first, then aggregates (the interpreter's order).
     val names = grouping.map(outputName) ++ parsed.map(_._3)
-    CompiledTypedQuery(root.getCallTarget, schema, tableName, names)
+    CompiledTypedQuery(
+      root.getCallTarget, schema, tableName, names,
+      neededColumns(schema, filterOpt.toSeq ++ grouping ++ aggs)
+    )
 
   private def compileGlobalAggregate(
       aggs: Vector[ProtoExpr],
@@ -177,7 +184,10 @@ object TypedTruffleCompiler:
     val inputs = parsed.map(_._2).toArray
     val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
     val root = TypedGlobalAggRoot(null, filterNode, inputs, kinds)
-    CompiledTypedQuery(root.getCallTarget, schema, tableName, parsed.map(_._3))
+    CompiledTypedQuery(
+      root.getCallTarget, schema, tableName, parsed.map(_._3),
+      neededColumns(schema, filterOpt.toSeq ++ aggs)
+    )
 
   /** Map a (possibly aliased) aggregate to (kind, inner-expr, name). COUNT uses a placeholder input
     * (its value is ignored — COUNT(*) counts surviving rows), so the `@Children` array has no nulls. */
@@ -377,6 +387,23 @@ object TypedTruffleCompiler:
       case ProtoExpr.ColumnRef(n, q, _, _) => outputIndex(n, q, names)
       case _                               => -1 // COUNT(literal) / COUNT(*) → count all rows
 
+  /** The schema-column indices `exprs` actually reference — so a leaf decodes only those columns
+    * (`TypedColumnsDecoder.decode(.., needed)`) instead of the whole row. Walks each ProtoExpr
+    * generically via `productIterator`, collecting `ColumnRef`s and mapping their (bare) name to the
+    * schema field index (the same resolution `buildExpr` uses). */
+  private def neededColumns(schema: ProtoSchema, exprs: Seq[ProtoExpr]): Set[Int] =
+    def refs(any: Any): Seq[String] =
+      any match
+        case ProtoExpr.ColumnRef(name, _, _, _) => Seq(name)
+        case p: Product                         => p.productIterator.flatMap(refs).toSeq
+        case it: Iterable[?]                     => it.flatMap(refs).toSeq
+        case _                                  => Seq.empty
+    exprs
+      .flatMap(refs)
+      .map(name => schema.fields.indexWhere(_.name.equalsIgnoreCase(name)))
+      .filter(_ >= 0)
+      .toSet
+
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
     e match
       case ProtoExpr.ColumnRef(name, _, _, _) =>
@@ -496,10 +523,15 @@ object TypedTruffleCompiler:
     sb.toString
 
 /** A compiled typed filter: counts rows passing the predicate under three-valued logic. */
-final class TypedFilterCount(callTarget: CallTarget, schema: ProtoSchema, tableName: String):
+final class TypedFilterCount(
+    callTarget: CallTarget,
+    schema: ProtoSchema,
+    tableName: String,
+    neededCols: Set[Int]
+):
 
   def count(tables: Map[String, Batch]): Long =
-    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema)
+    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema, neededCols)
     callTarget.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
 
   def count(input: Batch): Long = count(Map(tableName -> input))
@@ -527,13 +559,14 @@ final class CompiledTypedQuery(
     callTarget: CallTarget,
     schema: ProtoSchema,
     tableName: String,
-    val outputNames: Vector[String]
+    val outputNames: Vector[String],
+    neededCols: Set[Int]
 ) extends TypedQuery:
 
   def tableNames: Set[String] = Set(tableName)
 
   def run(tables: Map[String, Batch]): TypedResult =
-    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema)
+    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema, neededCols)
     val numCols = outputNames.size
     val out = Array.ofDim[AnyRef](numCols, math.max(1, cols.rowCount))
     val k = callTarget.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
