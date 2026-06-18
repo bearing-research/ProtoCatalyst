@@ -74,6 +74,19 @@ class TypedBackendParitySpec extends FunSuite:
     )
     ProtoPhysicalPlan.PhysicalProject(proj, ProtoPhysicalPlan.PhysicalFilter(cond, scan))
 
+  /** Global SUM(discount) over the rows with orderkey < threshold (no GROUP BY). */
+  private def sumPlan(schema: ProtoSchema, threshold: Long): ProtoPhysicalPlan =
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(threshold))
+    )
+    val scan = ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
+    val agg = ProtoExpr.Alias(
+      ProtoExpr.Sum(ProtoExpr.ColumnRef("discount", None, ProtoType.DoubleType, true)),
+      "s"
+    )
+    ProtoPhysicalPlan.HashAggregate(Vector.empty, Vector(agg), ProtoPhysicalPlan.PhysicalFilter(cond, scan))
+
   private def readRows(b: Batch): Vector[Vector[Any]] =
     (0 until b.rowCount).map { r =>
       (0 until b.numColumns).map { c =>
@@ -132,5 +145,36 @@ class TypedBackendParitySpec extends FunSuite:
     assert(localRows.exists(_(1) == null), "some projected discount cells must be NULL")
     assertEquals(typedRows.size, localRows.size)
     assert(rowsAgree(localRows, typedRows), "typed projection must agree, NULLs included")
+
+  test("typed SUM ignores NULL inputs and agrees with the interpreter"):
+    val alloc = new RootAllocator()
+    val (batch, schema, nullCount) = buildBatch(alloc)
+    val plan = sumPlan(schema, 100L) // all rows pass; SUM(discount) over non-null discounts
+    assert(nullCount > 0)
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+
+    val typedRows = TypedTruffleCompiler.compile(plan).run(batch).rows
+    assertEquals(typedRows.size, 1)
+    assert(typedRows.head.head != null, "SUM over some non-null values is not NULL")
+    assert(rowsAgree(localRows, typedRows), "typed SUM must agree with the interpreter")
+
+  test("typed SUM over zero rows is NULL (not 0) and agrees with the interpreter"):
+    val alloc = new RootAllocator()
+    val (batch, schema, _) = buildBatch(alloc)
+    val plan = sumPlan(schema, 0L) // orderkey < 0 keeps nothing → SUM of empty = NULL
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+
+    val typedRows = TypedTruffleCompiler.compile(plan).run(batch).rows
+    assertEquals(typedRows.size, 1)
+    assertEquals(typedRows.head.head, null, "SQL SUM of empty input is NULL")
+    assert(rowsAgree(localRows, typedRows))
 
 end TypedBackendParitySpec

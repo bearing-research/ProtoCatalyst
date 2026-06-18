@@ -6,6 +6,7 @@ import protocatalyst.executor.exec.Batch
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.plan.ProtoPhysicalPlan
 import protocatalyst.schema.ProtoSchema
+import protocatalyst.truffle.exec.AggKind
 import protocatalyst.truffle.typed.*
 import protocatalyst.types.{LiteralValue, ProtoType}
 
@@ -61,6 +62,42 @@ object TypedTruffleCompiler:
       case ProtoExpr.ColumnRef(name, _, _, _) => name
       case ProtoExpr.BoundRef(i, _, _)        => s"col$i"
       case _                                  => "expr"
+
+  /** Dispatch: a global aggregate (no GROUP BY) or a filter→project. */
+  def compile(plan: ProtoPhysicalPlan): CompiledTypedQuery =
+    plan match
+      case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) if grouping.isEmpty =>
+        compileGlobalAggregate(aggs, child)
+      case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) if grouping.isEmpty =>
+        compileGlobalAggregate(aggs, child)
+      case _ => compileFilterProject(plan)
+
+  private def compileGlobalAggregate(
+      aggs: Vector[ProtoExpr],
+      child: ProtoPhysicalPlan
+  ): CompiledTypedQuery =
+    val (filterOpt, schema) = filterAndScan(child)
+    val parsed = aggs.map(a => buildAgg(a, schema))
+    val kinds = parsed.map(_._1).toArray
+    val inputs = parsed.map(_._2).toArray
+    val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
+    val root = TypedGlobalAggRoot(null, filterNode, inputs, kinds)
+    CompiledTypedQuery(root.getCallTarget, schema, parsed.map(_._3))
+
+  /** Map a (possibly aliased) aggregate to (kind, inner-expr, name). COUNT uses a placeholder input
+    * (its value is ignored — COUNT(*) counts surviving rows), so the `@Children` array has no nulls. */
+  private def buildAgg(e: ProtoExpr, schema: ProtoSchema): (AggKind, TExpr, String) =
+    e match
+      case ProtoExpr.Alias(child, name) =>
+        val (k, inp, _) = buildAgg(child, schema)
+        (k, inp, name)
+      case ProtoExpr.Sum(c)      => (AggKind.SUM, buildExpr(c, schema), "sum")
+      case ProtoExpr.Count(_, _) => (AggKind.COUNT, TLit.Long(1), "count")
+      case ProtoExpr.Min(c)      => (AggKind.MIN, buildExpr(c, schema), "min")
+      case ProtoExpr.Max(c)      => (AggKind.MAX, buildExpr(c, schema), "max")
+      case ProtoExpr.Avg(c)      => (AggKind.AVG, buildExpr(c, schema), "avg")
+      case other =>
+        throw UnsupportedPlanException(s"unsupported aggregate: ${other.getClass.getSimpleName}")
 
   private def filterAndScan(plan: ProtoPhysicalPlan): (Option[ProtoExpr], ProtoSchema) =
     plan match
