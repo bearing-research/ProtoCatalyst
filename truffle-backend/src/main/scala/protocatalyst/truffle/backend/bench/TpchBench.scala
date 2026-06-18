@@ -117,6 +117,11 @@ object TpchBench:
     val sf = argOr(args, "--sf", "0.01")
     val warmup = argOr(args, "--warmup", "10").toInt
     val iters = argOr(args, "--iters", "30").toInt
+    // `--query Q5` runs a single query (so each can run in its own process — at SF=1 the inputs are
+    // large and the interpreter leaks Arrow intermediates per call, so one-query-per-JVM bounds RSS).
+    val only = argOr(args, "--query", "all")
+    // `--engines truffle` skips the interpreter (whose per-call leak is impractical at scale).
+    val engines = argOr(args, "--engines", "both")
 
     val dataDir = locateData(sf)
     println(s"# TPC-H steady-state benchmark — sf=$sf  warmup=$warmup  iters=$iters")
@@ -128,21 +133,23 @@ object TpchBench:
     println(f"${"query"}%-5s  ${"engine"}%-12s  result")
     println("-" * 78)
 
-    for q <- queries do
+    val selected = queries.filter(q => only == "all" || q.name.equalsIgnoreCase(only))
+    val runInterp = engines != "truffle"
+    val runTruffleEng = engines != "interp"
+    for q <- selected do
       val allocator = new RootAllocator()
       val batches = q.tables.map(t => t -> loadTable(dataDir, t, allocator)).toMap
       val physical = physicalOf(dataDir, q.sql, q.tables)
 
-      val interp = benchInterp(physical, batches, allocator, warmup, iters)
-      val truffle = benchTruffle(physical, batches, warmup, iters)
-
-      println(f"${q.name}%-5s  ${"interpreter"}%-12s  ${interp.fmt}")
-      println(f"${q.name}%-5s  ${"truffle"}%-12s  ${truffle.fmt}")
-      val speedup = interp.median / truffle.median
-      println(f"${""}%-5s  ${"→ truffle"}%-12s  ${speedup}%.2fx vs interpreter (steady-state)")
+      if runInterp then
+        val interp = benchInterp(physical, batches, allocator, warmup, iters)
+        println(f"${q.name}%-5s  ${"interpreter"}%-12s  ${interp.fmt}")
+        csv ++= f"${q.name},interpreter,${interp.median}%.1f,${interp.min}%.1f,${interp.p90}%.1f,${interp.rows}\n"
+      if runTruffleEng then
+        val truffle = benchTruffle(physical, batches, warmup, iters)
+        println(f"${q.name}%-5s  ${"truffle"}%-12s  ${truffle.fmt}")
+        csv ++= f"${q.name},truffle,${truffle.median}%.1f,${truffle.min}%.1f,${truffle.p90}%.1f,${truffle.rows}\n"
       println()
-      csv ++= f"${q.name},interpreter,${interp.median}%.1f,${interp.min}%.1f,${interp.p90}%.1f,${interp.rows}\n"
-      csv ++= f"${q.name},truffle,${truffle.median}%.1f,${truffle.min}%.1f,${truffle.p90}%.1f,${truffle.rows}\n"
 
       // The allocator is intentionally left open (reclaimed at JVM exit). The interpreter allocates
       // intermediate Arrow vectors per `execute` without freeing them (the same behavior
