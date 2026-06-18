@@ -98,26 +98,29 @@ public final class TypedGroupedAggRoot extends RootNode {
             if (SqlNull.isNull(v)) {
                 continue;
             }
-            double d = ((Number) v).doubleValue();
             gs.seen[a] = true;
             switch (kinds[a]) {
                 case SUM:
-                    gs.sum[a] += d;
+                    gs.sumAcc[a] = Aggregates.addSum(gs.sumAcc[a], v);
                     break;
                 case AVG:
-                    gs.sum[a] += d;
+                    gs.sumAcc[a] = Aggregates.addSum(gs.sumAcc[a], v);
                     gs.count[a]++;
                     break;
-                case MIN:
+                case MIN: {
+                    double d = ((Number) v).doubleValue();
                     if (d < gs.min[a]) {
                         gs.min[a] = d;
                     }
                     break;
-                case MAX:
+                }
+                case MAX: {
+                    double d = ((Number) v).doubleValue();
                     if (d > gs.max[a]) {
                         gs.max[a] = d;
                     }
                     break;
+                }
                 default:
                     break;
             }
@@ -129,9 +132,11 @@ public final class TypedGroupedAggRoot extends RootNode {
             case COUNT:
                 return Long.valueOf(gs.count[a]);
             case SUM:
-                return gs.seen[a] ? Double.valueOf(gs.sum[a]) : null;
+                return gs.seen[a] ? gs.sumAcc[a] : null;
             case AVG:
-                return (gs.seen[a] && gs.count[a] > 0) ? Double.valueOf(gs.sum[a] / gs.count[a]) : null;
+                return (gs.seen[a] && gs.count[a] > 0)
+                        ? Double.valueOf(((Number) gs.sumAcc[a]).doubleValue() / gs.count[a])
+                        : null;
             case MIN:
                 return gs.seen[a] ? Double.valueOf(gs.min[a]) : null;
             case MAX:
@@ -142,7 +147,7 @@ public final class TypedGroupedAggRoot extends RootNode {
     }
 
     private static final class GroupState {
-        final double[] sum;
+        final Object[] sumAcc; // SUM/AVG running total — Double or (exact) BigDecimal
         final long[] count;
         final double[] min;
         final double[] max;
@@ -150,7 +155,7 @@ public final class TypedGroupedAggRoot extends RootNode {
         final Object[] keyVals;
 
         GroupState(int na, Object[] keyVals) {
-            this.sum = new double[na];
+            this.sumAcc = new Object[na];
             this.count = new long[na];
             this.min = new double[na];
             this.max = new double[na];

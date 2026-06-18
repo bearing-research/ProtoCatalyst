@@ -38,7 +38,7 @@ public final class TypedGlobalAggRoot extends RootNode {
         Object[][] out = (Object[][]) frame.getArguments()[1];
 
         int na = kinds.length;
-        double[] sum = new double[na];
+        Object[] sumAcc = new Object[na]; // SUM/AVG running total — Double or (exact) BigDecimal
         long[] count = new long[na];
         double[] min = new double[na];
         double[] max = new double[na];
@@ -52,17 +52,17 @@ public final class TypedGlobalAggRoot extends RootNode {
         for (int i = 0; i < n; i++) {
             trow.row = i;
             if (filter == null || Boolean.TRUE.equals(filter.executeGeneric(frame))) {
-                accumulate(frame, sum, count, min, max, seen);
+                accumulate(frame, sumAcc, count, min, max, seen);
             }
         }
-        finish(out, sum, count, min, max, seen);
+        finish(out, sumAcc, count, min, max, seen);
         return 1;
     }
 
     @ExplodeLoop
     private void accumulate(
             VirtualFrame frame,
-            double[] sum,
+            Object[] sumAcc,
             long[] count,
             double[] min,
             double[] max,
@@ -76,26 +76,29 @@ public final class TypedGlobalAggRoot extends RootNode {
             if (SqlNull.isNull(v)) {
                 continue; // SUM/AVG/MIN/MAX ignore NULL inputs
             }
-            double d = ((Number) v).doubleValue();
             seen[a] = true;
             switch (kinds[a]) {
                 case SUM:
-                    sum[a] += d;
+                    sumAcc[a] = Aggregates.addSum(sumAcc[a], v);
                     break;
                 case AVG:
-                    sum[a] += d;
+                    sumAcc[a] = Aggregates.addSum(sumAcc[a], v);
                     count[a]++;
                     break;
-                case MIN:
+                case MIN: {
+                    double d = ((Number) v).doubleValue();
                     if (d < min[a]) {
                         min[a] = d;
                     }
                     break;
-                case MAX:
+                }
+                case MAX: {
+                    double d = ((Number) v).doubleValue();
                     if (d > max[a]) {
                         max[a] = d;
                     }
                     break;
+                }
                 default:
                     break;
             }
@@ -104,7 +107,7 @@ public final class TypedGlobalAggRoot extends RootNode {
 
     @ExplodeLoop
     private void finish(
-            Object[][] out, double[] sum, long[] count, double[] min, double[] max, boolean[] seen) {
+            Object[][] out, Object[] sumAcc, long[] count, double[] min, double[] max, boolean[] seen) {
         for (int a = 0; a < kinds.length; a++) {
             Object r;
             switch (kinds[a]) {
@@ -112,10 +115,13 @@ public final class TypedGlobalAggRoot extends RootNode {
                     r = Long.valueOf(count[a]);
                     break;
                 case SUM:
-                    r = seen[a] ? Double.valueOf(sum[a]) : null;
+                    r = seen[a] ? sumAcc[a] : null;
                     break;
                 case AVG:
-                    r = (seen[a] && count[a] > 0) ? Double.valueOf(sum[a] / count[a]) : null;
+                    r =
+                            (seen[a] && count[a] > 0)
+                                    ? Double.valueOf(((Number) sumAcc[a]).doubleValue() / count[a])
+                                    : null;
                     break;
                 case MIN:
                     r = seen[a] ? Double.valueOf(min[a]) : null;

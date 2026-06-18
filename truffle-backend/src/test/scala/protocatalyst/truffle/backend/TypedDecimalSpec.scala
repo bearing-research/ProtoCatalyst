@@ -133,4 +133,28 @@ class TypedDecimalSpec extends FunSuite:
     assert(localRows.exists(_(1) == null), "NULL discount → NULL product")
     assert(rowsAgree(localRows, typedRows), "exact BigDecimal product must agree with the interpreter")
 
+  test("exact decimal SUM(discount) matches the interpreter"):
+    val alloc = new RootAllocator()
+    val (batch, schema) = buildBatch(alloc)
+    val agg = ProtoExpr.Alias(ProtoExpr.Sum(discountRef), "s")
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(100L))
+    )
+    val plan = ProtoPhysicalPlan.HashAggregate(
+      Vector.empty,
+      Vector(agg),
+      ProtoPhysicalPlan.PhysicalFilter(cond, scanOf(schema))
+    )
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+
+    val typedRows = TypedTruffleCompiler.compile(plan).run(batch).rows
+    assertEquals(typedRows.size, 1)
+    assert(typedRows.head.head != null, "SUM over non-null decimals is not NULL")
+    assert(rowsAgree(localRows, typedRows), "exact BigDecimal SUM must agree with the interpreter")
+
 end TypedDecimalSpec
