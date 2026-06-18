@@ -202,8 +202,42 @@ object TypedTruffleCompiler:
       case ProtoExpr.Not(c)        => TLogic.Not(buildPred(c, schema))
       case ProtoExpr.IsNull(c)     => TControl.IsNull(buildExpr(c, schema))
       case ProtoExpr.IsNotNull(c)  => TControl.IsNotNull(buildExpr(c, schema))
+      case ProtoExpr.In(value, list) =>
+        TControl.In(buildExpr(value, schema), list.map(e => buildExpr(e, schema)).toArray)
+      case ProtoExpr.Like(value, pattern, escape) =>
+        TControl.Like(buildExpr(value, schema), compileLike(pattern, escape))
       case other =>
         throw UnsupportedPlanException(s"unsupported predicate: ${other.getClass.getSimpleName}")
+
+  private def compileLike(pattern: ProtoExpr, escape: Option[ProtoExpr]): java.util.regex.Pattern =
+    val pat = pattern match
+      case ProtoExpr.Literal(LiteralValue.StringValue(s)) => s
+      case other =>
+        throw UnsupportedPlanException(s"LIKE pattern must be a string literal, got ${other.getClass.getSimpleName}")
+    val esc = escape match
+      case None                                                       => '\\'
+      case Some(ProtoExpr.Literal(LiteralValue.StringValue(s))) if s.nonEmpty => s.charAt(0)
+      case other =>
+        throw UnsupportedPlanException(s"LIKE escape must be a non-empty string literal")
+    java.util.regex.Pattern.compile(likeToRegex(pat, esc), java.util.regex.Pattern.DOTALL)
+
+  /** Translate a SQL LIKE pattern to a Java regex: `%` → `.*`, `_` → `.`, the escape char makes the
+    * next character literal, and every other character is quoted. */
+  private def likeToRegex(pattern: String, escape: Char): String =
+    val sb = new StringBuilder
+    var i = 0
+    while i < pattern.length do
+      val c = pattern.charAt(i)
+      if c == escape && i + 1 < pattern.length then
+        sb.append(java.util.regex.Pattern.quote(pattern.charAt(i + 1).toString))
+        i += 2
+      else
+        c match
+          case '%'   => sb.append(".*")
+          case '_'   => sb.append(".")
+          case other => sb.append(java.util.regex.Pattern.quote(other.toString))
+        i += 1
+    sb.toString
 
 /** A compiled typed filter: counts rows passing the predicate under three-valued logic. */
 final class TypedFilterCount(callTarget: CallTarget, schema: ProtoSchema):

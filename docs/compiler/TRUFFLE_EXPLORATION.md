@@ -300,10 +300,14 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    left as a normalization detail. Next: Layer 2 (expression breadth — Cast, CASE, string/date functions).
 2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
    string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
-   needs Catalyst-exact semantics, not just a plausible implementation. **Started:** null-handling +
-   control flow — `IS [NOT] NULL`, three-valued `NOT`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, and
-   `Divide` (÷0 → NULL), all NULL-aware and parity-checked (`TypedControlSpec`, `truffle-exec/typed/
-   TControl`). Remaining: real `Cast` coercion, `In`, `Like`, and string/date/math functions.
+   needs Catalyst-exact semantics, not just a plausible implementation. **Well underway** — all
+   NULL-aware and parity-checked (30 tests): control flow (`IS [NOT] NULL`, 3VL `NOT`, `COALESCE`,
+   `NULLIF`, `IF`, `CASE WHEN`, `Divide` ÷0→NULL); **real `Cast`** coercion (`TCast` — numeric↔int
+   truncates, →double widens, →string/→decimal, NULL→NULL, unparseable→NULL); **string** funcs
+   (`UPPER`/`LOWER`/`LENGTH`) and **math** funcs (`ABS` type-preserving, `SQRT`, `FLOOR`, `CEIL`,
+   `ROUND` HALF_UP); and **`In`/`Like`** (3VL `IN`; `LIKE` compiled to regex with escape handling).
+   Remaining: the long tail (`Substring`/`Trim`/`Concat`, date functions, `Pow`/`Log`/…) and
+   ANSI-exact edge cases (overflow/rounding) → Layer 4.
 3. **Stateful operators.** Global + grouped aggregate (HashAggregate accumulator model), Sort, Limit,
    Distinct, the three joins, Window. Aggregates and joins are the structural lifts (state, later
    spilling).

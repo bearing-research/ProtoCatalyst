@@ -1,5 +1,7 @@
 package protocatalyst.truffle.typed;
 
+import java.util.regex.Pattern;
+
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 
@@ -149,6 +151,57 @@ public final class TControl {
                 return SqlNull.INSTANCE; // x / 0 = NULL (non-ANSI)
             }
             return Double.valueOf(((Number) l).doubleValue() / divisor);
+        }
+    }
+
+    /** {@code value IN (list)} with SQL 3VL: TRUE on a match; NULL if no match but value or any list
+     * element is NULL; else FALSE. */
+    public static final class In extends TExpr {
+        @Child private TExpr value;
+        @Children private final TExpr[] list;
+
+        public In(TExpr value, TExpr[] list) {
+            this.value = value;
+            this.list = list;
+        }
+
+        @Override
+        @ExplodeLoop
+        public Object executeGeneric(VirtualFrame frame) {
+            Object v = value.executeGeneric(frame);
+            if (SqlNull.isNull(v)) {
+                return SqlNull.INSTANCE;
+            }
+            boolean anyNull = false;
+            for (TExpr element : list) {
+                Object e = element.executeGeneric(frame);
+                if (SqlNull.isNull(e)) {
+                    anyNull = true;
+                } else if (valuesEqual(v, e)) {
+                    return Boolean.TRUE;
+                }
+            }
+            return anyNull ? SqlNull.INSTANCE : Boolean.FALSE;
+        }
+    }
+
+    /** {@code value LIKE pattern} — the SQL pattern is precompiled to a regex; NULL value → NULL. */
+    public static final class Like extends TExpr {
+        @Child private TExpr value;
+        private final Pattern pattern;
+
+        public Like(TExpr value, Pattern pattern) {
+            this.value = value;
+            this.pattern = pattern;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            Object v = value.executeGeneric(frame);
+            if (SqlNull.isNull(v)) {
+                return SqlNull.INSTANCE;
+            }
+            return pattern.matcher(v.toString()).matches() ? Boolean.TRUE : Boolean.FALSE;
         }
     }
 

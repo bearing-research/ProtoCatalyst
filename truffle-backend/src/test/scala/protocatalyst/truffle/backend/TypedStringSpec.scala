@@ -86,6 +86,28 @@ class TypedStringSpec extends FunSuite:
     assert(rowsAgree(localRows, typedRows), s"mismatch:\n  local=$localRows\n  typed=$typedRows")
 
   private def flagRef = ProtoExpr.ColumnRef("flag", None, ProtoType.StringType, true)
+  private def slit(s: String) = ProtoExpr.Literal(LiteralValue.StringValue(s))
+
+  private def filterCount(cond: ProtoExpr): (Long, Long) =
+    val alloc = new RootAllocator()
+    val (batch, schema) = buildBatch(alloc)
+    val plan = ProtoPhysicalPlan.PhysicalFilter(cond, scanOf(schema))
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val local = PhysicalPlanExecutor(catalog, alloc).execute(plan).rowCount.toLong
+    val typed = TypedTruffleCompiler.compileFilterCount(plan).count(batch)
+    (local, typed)
+
+  test("flag LIKE 'A' matches the interpreter"):
+    val (local, typed) = filterCount(ProtoExpr.Like(flagRef, slit("A"), None))
+    assertEquals(typed, local)
+    assert(local > 0 && local < n)
+
+  test("flag IN ('A','B') excludes NULLs and matches the interpreter"):
+    val (local, typed) = filterCount(ProtoExpr.In(flagRef, Vector(slit("A"), slit("B"))))
+    assertEquals(typed, local)
+    assert(local > 0 && local < n, "NULLs excluded, so fewer than all rows")
 
   test("LOWER(flag) and LENGTH(flag) — NULL-aware string functions"):
     checkProjection(Vector(ProtoExpr.Lower(flagRef), ProtoExpr.Length(flagRef)))
