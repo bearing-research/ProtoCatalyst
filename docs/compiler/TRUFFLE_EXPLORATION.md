@@ -7,7 +7,8 @@ measurement"**; this work turned it into a measurement and then into a working e
 Truffle at ~1.6× the codegen ceiling, a native-image AOT existence proof (runtime-built plan runs with
 partial evaluation intact, ~30× faster cold start), and a typed, null-aware backend over the project's
 own IR with interpreter parity across all SQL column types, a broad expression surface, and global +
-grouped aggregation + ORDER BY/LIMIT/DISTINCT (34 parity tests as of this writing).*
+grouped aggregation, ORDER BY/LIMIT/DISTINCT, inner + outer joins, and the full window-function family
+(49 parity tests as of this writing).*
 
 > **Goal & positioning.** This is a **research prototype and case study** — the first application of
 > Truffle to a big-data execution engine — **not** a Spark-merge deliverable. It runs on
@@ -49,12 +50,14 @@ no-codegen interpreter, **fused row-at-a-time is the winning shape**.
 in-binary), cold-starting **~30× faster** than the JVM (~10 ms vs ~310 ms). To our knowledge the first
 demonstration of a runtime-planned query engine executing in a native image with runtime compilation.
 
-**Correctness & coverage — 35 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
+**Correctness & coverage — 49 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
 - **Types:** long, double, string, decimal (exact `compareTo` **and** exact arbitrary-precision
-  `BigDecimal` `+`/`−`/`×`), date/timestamp — all with three-valued NULL logic.
-- **Expressions (~25):** arithmetic incl. `Divide` (÷0→NULL), all six comparisons, `AND`/`OR`/`NOT`
-  (3VL), `IS [NOT] NULL`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, real `Cast`, `UPPER`/`LOWER`/
-  `LENGTH`, `ABS`/`SQRT`/`FLOOR`/`CEIL`/`ROUND`, `IN`, `LIKE`.
+  `BigDecimal` `+`/`−`/`×`/`SUM`), date/timestamp — all with three-valued NULL logic.
+- **Expressions (~40):** arithmetic incl. `Divide` (÷0→NULL), all six comparisons, `AND`/`OR`/`NOT`
+  (3VL), `IS [NOT] NULL`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, real `Cast`, `IN`, `LIKE`; math
+  (`ABS`/`SQRT`/`FLOOR`/`CEIL`/`ROUND`/`EXP`/`CBRT`/`SIGN`/`POW`/`LOG`); string (`UPPER`/`LOWER`/
+  `LENGTH`/`CONCAT`/`REVERSE`/`SUBSTRING`/`TRIM`/`REPLACE`/`LPAD`/`RPAD`/`REPEAT`); date
+  (`YEAR`/`MONTH`/`DAYOFMONTH`/`DATE_ADD`/`DATE_SUB`).
 - **Operators:** filter, projection, global + grouped aggregate (null-aware), `ORDER BY`/`LIMIT`/
   `DISTINCT`, inner + outer (LEFT/RIGHT/FULL) equi-joins, and the full window-function family
   (ranking, aggregate `OVER`, `LAG`/`LEAD`/`NTILE`, `FIRST`/`LAST`/`NTH_VALUE`).
