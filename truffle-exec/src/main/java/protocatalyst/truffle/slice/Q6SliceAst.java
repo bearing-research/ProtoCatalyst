@@ -15,37 +15,63 @@ public final class Q6SliceAst {
 
     private Q6SliceAst() {}
 
+    // ---- baseline: filter, project ep*disc -------------------------------------------------
+
     public static RowFilterProjectRoot rowAst() {
-        RowPredicate predicate =
-                new RowAnd(
-                        new RowAnd(
-                                new RowCompareConst(new RowColumn(DISCOUNT), Cmp.GE, 0.05),
-                                new RowCompareConst(new RowColumn(DISCOUNT), Cmp.LE, 0.07)),
-                        new RowCompareConst(new RowColumn(QUANTITY), Cmp.LT, 24.0));
         RowExpr projection = new RowMultiply(new RowColumn(EXTENDEDPRICE), new RowColumn(DISCOUNT));
-        return new RowFilterProjectRoot(null, predicate, projection);
+        return new RowFilterProjectRoot(null, rowFilter(), projection);
     }
 
     public static BatchFilterProjectRoot batchAst() {
-        BatchPredicate predicate =
-                new BatchAnd(
-                        new BatchAnd(
-                                new BatchCompareConst(new BatchColumn(DISCOUNT), Cmp.GE, 0.05),
-                                new BatchCompareConst(new BatchColumn(DISCOUNT), Cmp.LE, 0.07)),
-                        new BatchCompareConst(new BatchColumn(QUANTITY), Cmp.LT, 24.0));
         BatchExpr projection =
                 new BatchMultiply(new BatchColumn(EXTENDEDPRICE), new BatchColumn(DISCOUNT));
-        return new BatchFilterProjectRoot(null, predicate, projection);
+        return new BatchFilterProjectRoot(null, batchFilter(), projection);
     }
 
     public static SelFilterProjectRoot selAst() {
-        SelPredicate[] predicates = {
+        SelExpr projection = new SelMultiply(new SelColumn(EXTENDEDPRICE), new SelColumn(DISCOUNT));
+        return new SelFilterProjectRoot(null, selFilter(), projection);
+    }
+
+    // ---- crossover experiment: same filter, heavier branchless projection ------------------
+
+    public static RowFilterProjectRoot rowAstHeavy() {
+        return new RowFilterProjectRoot(null, rowFilter(), new RowHeavyProj(EXTENDEDPRICE, DISCOUNT));
+    }
+
+    public static BatchFilterProjectRoot batchAstHeavy() {
+        return new BatchFilterProjectRoot(
+                null, batchFilter(), new BatchHeavyProj(EXTENDEDPRICE, DISCOUNT));
+    }
+
+    public static SelFilterProjectRoot selAstHeavy() {
+        return new SelFilterProjectRoot(null, selFilter(), new SelHeavyProj(EXTENDEDPRICE, DISCOUNT));
+    }
+
+    // ---- shared filter: discount in [.05,.07] AND quantity < 24 ----------------------------
+
+    private static RowPredicate rowFilter() {
+        return new RowAnd(
+                new RowAnd(
+                        new RowCompareConst(new RowColumn(DISCOUNT), Cmp.GE, 0.05),
+                        new RowCompareConst(new RowColumn(DISCOUNT), Cmp.LE, 0.07)),
+                new RowCompareConst(new RowColumn(QUANTITY), Cmp.LT, 24.0));
+    }
+
+    private static BatchPredicate batchFilter() {
+        return new BatchAnd(
+                new BatchAnd(
+                        new BatchCompareConst(new BatchColumn(DISCOUNT), Cmp.GE, 0.05),
+                        new BatchCompareConst(new BatchColumn(DISCOUNT), Cmp.LE, 0.07)),
+                new BatchCompareConst(new BatchColumn(QUANTITY), Cmp.LT, 24.0));
+    }
+
+    private static SelPredicate[] selFilter() {
+        return new SelPredicate[] {
             new SelCompareConst(DISCOUNT, Cmp.GE, 0.05),
             new SelCompareConst(DISCOUNT, Cmp.LE, 0.07),
             new SelCompareConst(QUANTITY, Cmp.LT, 24.0)
         };
-        SelExpr projection = new SelMultiply(new SelColumn(EXTENDEDPRICE), new SelColumn(DISCOUNT));
-        return new SelFilterProjectRoot(null, predicates, projection);
     }
 
     /** Deterministic columnar data (no RNG), reproducible across runs and node shapes. */
@@ -57,6 +83,26 @@ public final class Q6SliceAst {
             extendedprice[i] = 1000.0 + (i % 9000);
             discount[i] = (i % 11) * 0.01; // 0.00 .. 0.10 — includes .05/.06/.07
             quantity[i] = i % 50; // 0 .. 49 — < 24 selects ~half
+        }
+        double[][] cols = new double[3][];
+        cols[EXTENDEDPRICE] = extendedprice;
+        cols[DISCOUNT] = discount;
+        cols[QUANTITY] = quantity;
+        return new ColumnBatch(cols, rows);
+    }
+
+    /**
+     * Data where (nearly) all rows pass the Q6 filter — discount in {.05,.06,.07}, quantity 0..19.
+     * Makes the projection the dominant cost, the case most favorable to branchless/SIMD vectorization.
+     */
+    public static ColumnBatch syntheticAllPass(int rows) {
+        double[] extendedprice = new double[rows];
+        double[] discount = new double[rows];
+        double[] quantity = new double[rows];
+        for (int i = 0; i < rows; i++) {
+            extendedprice[i] = 1000.0 + (i % 9000);
+            discount[i] = 0.05 + (i % 3) * 0.01; // .05 / .06 / .07 — all in range
+            quantity[i] = i % 20; // 0 .. 19 — all < 24
         }
         double[][] cols = new double[3][];
         cols[EXTENDEDPRICE] = extendedprice;

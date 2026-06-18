@@ -102,6 +102,38 @@ final class BatchAdd extends BatchExpr {
     }
 }
 
+/**
+ * Heavy branchless projection over the whole column (one SIMD-friendly pass). The catch for the naive
+ * batch shape: it computes the kernel for ALL rows, including those the filter will drop — the gather
+ * happens afterward — so a selective filter makes this wasteful.
+ */
+final class BatchHeavyProj extends BatchExpr {
+    private final int epCol;
+    private final int discCol;
+    private double[] scratch;
+
+    BatchHeavyProj(int epCol, int discCol) {
+        this.epCol = epCol;
+        this.discCol = discCol;
+    }
+
+    @Override
+    double[] executeBatch(ColumnBatch input) {
+        double[] ep = input.cols[epCol];
+        double[] disc = input.cols[discCol];
+        int n = input.rowCount;
+        double[] out = scratch = BatchNodes.ensureDouble(scratch, n);
+        for (int i = 0; i < n; i++) {
+            double d = disc[i];
+            double r = ep[i] * d;
+            r *= (2.0 - d);
+            r *= (1.0 + d * d);
+            out[i] = r;
+        }
+        return out;
+    }
+}
+
 /** Compare a column subtree against a constant, into a reused mask. */
 final class BatchCompareConst extends BatchPredicate {
     @Child private BatchExpr input;

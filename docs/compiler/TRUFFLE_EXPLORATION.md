@@ -205,8 +205,25 @@ expensive payoff) runs only if the perf number survives.
 > when predicates are very selective early, per-tuple compute is heavier, or pipelines are long —
 > none true for Q6. **Defensible conclusion: vectorization got its best shot and fusion still wins for
 > this query shape; the AOT headline is fused Truffle at ~1.6× codegen.** Still outstanding for the
-> gate: the Scala-interpreter baseline (needs the AST builder), and other query shapes (heavier
-> compute, longer pipelines) where the row-vs-sel ordering may flip.
+> gate: the Scala-interpreter baseline (needs the AST builder).
+>
+> **Crossover experiment (does vectorization ever overtake fusion?).** A heavier branchless projection
+> ({@code r = ep*d; r*=2-d; r*=1+d*d}) across two selectivities (`Q6HeavyBench`, 65536 rows, µs/op):
+>
+> | dataset | rawJava | row (fused) | sel (sel-vec) | batch (naive) |
+> |---|---|---|---|---|
+> | selective (~13% pass) | 61.9 | **98.6 (1.59×)** | 129.9 (2.10×) | 266.6 (4.3×) |
+> | allpass (~100% pass) | 52.2 | **142.5 (2.73×)** | 284.5 (5.45×) | 313.0 (6.0×) |
+>
+> The crossover **does not happen** — the opposite of the SIMD hypothesis: in the projection-dominated
+> `allpass` case `sel` gets *worse* relative to `row` (2.0× vs 1.3×). Root cause: our vectorized shapes
+> do **one pass per node**, and the filter alone is ~4 passes (scan + 2 refines + gather) vs the fused
+> loop's single register-resident pass. **To beat fused row a vectorized engine needs kernel fusion —
+> compiling several ops into one SIMD loop — i.e. exactly the runtime codegen AOT forbids.** So for an
+> AOT-safe, no-codegen interpreter, **fused row-at-a-time is the winning shape**, and it sits ~1.6–2.7×
+> the codegen ceiling depending on how much of the work clears the filter. (Caveat: a *hand-fused*
+> vectorized kernel — one node doing filter+project+SIMD in a single pass — was not built; that is the
+> Velox/Photon design and it reintroduces per-shape kernel generation.)
 
 ### Phase 3 — Correctness via the harness
 - Add `runTruffle(plan)` as the **third backend** in `TpchCrossBackendSuite`; assert row-parity

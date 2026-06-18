@@ -83,6 +83,31 @@ final class RowAdd extends RowExpr {
     }
 }
 
+/**
+ * A heavier branchless projection kernel: {@code r = ep*d; r *= (2 - d); r *= (1 + d*d)} — a few
+ * extra flops over {@code ep*d}, computed for the current row. Used by the crossover experiment to
+ * raise arithmetic intensity; the row shape evaluates it scalar inside the filter branch.
+ */
+final class RowHeavyProj extends RowExpr {
+    private final int epCol;
+    private final int discCol;
+
+    RowHeavyProj(int epCol, int discCol) {
+        this.epCol = epCol;
+        this.discCol = discCol;
+    }
+
+    @Override
+    double executeDouble(RowCtx ctx) {
+        double ep = ctx.cols[epCol][ctx.row];
+        double d = ctx.cols[discCol][ctx.row];
+        double r = ep * d;
+        r *= (2.0 - d);
+        r *= (1.0 + d * d);
+        return r;
+    }
+}
+
 /** Compare a numeric subtree against a constant, one row at a time. */
 final class RowCompareConst extends RowPredicate {
     @Child private RowExpr input;

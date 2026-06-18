@@ -95,6 +95,39 @@ final class SelColumn extends SelExpr {
     }
 }
 
+/**
+ * Heavy branchless projection over only the selected rows (the vectorized advantage candidate): the
+ * same flops as {@link RowHeavyProj}, but in a tight gather loop with no per-row branch — so it
+ * computes the kernel only for survivors AND in a SIMD-friendly shape. This is where selection-vector
+ * vectorization could overtake the fused row loop.
+ */
+final class SelHeavyProj extends SelExpr {
+    private final int epCol;
+    private final int discCol;
+    private double[] scratch;
+
+    SelHeavyProj(int epCol, int discCol) {
+        this.epCol = epCol;
+        this.discCol = discCol;
+    }
+
+    @Override
+    double[] gather(ColumnBatch input, int[] sel, int count) {
+        double[] ep = input.cols[epCol];
+        double[] disc = input.cols[discCol];
+        double[] out = scratch = SelNodes.ensureDouble(scratch, count);
+        for (int j = 0; j < count; j++) {
+            int i = sel[j];
+            double d = disc[i];
+            double r = ep[i] * d;
+            r *= (2.0 - d);
+            r *= (1.0 + d * d);
+            out[j] = r;
+        }
+        return out;
+    }
+}
+
 /** Multiply two gathered column subtrees over the selection. */
 final class SelMultiply extends SelExpr {
     @Child private SelExpr left;
