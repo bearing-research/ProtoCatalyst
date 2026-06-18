@@ -29,14 +29,19 @@ object TypedTruffleCompiler:
   def compileFilterCount(plan: ProtoPhysicalPlan): TypedFilterCount =
     val (filterOpt, schema, tableName, _) = filterAndScan(plan)
     val cond = filterOpt.getOrElse(throw UnsupportedPlanException("expected a Filter over a TableScan"))
+    val dsCols = decimalDoubleSafe(schema, Seq(cond))
     // A thunk so each parallel slice gets its own AST (Truffle nodes aren't thread-safe to share).
-    val buildTarget = () => TFilterCountRoot(null, buildPred(cond, schema)).getCallTarget
-    TypedFilterCount(buildTarget, schema, tableName, neededColumns(schema, Seq(cond)))
+    val buildTarget = () =>
+      given DoubleSafe = DoubleSafe(dsCols)
+      TFilterCountRoot(null, buildPred(cond, schema)).getCallTarget
+    TypedFilterCount(buildTarget, schema, tableName, neededColumns(schema, Seq(cond)), dsCols)
 
   /** Compile `Project`/`Filter` over a `TableScan` into a typed, null-preserving filter→project. */
   def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTypedQuery =
     val (projList, filterOpt, schema, tableName, alias) = decompose(plan)
+    val dsCols = decimalDoubleSafe(schema, filterOpt.toSeq ++ projList)
     val buildTarget = () =>
+      given DoubleSafe = DoubleSafe(dsCols)
       val projections = projList.map(e => buildExpr(e, schema)).toArray
       val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
       TypedFilterProjectRoot(null, filterNode, projections).getCallTarget
@@ -44,7 +49,8 @@ object TypedTruffleCompiler:
       buildTarget, schema, tableName,
       qualify(projList.map(outputName), alias),
       neededColumns(schema, filterOpt.toSeq ++ projList),
-      LeafMerge.Concat
+      LeafMerge.Concat,
+      dsCols
     )
 
   private def decompose(
@@ -166,7 +172,9 @@ object TypedTruffleCompiler:
     val aggKinds = parsed.map(_._1)
     // Output columns: grouping keys first, then aggregates (the interpreter's order).
     val names = grouping.map(outputName) ++ parsed.map(_._3)
+    val dsCols = decimalDoubleSafe(schema, filterOpt.toSeq ++ grouping ++ aggs)
     val buildTarget = () =>
+      given DoubleSafe = DoubleSafe(dsCols)
       val keyNodes = grouping.map(g => buildExpr(g, schema)).toArray
       val p = aggs.map(a => buildAgg(a, schema))
       val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
@@ -178,7 +186,8 @@ object TypedTruffleCompiler:
     CompiledTypedQuery(
       buildTarget, schema, tableName, names,
       neededColumns(schema, filterOpt.toSeq ++ grouping ++ aggs),
-      merge
+      merge,
+      dsCols
     )
 
   private def compileGlobalAggregate(
@@ -188,7 +197,9 @@ object TypedTruffleCompiler:
     val (filterOpt, schema, tableName, _) = filterAndScan(child)
     val parsed = aggs.map(a => buildAgg(a, schema)) // built once for kinds/names (nodes discarded)
     val aggKinds = parsed.map(_._1)
+    val dsCols = decimalDoubleSafe(schema, filterOpt.toSeq ++ aggs)
     val buildTarget = () =>
+      given DoubleSafe = DoubleSafe(dsCols)
       val p = aggs.map(a => buildAgg(a, schema))
       val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
       TypedGlobalAggRoot(null, filterNode, p.map(_._2).toArray, p.map(_._1).toArray).getCallTarget
@@ -198,12 +209,13 @@ object TypedTruffleCompiler:
     CompiledTypedQuery(
       buildTarget, schema, tableName, parsed.map(_._3),
       neededColumns(schema, filterOpt.toSeq ++ aggs),
-      merge
+      merge,
+      dsCols
     )
 
   /** Map a (possibly aliased) aggregate to (kind, inner-expr, name). COUNT uses a placeholder input
     * (its value is ignored — COUNT(*) counts surviving rows), so the `@Children` array has no nulls. */
-  private def buildAgg(e: ProtoExpr, schema: ProtoSchema): (AggKind, TExpr, String) =
+  private def buildAgg(e: ProtoExpr, schema: ProtoSchema)(using DoubleSafe): (AggKind, TExpr, String) =
     e match
       case ProtoExpr.Alias(child, name) =>
         val (k, inp, _) = buildAgg(child, schema)
@@ -416,16 +428,51 @@ object TypedTruffleCompiler:
       .filter(_ >= 0)
       .toSet
 
-  private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
+  /** Schema indices of decimal columns referenced **only** as `Cast(col AS DOUBLE)` (never as an exact
+    * decimal — a bare ref, a decimal comparison/SUM). Such a column decodes straight into a `double[]`
+    * (skipping the per-cell `BigDecimal` the `DecimalVector` decode allocates) and its column node
+    * becomes a `TDoubleColumn`. Any other use excludes it, preserving exact-decimal semantics. The
+    * money columns in TPC-H Q1/Q3/Q5/Q6/Q10 are all `CAST(... AS DOUBLE)`, so this removes millions of
+    * BigDecimal allocations per query — the GC bound the parallel scan otherwise hit. */
+  private def decimalDoubleSafe(schema: ProtoSchema, exprs: Seq[ProtoExpr]): Set[Int] =
+    def isDecimal(name: String): Boolean =
+      val i = schema.fields.indexWhere(_.name.equalsIgnoreCase(name))
+      i >= 0 && schema.fields(i).dataType.isInstanceOf[ProtoType.DecimalType]
+    val safe = scala.collection.mutable.Set[String]()
+    val unsafe = scala.collection.mutable.Set[String]()
+    def walk(any: Any): Unit =
+      any match
+        case ProtoExpr.Cast(ProtoExpr.ColumnRef(name, _, _, _), ProtoType.DoubleType) if isDecimal(name) =>
+          safe += name.toLowerCase // this occurrence is double-safe; don't descend into the column
+        case ProtoExpr.ColumnRef(name, _, _, _) if isDecimal(name) =>
+          unsafe += name.toLowerCase
+        case p: Product      => p.productIterator.foreach(walk)
+        case it: Iterable[?] => it.foreach(walk)
+        case _               => ()
+    exprs.foreach(walk)
+    safe.iterator
+      .filterNot(unsafe.contains)
+      .map(name => schema.fields.indexWhere(_.name.equalsIgnoreCase(name)))
+      .filter(_ >= 0)
+      .toSet
+
+  /** Which referenced decimal columns to decode as `double[]` (see [[decimalDoubleSafe]]). Carried as a
+    * `using` value so it threads through `buildExpr`'s ~50 recursive cases without per-call plumbing;
+    * the default is empty (no decimal is treated as double unless a leaf opts it in). */
+  private case class DoubleSafe(cols: Set[Int])
+  private given DoubleSafe = DoubleSafe(Set.empty)
+
+  private def buildExpr(e: ProtoExpr, schema: ProtoSchema)(using ds: DoubleSafe): TExpr =
     e match
       case ProtoExpr.ColumnRef(name, _, _, _) =>
         val i = schema.fields.indexWhere(_.name.equalsIgnoreCase(name))
         if i < 0 then throw UnsupportedPlanException(s"column not found: $name")
         kindOf(schema.fields(i).dataType) match
-          case ColKind.LongCol    => TLongColumn(i)
-          case ColKind.DoubleCol  => TDoubleColumn(i)
-          case ColKind.StringCol  => TStringColumn(i)
-          case ColKind.DecimalCol => TDecimalColumn(i)
+          case ColKind.LongCol                          => TLongColumn(i)
+          case ColKind.DoubleCol                        => TDoubleColumn(i)
+          case ColKind.StringCol                        => TStringColumn(i)
+          case ColKind.DecimalCol if ds.cols.contains(i) => TDoubleColumn(i) // decoded as double[]
+          case ColKind.DecimalCol                       => TDecimalColumn(i)
       case ProtoExpr.Literal(LiteralValue.StringValue(v)) => TLit.Str(v)
       case ProtoExpr.Literal(LiteralValue.LongValue(v))    => TLit.Long(v)
       case ProtoExpr.Literal(LiteralValue.IntValue(v))     => TLit.Long(v.toLong)
@@ -482,7 +529,7 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"unsupported expression: ${other.getClass.getSimpleName}")
 
-  private def buildPred(e: ProtoExpr, schema: ProtoSchema): TExpr =
+  private def buildPred(e: ProtoExpr, schema: ProtoSchema)(using DoubleSafe): TExpr =
     e match
       case ProtoExpr.And(children) =>
         children.map(c => buildPred(c, schema)).reduce((l, r) => TLogic.And(l, r))
@@ -539,7 +586,8 @@ final class TypedFilterCount(
     buildTarget: () => CallTarget,
     schema: ProtoSchema,
     tableName: String,
-    neededCols: Set[Int]
+    neededCols: Set[Int],
+    decimalAsDouble: Set[Int]
 ):
 
   def count(tables: Map[String, Batch]): Long =
@@ -553,7 +601,7 @@ final class TypedFilterCount(
     else countSlice(batch, buildTarget())
 
   private def countSlice(batch: Batch, target: CallTarget): Long =
-    val cols = TypedColumnsDecoder.decode(batch, schema, neededCols)
+    val cols = TypedColumnsDecoder.decode(batch, schema, neededCols, decimalAsDouble)
     target.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
 
   def count(input: Batch): Long = count(Map(tableName -> input))
@@ -661,7 +709,8 @@ final class CompiledTypedQuery(
     tableName: String,
     val outputNames: Vector[String],
     neededCols: Set[Int],
-    merge: LeafMerge
+    merge: LeafMerge,
+    decimalAsDouble: Set[Int]
 ) extends TypedQuery:
 
   def tableNames: Set[String] = Set(tableName)
@@ -682,7 +731,7 @@ final class CompiledTypedQuery(
 
   /** Decode + execute one (possibly sliced) batch through a fresh call target. */
   private def runSlice(batch: Batch, target: CallTarget): TypedResult =
-    val cols = TypedColumnsDecoder.decode(batch, schema, neededCols)
+    val cols = TypedColumnsDecoder.decode(batch, schema, neededCols, decimalAsDouble)
     val numCols = outputNames.size
     val out = Array.ofDim[AnyRef](numCols, math.max(1, cols.rowCount))
     val k = target.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue

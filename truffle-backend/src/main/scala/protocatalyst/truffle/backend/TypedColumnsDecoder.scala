@@ -15,12 +15,17 @@ object TypedColumnsDecoder:
 
   /** Decode every column (back-compat). */
   def decode(input: Batch, schema: ProtoSchema): TypedColumns =
-    decode(input, schema, (0 until schema.fields.size).toSet)
+    decode(input, schema, (0 until schema.fields.size).toSet, Set.empty)
 
-  /** Decode only the columns in `needed` (the ones a query actually references); the rest are left
-    * `null` and never read. At scale this is the dominant saving — e.g. TPC-H Q6 touches 4 of
-    * lineitem's 16 columns, so eager full decode materialized 4× the primitive arrays it used. */
   def decode(input: Batch, schema: ProtoSchema, needed: Set[Int]): TypedColumns =
+    decode(input, schema, needed, Set.empty)
+
+  /** Decode only the columns in `needed` (the rest are left `null` and never read). Columns in
+    * `asDouble` are decimal columns the query uses only as `double` (`Cast(.. AS DOUBLE)`): decode them
+    * straight into a `double[]` instead of a `BigDecimal[]`, so the retained array is 8 bytes/cell and
+    * the AST reads them via a TDoubleColumn. At scale this removes the per-cell BigDecimal that
+    * otherwise dominates GC. */
+  def decode(input: Batch, schema: ProtoSchema, needed: Set[Int], asDouble: Set[Int]): TypedColumns =
     val n = input.rowCount
     val numCols = schema.fields.size
     val data = new Array[Object](numCols)
@@ -29,10 +34,18 @@ object TypedColumnsDecoder:
     while c < numCols do
       if needed.contains(c) then
         val vec = input.column(c)
-        data(c) = decodeColumn(vec, n)
+        data(c) = if asDouble.contains(c) then decodeDecimalAsDouble(vec, n) else decodeColumn(vec, n)
         nulls(c) = nullMask(vec, n)
       c += 1
     new TypedColumns(data, nulls, n)
+
+  /** A decimal column decoded as `double[]` (for columns used only as `double`). */
+  private def decodeDecimalAsDouble(vec: FieldVector, n: Int): Array[Double] =
+    vec match
+      case v: DecimalVector =>
+        Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.getObject(i).doubleValue)
+      case other => // not actually a decimal (shouldn't happen) — fall back to a numeric read
+        Array.tabulate(n)(i => if other.isNull(i) then 0.0 else other.getObject(i).asInstanceOf[Number].doubleValue)
 
   private def nullMask(vec: FieldVector, n: Int): Array[Boolean] =
     if vec.getNullCount == 0 then null
