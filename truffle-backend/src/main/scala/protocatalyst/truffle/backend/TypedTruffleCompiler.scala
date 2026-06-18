@@ -438,12 +438,37 @@ object TypedTruffleCompiler:
     def isDecimal(name: String): Boolean =
       val i = schema.fields.indexWhere(_.name.equalsIgnoreCase(name))
       i >= 0 && schema.fields(i).dataType.isInstanceOf[ProtoType.DecimalType]
+    // A literal that is *not* an exact decimal — comparing a decimal column to it widens both to
+    // double (exactly what the interpreter's `(Number, Number) → doubleValue` rule does), so reading
+    // the column as double matches. A decimal literal or a non-literal would not be safe.
+    def isNonDecimalLiteral(e: ProtoExpr): Boolean = e match
+      case ProtoExpr.Literal(_: LiteralValue.DecimalValue) => false
+      case ProtoExpr.Literal(_)                            => true
+      case _                                               => false
+    def comparisonOperands(e: ProtoExpr): Option[(ProtoExpr, ProtoExpr)] = e match
+      case ProtoExpr.Eq(l, r)    => Some((l, r))
+      case ProtoExpr.NotEq(l, r) => Some((l, r))
+      case ProtoExpr.Lt(l, r)    => Some((l, r))
+      case ProtoExpr.LtEq(l, r)  => Some((l, r))
+      case ProtoExpr.Gt(l, r)    => Some((l, r))
+      case ProtoExpr.GtEq(l, r)  => Some((l, r))
+      case _                     => None
+
     val safe = scala.collection.mutable.Set[String]()
     val unsafe = scala.collection.mutable.Set[String]()
     def walk(any: Any): Unit =
       any match
         case ProtoExpr.Cast(ProtoExpr.ColumnRef(name, _, _, _), ProtoType.DoubleType) if isDecimal(name) =>
-          safe += name.toLowerCase // this occurrence is double-safe; don't descend into the column
+          safe += name.toLowerCase // double-safe occurrence; don't descend into the column
+        case e: ProtoExpr if comparisonOperands(e).isDefined =>
+          val (l, r) = comparisonOperands(e).get
+          (l, r) match
+            // `decimal col <cmp> non-decimal literal` (either order) is a double-semantic comparison.
+            case (ProtoExpr.ColumnRef(name, _, _, _), lit) if isDecimal(name) && isNonDecimalLiteral(lit) =>
+              safe += name.toLowerCase
+            case (lit, ProtoExpr.ColumnRef(name, _, _, _)) if isDecimal(name) && isNonDecimalLiteral(lit) =>
+              safe += name.toLowerCase
+            case _ => walk(l); walk(r)
         case ProtoExpr.ColumnRef(name, _, _, _) if isDecimal(name) =>
           unsafe += name.toLowerCase
         case p: Product      => p.productIterator.foreach(walk)
