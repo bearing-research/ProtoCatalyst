@@ -236,4 +236,64 @@ class TypedJoinSpec extends FunSuite:
     assertEquals(typedRows.size, 3)
     assertEquals(typedRows, localRows, "residual join condition must match the interpreter")
 
+  private def nationRegionJoin(nationSchema: ProtoSchema, regionSchema: ProtoSchema) =
+    val key = ProtoExpr.ColumnRef("regionkey", None, ProtoType.LongType, false)
+    ProtoPhysicalPlan.HashJoin(
+      ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Vector(key),
+      Vector(key),
+      None,
+      BuildSide.BuildRight
+    )
+
+  private def runComposed(plan: ProtoPhysicalPlan, nationBatch: Batch, regionBatch: Batch): (Vector[Vector[Any]], Vector[Vector[Any]]) =
+    val alloc = new RootAllocator()
+    val catalog = new Catalog()
+    catalog.registerTable("nation", nationBatch)
+    catalog.registerTable("region", regionBatch)
+    catalog.registerStatistics("nation", Statistics(6, 600))
+    catalog.registerStatistics("region", Statistics(4, 400))
+    val local = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan)).sortBy(_.mkString("|"))
+    val typed = TypedTruffleCompiler
+      .compile(plan)
+      .run(Map("nation" -> nationBatch, "region" -> regionBatch))
+      .rows
+      .sortBy(_.mkString("|"))
+    (local, typed)
+
+  test("composition: GROUP BY over a join with HAVING COUNT(*) > 1"):
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val agg = ProtoPhysicalPlan.HashAggregate(
+      Vector(ProtoExpr.ColumnRef("rname", None, ProtoType.StringType, false)),
+      Vector(ProtoExpr.Alias(ProtoExpr.Count(ProtoExpr.Literal(LiteralValue.IntValue(1)), false), "cnt")),
+      nationRegionJoin(nationSchema, regionSchema)
+    )
+    val having = ProtoPhysicalPlan.PhysicalFilter(
+      ProtoExpr.Gt(ProtoExpr.ColumnRef("cnt", None, ProtoType.LongType, false), ProtoExpr.Literal(LiteralValue.LongValue(1L))),
+      agg
+    )
+    val (local, typed) = runComposed(having, nationBatch, regionBatch)
+    // R0→2, R1→2, R2→1; HAVING cnt>1 keeps R0, R1.
+    assertEquals(typed.size, 2)
+    assertEquals(typed, local, "HAVING over GROUP BY over a join must match the interpreter")
+
+  test("composition: SELECT nname, rname over a join (project over join)"):
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val plan = ProtoPhysicalPlan.PhysicalProject(
+      Vector(
+        ProtoExpr.ColumnRef("nname", None, ProtoType.StringType, false),
+        ProtoExpr.ColumnRef("rname", None, ProtoType.StringType, false)
+      ),
+      nationRegionJoin(nationSchema, regionSchema)
+    )
+    val (local, typed) = runComposed(plan, nationBatch, regionBatch)
+    assertEquals(typed.size, 5, "5 inner-join rows")
+    assertEquals(typed, local, "project over a join must match the interpreter")
+
 end TypedJoinSpec

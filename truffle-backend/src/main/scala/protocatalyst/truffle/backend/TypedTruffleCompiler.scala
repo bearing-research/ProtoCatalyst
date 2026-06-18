@@ -80,6 +80,12 @@ object TypedTruffleCompiler:
       case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, cond, _) => compileJoin(l, r, jt, lk, rk, cond)
       case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, cond, _) => compileJoin(l, r, jt, lk, rk, cond)
       case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, cond) => compileJoin(l, r, jt, lk, rk, cond)
+      // Filter/Project over a non-single-table child (a join, an aggregate → HAVING, …): row-based,
+      // so WHERE/HAVING/SELECT compose over joins. Single-table Filter/Project use the Truffle leaf.
+      case ProtoPhysicalPlan.PhysicalFilter(cond, child) if !isSingleTable(child) =>
+        RowFilterQuery(compile(child), cond)
+      case ProtoPhysicalPlan.PhysicalProject(projList, child) if !isSingleTable(child) =>
+        RowProjectQuery(compile(child), projList, projList.map(outputName))
       case _ => compileFilterProject(plan)
 
   /** Route an aggregate: a single-table (Filter/Scan) child uses the Truffle-accelerated leaf path;
@@ -99,6 +105,15 @@ object TypedTruffleCompiler:
       case ProtoPhysicalPlan.TableScan(_, _, _, _) => true
       case ProtoPhysicalPlan.PhysicalFilter(_, c)  => isSingleTableLeaf(c)
       case _                                       => false
+
+  /** A Filter/Project/Scan chain over a single table (no joins/aggregates) — the Truffle leaf path
+    * (`compileFilterProject`) handles it; anything else routes to the row-based operators. */
+  private def isSingleTable(p: ProtoPhysicalPlan): Boolean =
+    p match
+      case ProtoPhysicalPlan.TableScan(_, _, _, _)   => true
+      case ProtoPhysicalPlan.PhysicalFilter(_, c)    => isSingleTable(c)
+      case ProtoPhysicalPlan.PhysicalProject(_, c)   => isSingleTable(c)
+      case _                                         => false
 
   /** Row-based aggregate over an arbitrary child query (e.g. a join) — groups the child's output rows
     * and aggregates them, so GROUP BY composes on top of any operator. */
@@ -764,6 +779,24 @@ final class JoinQuery(
         case other                   => other)
       k += 1
     Some(acc.toList)
+
+/** Row-based filter over a child query (WHERE/HAVING above a join or aggregate). Keeps child rows for
+  * which the predicate is exactly TRUE, evaluated over the boxed row by [[RowEval]]. */
+final class RowFilterQuery(child: TypedQuery, predicate: ProtoExpr) extends TypedQuery:
+  def outputNames: Vector[String] = child.outputNames
+  def tableNames: Set[String] = child.tableNames
+  def run(tables: Map[String, Batch]): TypedResult =
+    val r = child.run(tables)
+    new TypedResult(r.names, r.boxedRows.filter(row => RowEval.holds(predicate, row, r.names)))
+
+/** Row-based projection over a child query (SELECT above a join). Evaluates each projection expression
+  * over the boxed row via [[RowEval]]. */
+final class RowProjectQuery(child: TypedQuery, exprs: Vector[ProtoExpr], val outputNames: Vector[String])
+    extends TypedQuery:
+  def tableNames: Set[String] = child.tableNames
+  def run(tables: Map[String, Batch]): TypedResult =
+    val r = child.run(tables)
+    new TypedResult(outputNames, r.boxedRows.map(row => exprs.map(e => RowEval.eval(e, row, r.names))))
 
 /** Row-based aggregate over a child query's output rows — used when GROUP BY sits above a join (or any
   * non-single-table child). Groups boxed rows by the grouping columns and computes
