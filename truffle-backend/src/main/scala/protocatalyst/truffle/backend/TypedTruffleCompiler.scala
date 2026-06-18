@@ -24,7 +24,7 @@ object TypedTruffleCompiler:
   final class UnsupportedPlanException(message: String) extends RuntimeException(message)
 
   private enum ColKind:
-    case LongCol, DoubleCol, StringCol
+    case LongCol, DoubleCol, StringCol, DecimalCol
 
   def compileFilterCount(plan: ProtoPhysicalPlan): TypedFilterCount =
     val (filterOpt, schema) = filterAndScan(plan)
@@ -114,8 +114,10 @@ object TypedTruffleCompiler:
       case ProtoType.LongType | ProtoType.IntegerType | ProtoType.ShortType | ProtoType.ByteType |
           ProtoType.DateType =>
         ColKind.LongCol
-      case ProtoType.DoubleType | ProtoType.FloatType | _: ProtoType.DecimalType =>
+      case ProtoType.DoubleType | ProtoType.FloatType =>
         ColKind.DoubleCol
+      case _: ProtoType.DecimalType =>
+        ColKind.DecimalCol
       case ProtoType.StringType =>
         ColKind.StringCol
       case other =>
@@ -127,9 +129,10 @@ object TypedTruffleCompiler:
         val i = schema.fields.indexWhere(_.name.equalsIgnoreCase(name))
         if i < 0 then throw UnsupportedPlanException(s"column not found: $name")
         kindOf(schema.fields(i).dataType) match
-          case ColKind.LongCol   => TLongColumn(i)
-          case ColKind.DoubleCol => TDoubleColumn(i)
-          case ColKind.StringCol => TStringColumn(i)
+          case ColKind.LongCol    => TLongColumn(i)
+          case ColKind.DoubleCol  => TDoubleColumn(i)
+          case ColKind.StringCol  => TStringColumn(i)
+          case ColKind.DecimalCol => TDecimalColumn(i)
       case ProtoExpr.Literal(LiteralValue.StringValue(v)) => TLit.Str(v)
       case ProtoExpr.Literal(LiteralValue.LongValue(v))    => TLit.Long(v)
       case ProtoExpr.Literal(LiteralValue.IntValue(v))     => TLit.Long(v.toLong)
@@ -137,7 +140,7 @@ object TypedTruffleCompiler:
       case ProtoExpr.Literal(LiteralValue.ByteValue(v))    => TLit.Long(v.toLong)
       case ProtoExpr.Literal(LiteralValue.DoubleValue(v))  => TLit.Double(v)
       case ProtoExpr.Literal(LiteralValue.FloatValue(v))   => TLit.Double(v.toDouble)
-      case ProtoExpr.Literal(LiteralValue.DecimalValue(v)) => TLit.Double(v.toDouble)
+      case ProtoExpr.Literal(LiteralValue.DecimalValue(v)) => TLit.Dec(v.bigDecimal)
       case ProtoExpr.Add(l, r)      => TArithFactory.AddNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Subtract(l, r) => TArithFactory.SubNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Multiply(l, r) => TArithFactory.MulNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))

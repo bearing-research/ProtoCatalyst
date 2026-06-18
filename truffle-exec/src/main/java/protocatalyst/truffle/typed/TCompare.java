@@ -1,5 +1,7 @@
 package protocatalyst.truffle.typed;
 
+import java.math.BigDecimal;
+
 import com.oracle.truffle.api.dsl.Fallback;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.Specialization;
@@ -7,8 +9,9 @@ import com.oracle.truffle.api.dsl.Specialization;
 /**
  * Typed comparisons via the DSL. Each produces a {@code boolean} when both operands are present and
  * propagates {@link SqlNull} (SQL "unknown") when either is NULL — the {@code @Fallback} fires after a
- * child throws {@code UnexpectedResultException} on its typed path. The {@code long→double} implicit
- * cast covers mixed-type comparisons.
+ * child yields {@link SqlNull}. Inequalities cover {@code long}/{@code double}/{@code BigDecimal};
+ * equality also covers {@code String}. Decimal comparisons use {@code compareTo} (exact and
+ * scale-insensitive), the correctness the {@code double} path lacks at boundaries.
  */
 public final class TCompare {
 
@@ -25,6 +28,11 @@ public final class TCompare {
         @Specialization
         protected boolean doubles(double l, double r) {
             return l < r;
+        }
+
+        @Specialization
+        protected boolean decimals(BigDecimal l, BigDecimal r) {
+            return l.compareTo(r) < 0;
         }
 
         @Fallback
@@ -46,6 +54,11 @@ public final class TCompare {
             return l <= r;
         }
 
+        @Specialization
+        protected boolean decimals(BigDecimal l, BigDecimal r) {
+            return l.compareTo(r) <= 0;
+        }
+
         @Fallback
         protected Object nullResult(Object l, Object r) {
             return SqlNull.INSTANCE;
@@ -65,6 +78,11 @@ public final class TCompare {
             return l > r;
         }
 
+        @Specialization
+        protected boolean decimals(BigDecimal l, BigDecimal r) {
+            return l.compareTo(r) > 0;
+        }
+
         @Fallback
         protected Object nullResult(Object l, Object r) {
             return SqlNull.INSTANCE;
@@ -82,6 +100,11 @@ public final class TCompare {
         @Specialization
         protected boolean doubles(double l, double r) {
             return l >= r;
+        }
+
+        @Specialization
+        protected boolean decimals(BigDecimal l, BigDecimal r) {
+            return l.compareTo(r) >= 0;
         }
 
         @Fallback
@@ -108,6 +131,11 @@ public final class TCompare {
             return l.equals(r);
         }
 
+        @Specialization
+        protected boolean decimals(BigDecimal l, BigDecimal r) {
+            return l.compareTo(r) == 0;
+        }
+
         @Fallback
         protected Object nullResult(Object l, Object r) {
             return SqlNull.INSTANCE;
@@ -130,6 +158,11 @@ public final class TCompare {
         @Specialization
         protected boolean strings(String l, String r) {
             return !l.equals(r);
+        }
+
+        @Specialization
+        protected boolean decimals(BigDecimal l, BigDecimal r) {
+            return l.compareTo(r) != 0;
         }
 
         @Fallback

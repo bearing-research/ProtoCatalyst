@@ -42,7 +42,7 @@ object TypedColumnsDecoder:
       case v: Float8Vector   => Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.get(i))
       case v: Float4Vector   => Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.get(i).toDouble)
       case v: DecimalVector  =>
-        Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.getObject(i).doubleValue)
+        Array.tabulate(n)(i => if v.isNull(i) then null else v.getObject(i))
       case v: VarCharVector =>
         Array.tabulate(n)(i =>
           if v.isNull(i) then null

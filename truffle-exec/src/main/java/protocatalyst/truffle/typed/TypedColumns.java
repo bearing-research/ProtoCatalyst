@@ -38,4 +38,8 @@ public final class TypedColumns {
     public String getString(int col, int row) {
         return ((String[]) columns[col])[row];
     }
+
+    public java.math.BigDecimal getDecimal(int col, int row) {
+        return ((java.math.BigDecimal[]) columns[col])[row];
+    }
 }

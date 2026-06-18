@@ -286,8 +286,13 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    interpreter, including `SUM` ignoring NULLs and `SUM` over empty input being NULL (not 0). The
    **string** column kind is also in (`TStringColumn`, `String` in `SqlTypes`, `Eq`/`Ne` string
    specializations, `VarChar` decode): string-equality filters and null-preserving string projection,
-   both parity-checked. What's left for Layer 1 is the remaining **column types** — decimal (exact)
-   and date/timestamp — each a new `T*Column` kind + decode case. The numeric/string/null core is done.
+   both parity-checked. **Decimal** columns are in for the exact-comparison + projection path
+   (`TDecimalColumn`, `BigDecimal` in `SqlTypes`, `compareTo`-based comparison specializations,
+   `DecimalVector` decode): exact decimal-range filtering (where `double` mis-rounds the
+   `0.05`/`0.07` bounds) and null-preserving decimal projection are parity-checked. Deferred to
+   **Layer 4**: decimal *arithmetic* with Spark precision/scale promotion, and exact decimal `SUM`
+   (currently accumulated as `double`). Remaining Layer-1 column type: date/timestamp — largely
+   mechanical (dates already flow as `long` epoch-days). The long/double/string/decimal + null core is done.
 2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
    string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
    needs Catalyst-exact semantics, not just a plausible implementation.

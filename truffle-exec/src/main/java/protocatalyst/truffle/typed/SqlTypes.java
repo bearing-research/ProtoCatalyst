@@ -1,5 +1,7 @@
 package protocatalyst.truffle.typed;
 
+import java.math.BigDecimal;
+
 import com.oracle.truffle.api.dsl.ImplicitCast;
 import com.oracle.truffle.api.dsl.TypeSystem;
 
@@ -12,7 +14,7 @@ import com.oracle.truffle.api.dsl.TypeSystem;
  * column times a double column) specializes to the {@code double} path — SQL's numeric coercion,
  * handled by the DSL rather than per-node casts.
  */
-@TypeSystem({long.class, double.class, boolean.class, String.class, SqlNull.class})
+@TypeSystem({long.class, double.class, boolean.class, String.class, BigDecimal.class, SqlNull.class})
 public abstract class SqlTypes {
 
     @ImplicitCast

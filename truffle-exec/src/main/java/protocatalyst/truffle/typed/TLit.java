@@ -55,4 +55,17 @@ public final class TLit {
             return value;
         }
     }
+
+    public static final class Dec extends TExpr {
+        private final java.math.BigDecimal value;
+
+        public Dec(java.math.BigDecimal value) {
+            this.value = value;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            return value;
+        }
+    }
 }
