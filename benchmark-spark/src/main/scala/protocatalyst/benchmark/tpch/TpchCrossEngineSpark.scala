@@ -100,8 +100,42 @@ object TpchCrossEngineSpark {
     mode match {
       case "cold"   => runCold(sf, coldQuery)
       case "steady" => runSteady(sf, warmup, iters)
-      case other    => System.err.println(s"unknown --mode $other (steady|cold)"); sys.exit(1)
+      case "oracle" => runOracle(sf)
+      case other    => System.err.println(s"unknown --mode $other (steady|cold|oracle)"); sys.exit(1)
     }
+  }
+
+  /** Emit each query's result as a canonical TSV under `results/oracle/sf-$sf/<Q>.tsv` — the Spark
+   * correctness oracle the project engines are validated against (TpchSparkOracleSpec). Each cell is
+   * encoded by type so the comparison can apply numeric tolerance: `_`=null, `#<double>`=number/date
+   * (dates as epoch day), `$<text>`=string. Rows are sorted for a stable, git-friendly file. These
+   * files are committed so the parity test runs without a live Spark (Spark is Scala 2.13). */
+  private def runOracle(sf: String): Unit = {
+    val spark = newSession()
+    try {
+      TpchQueries.registerTables(spark, sf)
+      val dir = new File(s"results/oracle/sf-$sf")
+      dir.mkdirs()
+      for (q <- Order) {
+        val rows = spark.sql(Queries(q)).collect()
+        val lines = rows.map(r => (0 until r.length).map(i => cell(r.get(i))).mkString("\t")).sorted
+        val f = new File(dir, s"$q.tsv")
+        val w = new PrintWriter(f)
+        try lines.foreach(w.println) finally w.close()
+        println(s"# wrote ${f.getPath} (${rows.length} rows)")
+      }
+    } finally spark.stop()
+  }
+
+  /** Type-tagged cell encoding shared with the project-side reader. */
+  private def cell(v: Any): String = v match {
+    case null                     => "_"
+    case d: java.sql.Date         => "#" + d.toLocalDate.toEpochDay
+    case d: java.time.LocalDate   => "#" + d.toEpochDay
+    case n: java.math.BigDecimal  => "#" + n.doubleValue
+    case n: Number                => "#" + n.doubleValue
+    case s: String                => "$" + s
+    case other                    => "$" + other.toString
   }
 
   /** Whole-process cold start: time from here (JVM already up, but Spark not) through SparkSession
