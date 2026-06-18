@@ -60,6 +60,39 @@ class TypedBackendParitySpec extends FunSuite:
     val scan = ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
     ProtoPhysicalPlan.PhysicalFilter(cond, scan)
 
+  /** Project (orderkey, discount) over orderkey < 100 — all rows pass, so the NULL discount cells
+    * survive into the output and must be preserved. */
+  private def projectPlan(schema: ProtoSchema): ProtoPhysicalPlan =
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(100L))
+    )
+    val scan = ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
+    val proj = Vector(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.ColumnRef("discount", None, ProtoType.DoubleType, true)
+    )
+    ProtoPhysicalPlan.PhysicalProject(proj, ProtoPhysicalPlan.PhysicalFilter(cond, scan))
+
+  private def readRows(b: Batch): Vector[Vector[Any]] =
+    (0 until b.rowCount).map { r =>
+      (0 until b.numColumns).map { c =>
+        b.column(c).getObject(r) match
+          case null                => null
+          case x: java.lang.Number => x.doubleValue: Any
+          case other               => other.toString: Any
+      }.toVector
+    }.toVector
+
+  private def rowsAgree(a: Vector[Vector[Any]], b: Vector[Vector[Any]]): Boolean =
+    a.size == b.size && a.zip(b).forall { (ra, rb) =>
+      ra.size == rb.size && ra.zip(rb).forall {
+        case (null, null)           => true
+        case (x: Double, y: Double) => math.abs(x - y) <= 1e-6 * math.max(1.0, math.abs(x))
+        case (x, y)                 => x == y
+      }
+    }
+
   test("Filter over a NULLable column: typed backend matches the interpreter; double-only cannot"):
     val alloc = new RootAllocator()
     val (batch, schema, nullCount) = buildBatch(alloc)
@@ -81,5 +114,23 @@ class TypedBackendParitySpec extends FunSuite:
     intercept[Exception] {
       ProtoTruffleCompiler.compile(plan).run(batch)
     }
+
+  test("typed projection preserves NULLs in the output and agrees with the interpreter"):
+    val alloc = new RootAllocator()
+    val (batch, schema, nullCount) = buildBatch(alloc)
+    val plan = projectPlan(schema)
+    assert(nullCount > 0, "test needs some NULLs")
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+
+    val typedRows = TypedTruffleCompiler.compileFilterProject(plan).run(batch).rows
+
+    assertEquals(localRows.size, n, "orderkey < 100 keeps every row")
+    assert(localRows.exists(_(1) == null), "some projected discount cells must be NULL")
+    assertEquals(typedRows.size, localRows.size)
+    assert(rowsAgree(localRows, typedRows), "typed projection must agree, NULLs included")
 
 end TypedBackendParitySpec

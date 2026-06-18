@@ -33,6 +33,35 @@ object TypedTruffleCompiler:
     val root = TFilterCountRoot(null, predicate)
     TypedFilterCount(root.getCallTarget, schema)
 
+  /** Compile `Project`/`Filter` over a `TableScan` into a typed, null-preserving filter→project. */
+  def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTypedQuery =
+    val (projList, filterOpt, schema) = decompose(plan)
+    val projections = projList.map(e => buildExpr(e, schema)).toArray
+    val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
+    val root = TypedFilterProjectRoot(null, filterNode, projections)
+    CompiledTypedQuery(root.getCallTarget, schema, projList.map(outputName))
+
+  private def decompose(
+      plan: ProtoPhysicalPlan
+  ): (Vector[ProtoExpr], Option[ProtoExpr], ProtoSchema) =
+    plan match
+      case ProtoPhysicalPlan.PhysicalProject(projList, child) =>
+        val (filt, schema) = filterAndScan(child)
+        (projList, filt, schema)
+      case other =>
+        val (filt, schema) = filterAndScan(other)
+        (identityProjections(schema), filt, schema)
+
+  private def identityProjections(schema: ProtoSchema): Vector[ProtoExpr] =
+    schema.fields.map(f => ProtoExpr.ColumnRef(f.name, None, f.dataType, f.nullable))
+
+  private def outputName(e: ProtoExpr): String =
+    e match
+      case ProtoExpr.Alias(_, name)           => name
+      case ProtoExpr.ColumnRef(name, _, _, _) => name
+      case ProtoExpr.BoundRef(i, _, _)        => s"col$i"
+      case _                                  => "expr"
+
   private def filterAndScan(plan: ProtoPhysicalPlan): (Option[ProtoExpr], ProtoSchema) =
     plan match
       case ProtoPhysicalPlan.PhysicalFilter(cond, child) =>
@@ -95,3 +124,31 @@ final class TypedFilterCount(callTarget: CallTarget, schema: ProtoSchema):
   def count(input: Batch): Long =
     val cols = TypedColumnsDecoder.decode(input, schema)
     callTarget.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
+
+/** A compiled typed filter→project: produces null-preserving rows. */
+final class CompiledTypedQuery(
+    callTarget: CallTarget,
+    schema: ProtoSchema,
+    val outputNames: Vector[String]
+):
+
+  def run(input: Batch): TypedResult =
+    val cols = TypedColumnsDecoder.decode(input, schema)
+    val numProjections = outputNames.size
+    val out = Array.ofDim[AnyRef](numProjections, math.max(1, cols.rowCount))
+    val k = callTarget.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
+    TypedResult(outputNames, out, k)
+
+/** Typed result rows, normalized for cross-engine comparison: numeric cells become `Double` and SQL
+  * NULL becomes `null` — the same yardstick the cross-backend harness and the interpreter use. */
+final class TypedResult(val names: Vector[String], cols: Array[Array[AnyRef]], val rowCount: Int):
+
+  def rows: Vector[Vector[Any]] =
+    (0 until rowCount).map { j =>
+      names.indices.map { c =>
+        cols(c)(j) match
+          case null                => null
+          case x: java.lang.Number => x.doubleValue: Any
+          case other               => other.toString: Any
+      }.toVector
+    }.toVector
