@@ -34,4 +34,8 @@ public final class TypedColumns {
     public double getDouble(int col, int row) {
         return ((double[]) columns[col])[row];
     }
+
+    public String getString(int col, int row) {
+        return ((String[]) columns[col])[row];
+    }
 }

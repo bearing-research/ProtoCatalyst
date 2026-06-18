@@ -283,9 +283,11 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    boxed `Long`/`Double`/`null`, validated by a projection that keeps NULL cells and agrees with the
    interpreter. And **null-aware global aggregate** (`TypedGlobalAggRoot`): SUM/AVG/MIN/MAX skip NULL
    inputs and yield NULL when none seen, COUNT(*) counts surviving rows — validated against the
-   interpreter, including `SUM` ignoring NULLs and `SUM` over empty input being NULL (not 0). What's
-   left for Layer 1 is breadth of **column types**: string, decimal (exact), date/timestamp — each a
-   new `T*Column` kind + `SqlTypes` member + decode case. The numeric/null core is complete.
+   interpreter, including `SUM` ignoring NULLs and `SUM` over empty input being NULL (not 0). The
+   **string** column kind is also in (`TStringColumn`, `String` in `SqlTypes`, `Eq`/`Ne` string
+   specializations, `VarChar` decode): string-equality filters and null-preserving string projection,
+   both parity-checked. What's left for Layer 1 is the remaining **column types** — decimal (exact)
+   and date/timestamp — each a new `T*Column` kind + decode case. The numeric/string/null core is done.
 2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
    string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
    needs Catalyst-exact semantics, not just a plausible implementation.

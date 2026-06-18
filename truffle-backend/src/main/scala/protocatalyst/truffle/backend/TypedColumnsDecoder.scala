@@ -43,4 +43,9 @@ object TypedColumnsDecoder:
       case v: Float4Vector   => Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.get(i).toDouble)
       case v: DecimalVector  =>
         Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.getObject(i).doubleValue)
+      case v: VarCharVector =>
+        Array.tabulate(n)(i =>
+          if v.isNull(i) then null
+          else new String(v.get(i), java.nio.charset.StandardCharsets.UTF_8)
+        )
       case _ => new Array[Long](n)

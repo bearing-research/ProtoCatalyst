@@ -42,4 +42,17 @@ public final class TLit {
             return value;
         }
     }
+
+    public static final class Str extends TExpr {
+        private final String value;
+
+        public Str(String value) {
+            this.value = value;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            return value;
+        }
+    }
 }

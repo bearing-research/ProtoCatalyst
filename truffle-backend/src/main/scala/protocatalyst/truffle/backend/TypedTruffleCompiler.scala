@@ -24,7 +24,7 @@ object TypedTruffleCompiler:
   final class UnsupportedPlanException(message: String) extends RuntimeException(message)
 
   private enum ColKind:
-    case LongCol, DoubleCol
+    case LongCol, DoubleCol, StringCol
 
   def compileFilterCount(plan: ProtoPhysicalPlan): TypedFilterCount =
     val (filterOpt, schema) = filterAndScan(plan)
@@ -116,6 +116,8 @@ object TypedTruffleCompiler:
         ColKind.LongCol
       case ProtoType.DoubleType | ProtoType.FloatType | _: ProtoType.DecimalType =>
         ColKind.DoubleCol
+      case ProtoType.StringType =>
+        ColKind.StringCol
       case other =>
         throw UnsupportedPlanException(s"unsupported column type: ${other.getClass.getSimpleName}")
 
@@ -127,6 +129,8 @@ object TypedTruffleCompiler:
         kindOf(schema.fields(i).dataType) match
           case ColKind.LongCol   => TLongColumn(i)
           case ColKind.DoubleCol => TDoubleColumn(i)
+          case ColKind.StringCol => TStringColumn(i)
+      case ProtoExpr.Literal(LiteralValue.StringValue(v)) => TLit.Str(v)
       case ProtoExpr.Literal(LiteralValue.LongValue(v))    => TLit.Long(v)
       case ProtoExpr.Literal(LiteralValue.IntValue(v))     => TLit.Long(v.toLong)
       case ProtoExpr.Literal(LiteralValue.ShortValue(v))   => TLit.Long(v.toLong)
@@ -148,10 +152,12 @@ object TypedTruffleCompiler:
         children.map(c => buildPred(c, schema)).reduce((l, r) => TLogic.And(l, r))
       case ProtoExpr.Or(children) =>
         children.map(c => buildPred(c, schema)).reduce((l, r) => TLogic.Or(l, r))
-      case ProtoExpr.Lt(l, r)   => TCompareFactory.LtNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
-      case ProtoExpr.LtEq(l, r) => TCompareFactory.LeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
-      case ProtoExpr.Gt(l, r)   => TCompareFactory.GtNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
-      case ProtoExpr.GtEq(l, r) => TCompareFactory.GeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Lt(l, r)    => TCompareFactory.LtNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.LtEq(l, r)  => TCompareFactory.LeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Gt(l, r)    => TCompareFactory.GtNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.GtEq(l, r)  => TCompareFactory.GeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Eq(l, r)    => TCompareFactory.EqNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.NotEq(l, r) => TCompareFactory.NeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case other =>
         throw UnsupportedPlanException(s"unsupported predicate: ${other.getClass.getSimpleName}")
 

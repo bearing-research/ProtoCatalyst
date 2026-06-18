@@ -89,4 +89,52 @@ public final class TCompare {
             return SqlNull.INSTANCE;
         }
     }
+
+    @NodeChild(value = "left", type = TExpr.class)
+    @NodeChild(value = "right", type = TExpr.class)
+    public abstract static class Eq extends TExpr {
+        @Specialization
+        protected boolean longs(long l, long r) {
+            return l == r;
+        }
+
+        @Specialization
+        protected boolean doubles(double l, double r) {
+            return l == r;
+        }
+
+        @Specialization
+        protected boolean strings(String l, String r) {
+            return l.equals(r);
+        }
+
+        @Fallback
+        protected Object nullResult(Object l, Object r) {
+            return SqlNull.INSTANCE;
+        }
+    }
+
+    @NodeChild(value = "left", type = TExpr.class)
+    @NodeChild(value = "right", type = TExpr.class)
+    public abstract static class Ne extends TExpr {
+        @Specialization
+        protected boolean longs(long l, long r) {
+            return l != r;
+        }
+
+        @Specialization
+        protected boolean doubles(double l, double r) {
+            return l != r;
+        }
+
+        @Specialization
+        protected boolean strings(String l, String r) {
+            return !l.equals(r);
+        }
+
+        @Fallback
+        protected Object nullResult(Object l, Object r) {
+            return SqlNull.INSTANCE;
+        }
+    }
 }
