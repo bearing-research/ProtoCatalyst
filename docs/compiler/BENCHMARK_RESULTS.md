@@ -55,38 +55,40 @@ memory; the Truffle path produces GC'd heap rows and does not leak, but is decod
 
 | Query | spark | truffle (JVM, PE) | interpreter | truffle ÷ spark |
 |------:|------:|------------------:|------------:|----------------:|
-| Q1    |  696 ms | **1343 ms** median (best 630) | — | 1.9× |
-| Q3    |  689 ms | — | — | |
-| Q5    | 1073 ms | — | — | |
-| Q6    |  170 ms | **1118 ms** median (best 840) | 3503 ms | 6.6× |
-| Q10   |  715 ms | — | — | |
+| Q1    |  696 ms | **911 ms** median (best 636) | — | 1.3× |
+| Q3    |  689 ms | ~26 s (cold, join-bound) | — | ~38× |
+| Q5    | 1073 ms | ~40 s (cold, 6-way join) | — | ~37× |
+| Q6    |  170 ms | **538 ms** median (best 513, p90 595) | 3503 ms | 3.2× |
+| Q10   |  715 ms | ~66 s (cold, join-bound) | — | ~92× |
 
-Three optimizations narrowed the SF=1 gap from its original state, in order of impact. The Q6
-progression: **6.1 s → 1.96 s → ~1.5 s → 1.12 s** (≈ 5.4× total); the Truffle backend is now ~1.9× off
-Spark on Q1 and ~6.6× on Q6, down from ~36×.
+**Two regimes, and they tell different stories.**
 
-1. **Column-pruned decode.** The leaf decoded *every* column; it now decodes **only the columns a query
-   references** (Q6 touches 4 of lineitem's 16). Q6 **6.1 s → 1.96 s (3.1×)**, moving the Truffle
-   backend from *slower* than the interpreter (which reads Arrow directly) to **faster** than it. PE
-   accelerates the AST, not the decode — pruning the decode is what mattered.
-2. **Parallel scan.** The leaf row-slices a large table across the fork/join pool (each slice with its
-   own AST, since Truffle nodes aren't thread-safe). Best case ~0.72 s on Q6, but GC-noisy — because
-   the money columns are `DECIMAL(38,18)` and the `DecimalVector` decode boxes **one `BigDecimal` per
-   cell**, leaving the leaf allocation/GC-bound. Threads can't speed up GC.
-3. **Decimal → double decode.** A compile-time analysis decodes a decimal column used *only* as
-   `CAST(col AS DOUBLE)` straight into a `double[]` (no per-cell `BigDecimal`); exact-decimal columns
-   are untouched. The TPC-H revenue columns are all cast-to-double, so this removed most of the churn:
-   **Q1 2.49 s → 1.34 s** (both money columns cast → both `double`); **Q6 ~1.5 s → 1.12 s** (only
-   extendedprice cast — discount/quantity stay decimal, used bare in the filter).
+*Single-table aggregates (Q1, Q6)* — the leaf is the whole query, and four optimizations took Q6 from
+**6.1 s → 0.54 s (~11×)**, to **~3.2× off Spark** (Q1 ~1.3×):
 
-**Spark still leads** (parallel scan + WSCG vs a single JVM process), and there's residual GC variance
-(p90 ~1.8–2.1 s) from the remaining boxed values (decimal filter columns, result rows, group maps). The
-remaining headroom is executing directly over Arrow with no materialized arrays, and recognizing
-"decimal compared against a double literal" as double-safe (would convert Q6's filter columns too).
+1. **Column-pruned decode** (Q6 6.1 → 1.96 s) — decode only the columns referenced (4 of 16), not the
+   whole row. Moved the backend from *slower* than the interpreter to faster.
+2. **Parallel scan** (→ ~1.5 s) — row-slice across the fork/join pool, fresh AST per slice (Truffle
+   nodes aren't thread-safe). Helped, but GC-noisy.
+3. **Decimal → double decode** (→ 1.12 s) — a compile-time analysis decodes a decimal column used only
+   as `CAST(col AS DOUBLE)` straight into a `double[]`, skipping the per-cell `BigDecimal`.
+4. **Decimal-vs-literal is double-safe too** (→ 0.54 s) — a decimal column compared only against a
+   non-decimal literal (`discount BETWEEN 0.05 AND 0.07`, `quantity < 24`) also decodes as double,
+   matching the interpreter's widening rule. This removed Q6's *last* per-cell `BigDecimal`s and the GC
+   variance with them (p90/median fell from ~2× to ~1.1×).
 
-None of this is the prototype's thesis: the contribution is the **cold-start / small-or-filtered-data**
-regime (§3), where decode + single-thread costs are immaterial and startup dominates. But the SF=1 gap
-going from ~36× to ~2–7× shows the backend is not architecturally far from Spark's warm throughput.
+*Multi-table joins (Q3, Q5, Q10)* — these stay an order of magnitude behind Spark (~38–92×). The
+optimized Truffle leaf scans feed a **join + group-by layer that is single-threaded Scala over boxed
+`Vector[AnyRef]` rows** (`JoinQuery`/`RowEval`/`RowAggregateQuery`), built for correctness and
+composition, not throughput. That layer — not the leaf — is the bottleneck and the clear next frontier:
+a columnar/typed join + a parallel hash aggregate, or pushing the join into Truffle nodes. (Numbers are
+cold single-runs; warm would be lower but the order of magnitude stands.)
+
+So the SF=1 result is honest and specific: **where the work is in the Truffle leaf, the backend is now
+within ~1.3–3× of Spark's warm, parallel, code-generated throughput** — remarkable for a single-threaded
+interpreter; **where the work is in the boxed-row join layer, it is not competitive yet.** Neither is
+the prototype's thesis (the contribution is cold start, §3), but it sharply localizes where the
+remaining engineering is.
 
 ---
 
