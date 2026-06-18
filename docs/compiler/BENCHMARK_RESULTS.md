@@ -58,25 +58,29 @@ memory; the Truffle path produces GC'd heap rows and does not leak, but is decod
 | Q1    |  696 ms | — | — |
 | Q3    |  689 ms | — | — |
 | Q5    | 1073 ms | — | — |
-| Q6    |  170 ms | **1956 ms** (was 6105 pre-pruning) | 3503 ms |
+| Q6    |  170 ms | **~1500 ms** median (best 720 ms; 1956 serial; 6105 pre-pruning) | 3503 ms |
 | Q10   |  715 ms | — | — |
 
-**Spark still leads at SF=1** — ~11× faster than the Truffle backend on Q6 (170 ms vs 1.96 s) — but the
-gap narrowed sharply after one optimization, and the Truffle backend now beats the interpreter at scale
-again. The two compounding costs:
+Two optimizations narrowed the SF=1 gap from its original state, in order of impact:
 
-1. **The decode tax — now largely addressed.** The Truffle leaf decodes the Arrow batch into primitive
-   `long[]`/`double[]` columns per execution (`TypedColumnsDecoder`). It used to decode *every* column;
-   it now decodes **only the columns a query references** (Q6 touches 4 of lineitem's 16). That single
-   change cut Q6 from **6.1 s → 1.96 s (3.1×)** and moved the Truffle backend from *slower* than the
-   interpreter (which reads Arrow directly) to **faster** than it (3.5 s). Partial evaluation
-   accelerates the AST, not the decode — so pruning the decode is what mattered at scale.
-2. **Single-threaded.** Spark scans 6 M rows across all cores (`local[*]`); the Truffle backend runs on
-   one thread. Closing the remaining ~11× is a parallel-scan problem, not an interpretation-overhead
-   one — the expected next scaling step (along with executing directly over Arrow, eliminating the
-   materialized arrays entirely).
+1. **Column-pruned decode.** The leaf decodes the Arrow batch into primitive column arrays per
+   execution (`TypedColumnsDecoder`). It used to decode *every* column; it now decodes **only the
+   columns a query references** (Q6 touches 4 of lineitem's 16). That cut Q6 from **6.1 s → 1.96 s
+   (3.1×)** and moved the Truffle backend from *slower* than the interpreter (which reads Arrow
+   directly) to **faster** than it. PE accelerates the AST, not the decode — pruning the decode is what
+   mattered.
+2. **Parallel scan.** The leaf now row-slices a large table across the fork/join pool (each slice with
+   its own AST, since Truffle nodes aren't thread-safe). Best case **~0.72 s** on Q6 (~2.7× over the
+   1.96 s serial), but **GC-noisy** (median ~1.5 s, p90 ~2.7 s).
 
-Neither is the prototype's thesis: the contribution is the **cold-start / small-or-filtered-data**
+The reason parallelism doesn't cleanly multiply: the money columns are `DECIMAL(38,18)`, and the
+`DecimalVector` decode boxes **one `BigDecimal` per cell** — millions of allocations per query — so the
+leaf is now **allocation/GC-bound**, and more threads can't speed up GC. **Spark still leads ~11×** on
+Q6 warm. The next lever is therefore the decode itself: decode decimals destined for `double`
+arithmetic straight into `double[]` (no boxing), or execute directly over Arrow with no materialized
+arrays — not more parallelism.
+
+None of this is the prototype's thesis: the contribution is the **cold-start / small-or-filtered-data**
 regime (§3), where decode + single-thread costs are immaterial and startup dominates.
 
 ---
