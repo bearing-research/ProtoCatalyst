@@ -201,4 +201,39 @@ class TypedJoinSpec extends FunSuite:
     assertEquals(typedRows.size, 3)
     assertEquals(typedRows, localRows, "GROUP BY over a join must match the interpreter")
 
+  test("join with residual condition: nation ⋈ region ON regionkey AND nationkey < 3"):
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val key = ProtoExpr.ColumnRef("regionkey", None, ProtoType.LongType, false)
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("nationkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(3L))
+    )
+    val plan = ProtoPhysicalPlan.HashJoin(
+      ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Vector(key),
+      Vector(key),
+      Some(cond),
+      BuildSide.BuildRight
+    )
+
+    val catalog = new Catalog()
+    catalog.registerTable("nation", nationBatch)
+    catalog.registerTable("region", regionBatch)
+    catalog.registerStatistics("nation", Statistics(6, 600))
+    catalog.registerStatistics("region", Statistics(4, 400))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan)).sortBy(_.mkString("|"))
+    val typedRows = TypedTruffleCompiler
+      .compile(plan)
+      .run(Map("nation" -> nationBatch, "region" -> regionBatch))
+      .rows
+      .sortBy(_.mkString("|"))
+
+    // equi-match keeps nations 0,1,2,4,5; the residual nationkey < 3 keeps only 0,1,2.
+    assertEquals(typedRows.size, 3)
+    assertEquals(typedRows, localRows, "residual join condition must match the interpreter")
+
 end TypedJoinSpec

@@ -77,9 +77,9 @@ object TypedTruffleCompiler:
         compileAggregate(grouping, aggs, child)
       case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) =>
         compileAggregate(grouping, aggs, child)
-      case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, _, _) => compileJoin(l, r, jt, lk, rk)
-      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, _, _) => compileJoin(l, r, jt, lk, rk)
-      case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, _) => compileJoin(l, r, jt, lk, rk)
+      case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, cond, _) => compileJoin(l, r, jt, lk, rk, cond)
+      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, cond, _) => compileJoin(l, r, jt, lk, rk, cond)
+      case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, cond) => compileJoin(l, r, jt, lk, rk, cond)
       case _ => compileFilterProject(plan)
 
   /** Route an aggregate: a single-table (Filter/Scan) child uses the Truffle-accelerated leaf path;
@@ -260,7 +260,8 @@ object TypedTruffleCompiler:
       right: ProtoPhysicalPlan,
       joinType: JoinType,
       leftKeys: Vector[ProtoExpr],
-      rightKeys: Vector[ProtoExpr]
+      rightKeys: Vector[ProtoExpr],
+      condition: Option[ProtoExpr]
   ): JoinQuery =
     val leftChild = compile(left)
     val rightChild = compile(right)
@@ -272,6 +273,7 @@ object TypedTruffleCompiler:
       leftKeyCols,
       rightKeyCols,
       joinType,
+      condition,
       leftChild.outputNames ++ rightChild.outputNames
     )
 
@@ -699,6 +701,7 @@ final class JoinQuery(
     leftKeyCols: Vector[Int],
     rightKeyCols: Vector[Int],
     joinType: JoinType,
+    condition: Option[ProtoExpr],
     val outputNames: Vector[String]
 ) extends TypedQuery:
 
@@ -712,6 +715,7 @@ final class JoinQuery(
     val right = rightChild.run(tables).boxedRows
     val nullLeft = Vector.fill[AnyRef](leftChild.outputNames.size)(null)
     val nullRight = Vector.fill[AnyRef](rightChild.outputNames.size)(null)
+    val empty = scala.collection.mutable.ArrayBuffer.empty[Int]
 
     val table =
       scala.collection.mutable.HashMap[List[AnyRef], scala.collection.mutable.ArrayBuffer[Int]]()
@@ -726,14 +730,18 @@ final class JoinQuery(
     val rows = scala.collection.mutable.ArrayBuffer[Vector[AnyRef]]()
     var li = 0
     while li < left.size do
-      keyOf(left(li), leftKeyCols).flatMap(table.get) match
-        case Some(matches) =>
-          matches.foreach { rj =>
-            rows += (left(li) ++ right(rj))
-            matchedRight(rj) = true
-          }
-        case None =>
-          if emitUnmatchedLeft then rows += (left(li) ++ nullRight)
+      val candidates = keyOf(left(li), leftKeyCols).flatMap(table.get).getOrElse(empty)
+      var anyMatch = false
+      candidates.foreach { rj =>
+        val combined = left(li) ++ right(rj)
+        // The residual condition (if any) is part of the match test — important for outer joins,
+        // where a left row whose only key-matches fail the condition still gets null-padded.
+        if condition.forall(c => RowEval.holds(c, combined, outputNames)) then
+          rows += combined
+          matchedRight(rj) = true
+          anyMatch = true
+      }
+      if !anyMatch && emitUnmatchedLeft then rows += (left(li) ++ nullRight)
       li += 1
 
     if emitUnmatchedRight then
