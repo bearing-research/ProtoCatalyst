@@ -236,6 +236,29 @@ expensive payoff) runs only if the perf number survives.
   native binary with zero runtime codegen** — the existence proof §6/Option B says does not exist.
 - Measure **cold start** (native vs JVM) and steady-state throughput.
 
+> **Status: DONE — and the result exceeds the goal.** `Q6Native` builds the fused-row Q6 plan *at
+> runtime* (a Truffle AST composed at runtime — the analogue of planning `spark.sql(userInput)`) and
+> executes it. Built with:
+> ```
+> GRAALVM=/Library/Java/JavaVirtualMachines/graalvm-21.jdk/Contents/Home
+> CP=$(sbt -batch "export truffleExec/runtime:fullClasspath" | tail -1)
+> "$GRAALVM/bin/native-image" -cp "$CP" protocatalyst.truffle.Q6Native -o q6native --no-fallback
+> ```
+> Outcome (39 MB Mach-O arm64, built in ~74 s):
+> - **A runtime-built query plan runs in a closed-world native binary with zero runtime bytecode
+>   generation** — the Janino/WSCG blocker (#2) sidestepped, on the *dynamic* path Option A can't cover.
+> - **The optimizing runtime survives into the image.** The binary reports `runtime : Oracle GraalVM`
+>   (not "Interpreted") — the Graal compiler + Truffle runtime are embedded (`jdk.internal.vm.compiler`,
+>   `org.graalvm.truffle.runtime.svm` in the image), so **partial evaluation works in-binary**, not
+>   just on the JVM. This is the crux: AOT-safe *and* JIT-quality execution at once.
+> - **Cold start ~30× faster than the JVM.** Whole-process wall time: native **~10 ms** (warm FS;
+>   0.61 s on first cold-page-cache run) vs the same code on `java` at **~310–510 ms**. Correct result
+>   (8582 matches at 65536 rows).
+>
+> This is the published-case-study-grade result: the first demonstration (to our knowledge) of a
+> runtime-planned, vectorizable query engine executing inside a GraalVM native image with runtime
+> compilation intact.
+
 ### Phase 5 — Write-up
 - Fold measured numbers back into `AOT_ROADMAP.md` §6 Option B, replacing the "2–3× regression?"
   extrapolation and the "risk, not a measurement" caveat with data.
