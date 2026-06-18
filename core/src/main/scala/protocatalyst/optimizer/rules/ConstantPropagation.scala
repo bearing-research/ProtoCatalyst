@@ -74,12 +74,40 @@ object ConstantPropagation extends Rule:
 
   /** Propagate constants through an expression using the constraints.
     *
-    * Replaces column references with their known literal values. Note: We only extract constraints
-    * from ANDs, so the defining equality like `col = val` will have its column replaced, but that's
-    * fine because we then have `val = val` which folds to TRUE and gets absorbed by AND
-    * simplification (true AND x = x).
+    * Replaces column references with their known literal values in every conjunct **except the
+    * defining equality itself**. The defining `col = literal` must be left intact: it is the only
+    * predicate enforcing the constraint, so rewriting it to `literal = literal` (→ TRUE → dropped)
+    * silently removes the filter — e.g. TPC-H Q5's `r.name = 'ASIA'` would stop filtering and the
+    * query would return every region's nations. (Spark's ConstantPropagation likewise preserves the
+    * source equality and only substitutes elsewhere.)
     */
   private def propagateConstants(
+      expr: ProtoExpr,
+      constraints: Map[(String, Option[String]), ProtoExpr]
+  ): ProtoExpr =
+    expr match
+      // Substitute into each conjunct independently, preserving the defining equalities.
+      case ProtoExpr.And(children) =>
+        ProtoExpr.And(children.map(c => propagateConstants(c, constraints)))
+      // A `col = literal` (or `literal = col`) that established a constraint: keep it verbatim.
+      case e if isDefiningEquality(e, constraints) => e
+      // Anything else: replace constrained columns with their literal values.
+      case e => substituteConstants(e, constraints)
+
+  /** True if `expr` is a `col = literal` / `literal = col` whose column produced one of the
+    * constraints — i.e. the predicate that must be preserved rather than folded into a tautology. */
+  private def isDefiningEquality(
+      expr: ProtoExpr,
+      constraints: Map[(String, Option[String]), ProtoExpr]
+  ): Boolean =
+    expr match
+      case ProtoExpr.Eq(ProtoExpr.ColumnRef(name, qualifier, _, _), ProtoExpr.Literal(_)) =>
+        constraints.contains((name, qualifier))
+      case ProtoExpr.Eq(ProtoExpr.Literal(_), ProtoExpr.ColumnRef(name, qualifier, _, _)) =>
+        constraints.contains((name, qualifier))
+      case _ => false
+
+  private def substituteConstants(
       expr: ProtoExpr,
       constraints: Map[(String, Option[String]), ProtoExpr]
   ): ProtoExpr =
