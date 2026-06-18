@@ -310,7 +310,12 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    ANSI-exact edge cases (overflow/rounding) → Layer 4.
 3. **Stateful operators.** Global + grouped aggregate (HashAggregate accumulator model), Sort, Limit,
    Distinct, the three joins, Window. Aggregates and joins are the structural lifts (state, later
-   spilling).
+   spilling). **Started:** global aggregate (Layer-1) + **grouped aggregate** (`TypedGroupedAggRoot`,
+   hash-bucketed, null-aware — SUM/AVG/MIN/MAX skip NULLs, COUNT(*) counts rows; NULL keys form their
+   own group; decimal keys normalized). `GROUP BY flag` with `COUNT(*)` + `SUM(discount)` is
+   parity-checked (results sorted, since group order differs by engine). Uses a `HashMap`, so it's the
+   one node that isn't fully partial-evaluable — a specialized hash table is a later perf refinement.
+   Remaining: joins, sort, limit, distinct, window.
 4. **Semantics parity (the oracle).** Match Spark exactly: type coercion, decimal precision/scale,
    null propagation, overflow (ANSI vs legacy), collation, rounding. Validated against Spark.
 5. **Front-end swap — the actual Spark graft.** Replace the `ProtoPhysicalPlan` builder with one

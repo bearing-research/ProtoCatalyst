@@ -70,7 +70,27 @@ object TypedTruffleCompiler:
         compileGlobalAggregate(aggs, child)
       case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) if grouping.isEmpty =>
         compileGlobalAggregate(aggs, child)
+      case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) =>
+        compileGroupedAggregate(grouping, aggs, child)
+      case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) =>
+        compileGroupedAggregate(grouping, aggs, child)
       case _ => compileFilterProject(plan)
+
+  private def compileGroupedAggregate(
+      grouping: Vector[ProtoExpr],
+      aggs: Vector[ProtoExpr],
+      child: ProtoPhysicalPlan
+  ): CompiledTypedQuery =
+    val (filterOpt, schema) = filterAndScan(child)
+    val keyNodes = grouping.map(g => buildExpr(g, schema)).toArray
+    val parsed = aggs.map(a => buildAgg(a, schema))
+    val kinds = parsed.map(_._1).toArray
+    val inputs = parsed.map(_._2).toArray
+    val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
+    val root = TypedGroupedAggRoot(null, filterNode, keyNodes, inputs, kinds)
+    // Output columns: grouping keys first, then aggregates (the interpreter's order).
+    val names = grouping.map(outputName) ++ parsed.map(_._3)
+    CompiledTypedQuery(root.getCallTarget, schema, names)
 
   private def compileGlobalAggregate(
       aggs: Vector[ProtoExpr],
