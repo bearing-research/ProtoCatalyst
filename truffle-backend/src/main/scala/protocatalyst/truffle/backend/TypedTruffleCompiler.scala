@@ -3,7 +3,7 @@ package protocatalyst.truffle.backend
 import com.oracle.truffle.api.CallTarget
 
 import protocatalyst.executor.exec.Batch
-import protocatalyst.expr.ProtoExpr
+import protocatalyst.expr.{ProtoExpr, TrimType}
 import protocatalyst.plan.{JoinType, NullOrdering, ProtoPhysicalPlan, SortDirection, SortOrder}
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.truffle.exec.AggKind
@@ -161,6 +161,12 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"unsupported cast target: ${other.getClass.getSimpleName}")
 
+  private def trimMode(t: TrimType): TString.TrimMode =
+    t match
+      case TrimType.Both     => TString.TrimMode.BOTH
+      case TrimType.Leading  => TString.TrimMode.LEADING
+      case TrimType.Trailing => TString.TrimMode.TRAILING
+
   private def constInt(e: ProtoExpr): Int =
     e match
       case ProtoExpr.Literal(LiteralValue.IntValue(v))  => v
@@ -283,7 +289,17 @@ object TypedTruffleCompiler:
       case ProtoExpr.Floor(c)                => TMath.Floor(buildExpr(c, schema))
       case ProtoExpr.Ceil(c)                 => TMath.Ceil(buildExpr(c, schema))
       case ProtoExpr.Round(c, scale)         => TMath.Round(buildExpr(c, schema), constInt(scale))
-      case ProtoExpr.Alias(child, _)         => buildExpr(child, schema)
+      case ProtoExpr.Exp(c)                  => TMath.Exp(buildExpr(c, schema))
+      case ProtoExpr.Cbrt(c)                 => TMath.Cbrt(buildExpr(c, schema))
+      case ProtoExpr.Sign(c)                 => TMath.Sign(buildExpr(c, schema))
+      case ProtoExpr.Pow(l, r)               => TMath.Pow(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Log(c, base)            => TMath.Log(buildExpr(c, schema), base.map(b => buildExpr(b, schema)).orNull)
+      case ProtoExpr.Concat(children)        => TString.Concat(children.map(c => buildExpr(c, schema)).toArray)
+      case ProtoExpr.Reverse(c)              => TString.Reverse(buildExpr(c, schema))
+      case ProtoExpr.Substring(str, pos, len) =>
+        TString.Substring(buildExpr(str, schema), buildExpr(pos, schema), buildExpr(len, schema))
+      case ProtoExpr.Trim(c, _, trimType) => TString.Trim(buildExpr(c, schema), trimMode(trimType))
+      case ProtoExpr.Alias(child, _)      => buildExpr(child, schema)
       case other =>
         throw UnsupportedPlanException(s"unsupported expression: ${other.getClass.getSimpleName}")
 

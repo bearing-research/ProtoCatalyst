@@ -115,6 +115,17 @@ class TypedStringSpec extends FunSuite:
   test("UPPER(flag) preserves and agrees"):
     checkProjection(Vector(ProtoExpr.Upper(flagRef)))
 
+  test("CONCAT / REVERSE / SUBSTRING / TRIM"):
+    val ilit = (i: Int) => ProtoExpr.Literal(LiteralValue.IntValue(i))
+    checkProjection(
+      Vector(
+        ProtoExpr.Concat(Vector(flagRef, slit("!"))),
+        ProtoExpr.Reverse(ProtoExpr.Concat(Vector(flagRef, slit("Z")))),
+        ProtoExpr.Substring(slit("HELLO"), ilit(2), ilit(3)),
+        ProtoExpr.Trim(slit("  hi  "), None, protocatalyst.expr.TrimType.Both)
+      )
+    )
+
   test("string equality filter (flag = 'A') matches the interpreter, NULLs excluded"):
     val alloc = new RootAllocator()
     val (batch, schema) = buildBatch(alloc)

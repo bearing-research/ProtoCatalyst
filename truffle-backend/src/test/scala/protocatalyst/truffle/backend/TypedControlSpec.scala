@@ -121,4 +121,14 @@ class TypedControlSpec extends FunSuite:
   test("FLOOR(discount) and CEIL(discount)"):
     checkProjection(Vector(ProtoExpr.Floor(discountRef), ProtoExpr.Ceil(discountRef)))
 
+  test("POW / EXP / CBRT / SIGN(discount)"):
+    checkProjection(
+      Vector(
+        ProtoExpr.Pow(discountRef, dlit(2.0)),
+        ProtoExpr.Exp(discountRef),
+        ProtoExpr.Cbrt(discountRef),
+        ProtoExpr.Sign(ProtoExpr.Subtract(discountRef, dlit(0.5)))
+      )
+    )
+
 end TypedControlSpec
