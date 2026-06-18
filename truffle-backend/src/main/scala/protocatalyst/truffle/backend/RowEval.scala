@@ -78,6 +78,10 @@ object RowEval:
       case LiteralValue.DecimalValue(x) => x.bigDecimal
       case LiteralValue.StringValue(x)  => x
       case LiteralValue.BooleanValue(x) => java.lang.Boolean.valueOf(x)
+      // Dates/timestamps box as their epoch long (matching the decoder), so a `DATE '…'` predicate
+      // over a join (e.g. TPC-H Q5/Q10 `o.orderdate >= DATE '1994-01-01'`) compares as long.
+      case LiteralValue.DateValue(d)      => java.lang.Long.valueOf(d.toLong)
+      case LiteralValue.TimestampValue(t) => java.lang.Long.valueOf(t)
       case LiteralValue.NullValue(_)    => null
       case other => throw IllegalArgumentException(s"unsupported literal: ${other.getClass.getSimpleName}")
 

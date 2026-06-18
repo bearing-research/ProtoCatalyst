@@ -462,8 +462,21 @@ class ExprEvaluator(allocator: BufferAllocator):
     val leftVec = eval(left, batch)
     val rightVec = eval(right, batch)
 
-    // Determine result type based on operand types
-    val resultVec = leftVec match
+    // Determine the result type by numeric promotion over *both* operands, not the left alone:
+    // `1 - CAST(discount AS DOUBLE)` has an int literal on the left but a double on the right, and
+    // following the left would truncate the right to int (`toInt(0.05) = 0`), silently turning
+    // `(1 - discount)` into `1` (the TPC-H Q1/Q3/Q5/Q10 revenue bug). Pick the widest operand: any
+    // floating/decimal operand → double path; else any 64-bit operand → long path; else int.
+    def floating(v: FieldVector): Boolean = v match
+      case _: Float8Vector | _: Float4Vector | _: DecimalVector => true
+      case _                                                    => false
+    val widest: FieldVector =
+      if floating(leftVec) then leftVec
+      else if floating(rightVec) then rightVec
+      else if leftVec.isInstanceOf[BigIntVector] then leftVec
+      else if rightVec.isInstanceOf[BigIntVector] then rightVec
+      else leftVec
+    val resultVec = widest match
       case _: IntVector =>
         val result = new IntVector("result", allocator)
         result.allocateNew(batch.rowCount)
@@ -492,7 +505,7 @@ class ExprEvaluator(allocator: BufferAllocator):
         for i <- 0 until batch.rowCount do
           if leftVec.isNull(i) || rightVec.isNull(i) then result.setNull(i)
           else
-            val l = Batch.getValue(leftVec, i).asInstanceOf[Long]
+            val l = toLong(Batch.getValue(leftVec, i))
             val r = toLong(Batch.getValue(rightVec, i))
             val v = op match
               case ArithOp.Add => l + r

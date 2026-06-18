@@ -89,6 +89,10 @@ class TpchTruffleParitySpec extends munit.FunSuite:
     * NULL → null. Matches how the cross-backend suite compares Local vs DataFusion. */
   private def norm(v: Any): Any = v match
     case null                     => null
+    // The interpreter returns a date column as a LocalDate (Arrow getObject); the Truffle backend
+    // boxes it as its epoch-day long. Normalize both to the epoch day so a date GROUP BY key / output
+    // (TPC-H Q3 `o.orderdate`) compares across engines.
+    case d: java.time.LocalDate   => d.toEpochDay.toDouble
     case n: java.lang.Number      => n.doubleValue
     case other                    => other.toString
 
@@ -160,6 +164,62 @@ class TpchTruffleParitySpec extends munit.FunSuite:
         |GROUP BY n.name
         |ORDER BY n.name""".stripMargin,
       Seq("customer", "nation")
+    )
+
+  test("TPC-H Q3 (3-join + SUM(expr) + GROUP BY + ORDER BY + LIMIT) — Truffle agrees"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    checkParity(
+      """SELECT l.orderkey,
+        |       SUM(CAST(l.extendedprice AS DOUBLE) * (1 - CAST(l.discount AS DOUBLE))) AS revenue,
+        |       o.orderdate, o.shippriority
+        |FROM customer c
+        |JOIN orders o ON c.custkey = o.custkey
+        |JOIN lineitem l ON l.orderkey = o.orderkey
+        |WHERE c.mktsegment = 'BUILDING'
+        |  AND o.orderdate < DATE '1995-03-15'
+        |  AND l.shipdate > DATE '1995-03-15'
+        |GROUP BY l.orderkey, o.orderdate, o.shippriority
+        |ORDER BY revenue DESC, o.orderdate
+        |LIMIT 10""".stripMargin,
+      Seq("customer", "orders", "lineitem")
+    )
+
+  test("TPC-H Q5 (6-join + SUM(expr) + GROUP BY + ORDER BY) — Truffle agrees"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    checkParity(
+      """SELECT n.name,
+        |       SUM(CAST(l.extendedprice AS DOUBLE) * (1 - CAST(l.discount AS DOUBLE))) AS revenue
+        |FROM customer c
+        |JOIN orders o ON c.custkey = o.custkey
+        |JOIN lineitem l ON l.orderkey = o.orderkey
+        |JOIN supplier s ON l.suppkey = s.suppkey AND c.nationkey = s.nationkey
+        |JOIN nation n ON s.nationkey = n.nationkey
+        |JOIN region r ON n.regionkey = r.regionkey
+        |WHERE r.name = 'ASIA'
+        |  AND o.orderdate >= DATE '1994-01-01'
+        |  AND o.orderdate < DATE '1995-01-01'
+        |GROUP BY n.name
+        |ORDER BY revenue DESC""".stripMargin,
+      Seq("customer", "orders", "lineitem", "supplier", "nation", "region")
+    )
+
+  test("TPC-H Q10 (4-join + SUM(expr) + GROUP BY + ORDER BY + LIMIT) — Truffle agrees"):
+    assume(dataAvailable, s"TPC-H parquet not found at $dataDir (run scripts/gen-tpch.sh)")
+    checkParity(
+      """SELECT c.custkey, c.name,
+        |       SUM(CAST(l.extendedprice AS DOUBLE) * (1 - CAST(l.discount AS DOUBLE))) AS revenue,
+        |       c.acctbal, n.name AS nation, c.address, c.phone, c.comment
+        |FROM customer c
+        |JOIN orders o ON c.custkey = o.custkey
+        |JOIN lineitem l ON l.orderkey = o.orderkey
+        |JOIN nation n ON c.nationkey = n.nationkey
+        |WHERE o.orderdate >= DATE '1993-10-01'
+        |  AND o.orderdate < DATE '1994-01-01'
+        |  AND l.returnflag = 'R'
+        |GROUP BY c.custkey, c.name, c.acctbal, c.phone, n.name, c.address, c.comment
+        |ORDER BY revenue DESC
+        |LIMIT 20""".stripMargin,
+      Seq("customer", "orders", "lineitem", "nation")
     )
 
 end TpchTruffleParitySpec

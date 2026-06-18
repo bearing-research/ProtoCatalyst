@@ -129,22 +129,25 @@ object TypedTruffleCompiler:
     val childQuery = compile(child)
     val names = childQuery.outputNames
     val groupCols = grouping.map(g => keyColumn(g, names))
-    val parsed = aggs.map(a => parseRowAgg(a, names))
+    val parsed = aggs.map(a => parseRowAgg(a))
     val outputNames = grouping.map(outputName) ++ parsed.map(_._3)
-    RowAggregateQuery(childQuery, groupCols, parsed.map(_._1).toVector, parsed.map(_._2).toVector, outputNames)
+    RowAggregateQuery(childQuery, names, groupCols, parsed.map(_._1).toVector, parsed.map(_._2).toVector, outputNames)
 
-  /** Map a (possibly aliased) aggregate to (kind, child-output column index, name) — the row-based
-    * analogue of `buildAgg`; the input must be a column ref (or a literal for COUNT(*)). */
-  private def parseRowAgg(e: ProtoExpr, names: Vector[String]): (AggKind, Int, String) =
+  /** Map a (possibly aliased) aggregate to (kind, input expression, name) — the row-based analogue of
+    * `buildAgg`. Unlike the Truffle leaf, the input may be an arbitrary expression (e.g.
+    * `SUM(extendedprice * (1 - discount))` in TPC-H Q3/Q5/Q10), evaluated per row by `RowEval` against
+    * the child's output. `None` means "count all rows" (COUNT(*) / COUNT(literal)). */
+  private def parseRowAgg(e: ProtoExpr): (AggKind, Option[ProtoExpr], String) =
     e match
       case ProtoExpr.Alias(inner, name) =>
-        val (k, c, _) = parseRowAgg(inner, names)
+        val (k, c, _) = parseRowAgg(inner)
         (k, c, name)
-      case ProtoExpr.Sum(c)      => (AggKind.SUM, aggCol(c, names), "sum")
-      case ProtoExpr.Count(c, _) => (AggKind.COUNT, aggColOrNeg(c, names), "count")
-      case ProtoExpr.Min(c)      => (AggKind.MIN, aggCol(c, names), "min")
-      case ProtoExpr.Max(c)      => (AggKind.MAX, aggCol(c, names), "max")
-      case ProtoExpr.Avg(c)      => (AggKind.AVG, aggCol(c, names), "avg")
+      case ProtoExpr.Sum(c)                              => (AggKind.SUM, Some(c), "sum")
+      case ProtoExpr.Count(ProtoExpr.Literal(_), _)      => (AggKind.COUNT, None, "count")
+      case ProtoExpr.Count(c, _)                         => (AggKind.COUNT, Some(c), "count")
+      case ProtoExpr.Min(c)                              => (AggKind.MIN, Some(c), "min")
+      case ProtoExpr.Max(c)                              => (AggKind.MAX, Some(c), "max")
+      case ProtoExpr.Avg(c)                              => (AggKind.AVG, Some(c), "avg")
       case other =>
         throw UnsupportedPlanException(s"unsupported aggregate: ${other.getClass.getSimpleName}")
 
@@ -821,9 +824,10 @@ final class RowProjectQuery(child: TypedQuery, exprs: Vector[ProtoExpr], val out
   * global aggregate (no grouping) always emits one row. */
 final class RowAggregateQuery(
     child: TypedQuery,
+    childNames: Vector[String],
     groupCols: Vector[Int],
     aggKinds: Vector[AggKind],
-    aggInputCols: Vector[Int],
+    aggInputs: Vector[Option[ProtoExpr]],
     val outputNames: Vector[String]
 ) extends TypedQuery:
 
@@ -845,21 +849,27 @@ final class RowAggregateQuery(
       }.toVector
       new TypedResult(outputNames, out)
 
+  /** The aggregate input value for row `i`: the input expression evaluated against the child's output
+    * (so `SUM(extendedprice * (1 - discount))` works), or `null` for COUNT(*). */
+  private def inputAt(a: Int, i: Int, rows: Vector[Vector[AnyRef]]): AnyRef =
+    aggInputs(a) match
+      case Some(e) => RowEval.eval(e, rows(i), childNames)
+      case None    => null
+
   private def aggregateGroup(idxs: scala.collection.IndexedSeq[Int], rows: Vector[Vector[AnyRef]]): Vector[AnyRef] =
     aggKinds.indices.map { a =>
-      val col = aggInputCols(a)
       (aggKinds(a) match
         case AggKind.COUNT =>
-          val c = if col < 0 then idxs.size else idxs.count(i => rows(i)(col) != null)
+          val c = if aggInputs(a).isEmpty then idxs.size else idxs.count(i => inputAt(a, i, rows) != null)
           java.lang.Long.valueOf(c.toLong)
-        case AggKind.SUM => sumBoxed(idxs.iterator.map(i => rows(i)(col)))
+        case AggKind.SUM => sumBoxed(idxs.iterator.map(i => inputAt(a, i, rows)))
         case AggKind.AVG =>
-          val vals = idxs.iterator.map(i => rows(i)(col)).filter(_ != null).toVector
+          val vals = idxs.iterator.map(i => inputAt(a, i, rows)).filter(_ != null).toVector
           if vals.isEmpty then null
           else
             java.lang.Double.valueOf(vals.map(_.asInstanceOf[java.lang.Number].doubleValue).sum / vals.size)
-        case AggKind.MIN => extreme(idxs, col, rows, min = true)
-        case AggKind.MAX => extreme(idxs, col, rows, min = false)
+        case AggKind.MIN => extreme(idxs, a, rows, min = true)
+        case AggKind.MAX => extreme(idxs, a, rows, min = false)
       ): AnyRef
     }.toVector
 
@@ -881,10 +891,10 @@ final class RowAggregateQuery(
     }
     acc
 
-  private def extreme(idxs: scala.collection.IndexedSeq[Int], col: Int, rows: Vector[Vector[AnyRef]], min: Boolean): AnyRef =
+  private def extreme(idxs: scala.collection.IndexedSeq[Int], a: Int, rows: Vector[Vector[AnyRef]], min: Boolean): AnyRef =
     var best: AnyRef = null
     idxs.foreach { i =>
-      val v = rows(i)(col)
+      val v = inputAt(a, i, rows)
       if v != null then
         if best == null then best = v
         else

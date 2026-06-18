@@ -84,7 +84,12 @@ object Batch:
       case LiteralValue.ShortValue(v) =>
         vec.asInstanceOf[SmallIntVector].setSafe(row, v)
       case LiteralValue.IntValue(v) =>
-        vec.asInstanceOf[IntVector].setSafe(row, v)
+        // A date column read back via `getValue` yields its epoch-day Int (so `anyToLiteralValue`
+        // produces an IntValue); when the target is a DateDayVector — e.g. a date used as a GROUP BY
+        // key, TPC-H Q3's `o.orderdate` — store it as the epoch day rather than mis-casting to IntVector.
+        vec match
+          case d: DateDayVector => d.setSafe(row, v)
+          case _                => vec.asInstanceOf[IntVector].setSafe(row, v)
       case LiteralValue.LongValue(v) =>
         vec.asInstanceOf[BigIntVector].setSafe(row, v)
       case LiteralValue.FloatValue(v) =>

@@ -138,7 +138,7 @@ object AstToProtoTransform:
       // Apply ORDER BY
       sorted <- stmt.orderBy match
         case orders if orders.nonEmpty =>
-          transformOrderBy(orders, ctx).map { sortOrders =>
+          transformOrderBy(orders, ctx, stmt.projections).map { sortOrders =>
             ProtoLogicalPlan.Sort(sortOrders, projected)
           }
         case _ =>
@@ -387,15 +387,36 @@ object AstToProtoTransform:
 
   private def transformOrderBy(
       orders: Vector[OrderSpec],
-      ctx: TransformContext
+      ctx: TransformContext,
+      projections: Vector[Projection]
   ): Either[TransformError, Vector[SortOrder]] =
+    // SELECT-list aliases the ORDER BY may reference (`... SUM(x) AS revenue ... ORDER BY revenue`).
+    // The Sort runs over the already projected/aggregated output, which carries the alias column, so a
+    // bare reference to an alias becomes a by-name ColumnRef. Standard SQL; canonical TPC-H needs it
+    // (Q3/Q10 `ORDER BY revenue`). Type is taken from the underlying projection when it's a plain
+    // column, else defaulted (the sort compares actual values, so the label isn't load-bearing).
+    val aliasTypes: Map[String, (ProtoType, Boolean)] =
+      projections.flatMap { p =>
+        p.alias.map { a =>
+          val inferred = transformExpr(p.expr, ctx).toOption match
+            case Some(ProtoExpr.ColumnRef(_, _, dt, nn)) => (dt, nn)
+            case _                                       => (ProtoType.DoubleType, true)
+          a.toLowerCase -> inferred
+        }
+      }.toMap
+
     val transformed = orders.map { spec =>
-      transformExpr(spec.expr, ctx).map { expr =>
-        val direction = if spec.ascending then SortDirection.Ascending else SortDirection.Descending
-        val nullOrdering =
-          if spec.ascending then NullOrdering.NullsLast else NullOrdering.NullsFirst
-        SortOrder(expr, direction, nullOrdering)
-      }
+      val direction = if spec.ascending then SortDirection.Ascending else SortDirection.Descending
+      val nullOrdering =
+        if spec.ascending then NullOrdering.NullsLast else NullOrdering.NullsFirst
+      transformExpr(spec.expr, ctx) match
+        case Right(expr) => Right(SortOrder(expr, direction, nullOrdering))
+        case Left(err) =>
+          spec.expr match
+            case SqlExpr.ColumnRef(name, None) if aliasTypes.contains(name.toLowerCase) =>
+              val (dt, nn) = aliasTypes(name.toLowerCase)
+              Right(SortOrder(ProtoExpr.ColumnRef(name, None, dt, nn), direction, nullOrdering))
+            case _ => Left(err)
     }
 
     // Sequence the results
@@ -470,7 +491,17 @@ object AstToProtoTransform:
           // `AggregateOp` emits a group column per `groupingExpr`). A non-aggregate projection in a
           // grouped query is therefore a grouping key already present in `groupingExprs` — drop it
           // here so it isn't double-emitted (transpiler) or mistaken for an aggregate (executor).
-          extractAggregates(expr, ctx).map(aggs => if aggs.nonEmpty then aggs else Vector.empty)
+          //
+          // When the projection is a single aggregate with an alias (`SUM(x) AS revenue`), carry the
+          // alias onto the aggregate so its output column is named — letting ORDER BY / HAVING / outer
+          // SELECT reference it by name (canonical TPC-H Q3/Q5/Q10 `ORDER BY revenue`). A projection
+          // yielding multiple aggregates (e.g. `SUM(a)+SUM(b) AS x`) can't be faithfully named at this
+          // granularity, so it's left unaliased.
+          extractAggregates(expr, ctx).map { aggs =>
+            (proj.alias, aggs) match
+              case (Some(a), Vector(single)) => Vector(ProtoExpr.Alias(single, a))
+              case _                         => aggs
+          }
     }
 
     // Sequence the results
