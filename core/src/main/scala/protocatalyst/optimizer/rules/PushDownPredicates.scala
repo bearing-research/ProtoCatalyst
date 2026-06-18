@@ -262,10 +262,14 @@ object PushDownPredicates extends Rule:
   /** Collect column references from a plan's output (simplified). */
   private def collectColumnRefs(plan: ProtoLogicalPlan): Set[(String, Option[String])] =
     plan match
-      case ProtoLogicalPlan.RelationRef(name, alias, _) =>
-        // For relation refs, we use the alias or table name as qualifier
-        // This is a simplification - in practice we'd need full schema info
-        Set.empty
+      case ProtoLogicalPlan.RelationRef(name, alias, contract) =>
+        // The relation's own columns, qualified by its alias (or name). Without this, a predicate
+        // can't be attributed to a join side and won't push down — so e.g. TPC-H Q3's
+        // `l.shipdate > DATE '…'` stayed *above* the join, forcing the join to materialize the full
+        // 6M-row product before the filter cut it to ~30k. Each field is offered both qualified
+        // (`l.shipdate`) and bare, so references resolve whether or not they carry the alias.
+        val qualifier = alias.orElse(Some(name))
+        contract.requiredFields.flatMap(f => Seq((f.name, qualifier), (f.name, None))).toSet
 
       case ProtoLogicalPlan.Project(projectList, _) =>
         projectList.flatMap {

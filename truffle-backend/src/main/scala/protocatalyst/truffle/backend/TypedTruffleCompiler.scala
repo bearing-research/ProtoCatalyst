@@ -673,6 +673,11 @@ object ParallelScan:
 
   def shouldParallelize(rowCount: Int): Boolean = parallelism > 1 && rowCount >= threshold
 
+  /** -Dtruffle.profile prints per-operator timings to stderr (composition-layer profiling). */
+  val profile: Boolean = sys.props.contains("truffle.profile")
+  inline def prof(msg: => String): Unit = if profile then System.err.println(msg)
+  inline def ms(t0: Long, t1: Long): Long = (t1 - t0) / 1000000L
+
   /** Contiguous, zero-copy row-range slices of `batch` (caller closes them). */
   def slices(batch: Batch, p: Int): Vector[Batch] =
     val n = batch.rowCount
@@ -985,8 +990,11 @@ final class JoinQuery(
   private val emitUnmatchedRight = joinType == JoinType.RightOuter || joinType == JoinType.FullOuter
 
   def run(tables: Map[String, Batch]): TypedResult =
+    val tStart = System.nanoTime()
     val left = leftChild.run(tables).boxedRows
+    val tLeft = System.nanoTime()
     val right = rightChild.run(tables).boxedRows
+    val tRight = System.nanoTime()
     val nullLeft = Vector.fill[AnyRef](leftChild.outputNames.size)(null)
     val nullRight = Vector.fill[AnyRef](rightChild.outputNames.size)(null)
     val empty = scala.collection.mutable.ArrayBuffer.empty[Int]
@@ -1024,6 +1032,10 @@ final class JoinQuery(
         if !matchedRight(rj) then rows += (nullLeft ++ right(rj))
         rj += 1
 
+    val tEnd = System.nanoTime()
+    ParallelScan.prof(
+      s"[JOIN ${outputNames.size}c] left=${ParallelScan.ms(tStart, tLeft)}ms(${left.size}) " +
+        s"right=${ParallelScan.ms(tLeft, tRight)}ms(${right.size}) probe=${ParallelScan.ms(tRight, tEnd)}ms out=${rows.size}")
     new TypedResult(outputNames, rows.toVector)
 
   /** The key tuple for a row, or None if any component is NULL (NULL never joins). */
@@ -1073,8 +1085,13 @@ final class RowAggregateQuery(
   def tableNames: Set[String] = child.tableNames
 
   def run(tables: Map[String, Batch]): TypedResult =
+    val t0 = System.nanoTime()
     val rows = child.run(tables).boxedRows
-    if groupCols.isEmpty then new TypedResult(outputNames, Vector(aggregateGroup(rows.indices, rows)))
+    val t1 = System.nanoTime()
+    if groupCols.isEmpty then
+      val r = new TypedResult(outputNames, Vector(aggregateGroup(rows.indices, rows)))
+      ParallelScan.prof(s"[ROWAGG global] child=${ParallelScan.ms(t0, t1)}ms(${rows.size}) agg=${ParallelScan.ms(t1, System.nanoTime())}ms")
+      r
     else
       val groups =
         scala.collection.mutable.LinkedHashMap[List[AnyRef], scala.collection.mutable.ArrayBuffer[Int]]()
@@ -1086,6 +1103,7 @@ final class RowAggregateQuery(
       val out = groups.valuesIterator.map { idxs =>
         groupCols.map(c => rows(idxs.head)(c)) ++ aggregateGroup(idxs, rows)
       }.toVector
+      ParallelScan.prof(s"[ROWAGG ${groupCols.size}k] child=${ParallelScan.ms(t0, t1)}ms(${rows.size}) group+agg=${ParallelScan.ms(t1, System.nanoTime())}ms groups=${out.size}")
       new TypedResult(outputNames, out)
 
   /** The aggregate input value for row `i`: the input expression evaluated against the child's output
