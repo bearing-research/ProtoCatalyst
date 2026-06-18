@@ -100,4 +100,11 @@ class TypedControlSpec extends FunSuite:
   test("NULLIF(discount, 0.3) — equal operands become NULL"):
     checkProjection(Vector(ProtoExpr.NullIf(discountRef, dlit(0.3))))
 
+  test("CAST(discount AS BIGINT) truncates toward zero; NULL stays NULL"):
+    checkProjection(Vector(ProtoExpr.Cast(discountRef, ProtoType.LongType)))
+
+  test("CAST(orderkey AS DOUBLE) widens"):
+    val orderkeyRef = ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false)
+    checkProjection(Vector(ProtoExpr.Cast(orderkeyRef, ProtoType.DoubleType)))
+
 end TypedControlSpec

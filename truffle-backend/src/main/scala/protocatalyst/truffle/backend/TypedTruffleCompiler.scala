@@ -123,6 +123,17 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"unsupported column type: ${other.getClass.getSimpleName}")
 
+  private def castTarget(t: ProtoType): TCast.Target =
+    t match
+      case ProtoType.LongType | ProtoType.IntegerType | ProtoType.ShortType | ProtoType.ByteType |
+          ProtoType.DateType | ProtoType.TimestampType =>
+        TCast.Target.LONG
+      case ProtoType.DoubleType | ProtoType.FloatType => TCast.Target.DOUBLE
+      case _: ProtoType.DecimalType                   => TCast.Target.DECIMAL
+      case ProtoType.StringType                       => TCast.Target.STRING
+      case other =>
+        throw UnsupportedPlanException(s"unsupported cast target: ${other.getClass.getSimpleName}")
+
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
     e match
       case ProtoExpr.ColumnRef(name, _, _, _) =>
@@ -156,8 +167,8 @@ object TypedTruffleCompiler:
         val conditions = branches.map(b => buildPred(b._1, schema)).toArray
         val values = branches.map(b => buildExpr(b._2, schema)).toArray
         TControl.CaseWhen(conditions, values, elseValue.map(e => buildExpr(e, schema)).orNull)
-      case ProtoExpr.Cast(child, _) => buildExpr(child, schema)
-      case ProtoExpr.Alias(child, _) => buildExpr(child, schema)
+      case ProtoExpr.Cast(child, targetType) => TCast(buildExpr(child, schema), castTarget(targetType))
+      case ProtoExpr.Alias(child, _)         => buildExpr(child, schema)
       case other =>
         throw UnsupportedPlanException(s"unsupported expression: ${other.getClass.getSimpleName}")
 
