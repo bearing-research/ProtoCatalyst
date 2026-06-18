@@ -56,10 +56,10 @@ memory; the Truffle path produces GC'd heap rows and does not leak, but is decod
 | Query | spark | truffle (JVM, PE) | interpreter | truffle ÷ spark |
 |------:|------:|------------------:|------------:|----------------:|
 | Q1    |  696 ms | **911 ms** median (best 636) | — | 1.3× |
-| Q3    |  689 ms | ~26 s (cold, join-bound) | — | ~38× |
-| Q5    | 1073 ms | ~40 s (cold, 6-way join) | — | ~37× |
+| Q3    |  689 ms | ~6.9 s (cold; was ~26 s) | — | ~10× |
+| Q5    | 1073 ms | ~10.2 s (cold, 6-way; was ~40 s) | — | ~9.5× |
 | Q6    |  170 ms | **538 ms** median (best 513, p90 595) | 3503 ms | 3.2× |
-| Q10   |  715 ms | ~66 s (cold, join-bound) | — | ~92× |
+| Q10   |  715 ms | ~7.7 s (cold; was ~66 s) | — | ~11× |
 
 **Two regimes, and they tell different stories.**
 
@@ -77,12 +77,16 @@ memory; the Truffle path produces GC'd heap rows and does not leak, but is decod
    matching the interpreter's widening rule. This removed Q6's *last* per-cell `BigDecimal`s and the GC
    variance with them (p90/median fell from ~2× to ~1.1×).
 
-*Multi-table joins (Q3, Q5, Q10)* — these stay an order of magnitude behind Spark (~38–92×). The
-optimized Truffle leaf scans feed a **join + group-by layer that is single-threaded Scala over boxed
-`Vector[AnyRef]` rows** (`JoinQuery`/`RowEval`/`RowAggregateQuery`), built for correctness and
-composition, not throughput. That layer — not the leaf — is the bottleneck and the clear next frontier:
-a columnar/typed join + a parallel hash aggregate, or pushing the join into Truffle nodes. (Numbers are
-cold single-runs; warm would be lower but the order of magnitude stands.)
+*Multi-table joins (Q3, Q5, Q10)* — now ~10× behind Spark, **down from ~38–92×**. Profiling
+(`-Dtruffle.profile`) revealed the real culprit was not the join *execution* but the *plan*: a
+`collectColumnRefs` simplification in `PushDownPredicates` returned no columns for a base table, so
+single-table filters never pushed through joins to the scans. Q3 was building the **full 6 M-row
+customer×orders×lineitem product** and only then filtering it to ~30 k. Fixing pushdown (the relation
+now reports its own columns) dropped the join output ~200× and the queries 3.8–8.5×, and it improves
+*every* engine (all consume the same optimized plan). What remains is the **boxed-`Vector[AnyRef]` join
+layer** materializing the (now much smaller, but still multi-million-row) scan inputs — the next
+frontier is a columnar/typed join + parallel hash aggregate. (Numbers are cold single-runs; warm is
+lower but the order of magnitude stands.)
 
 So the SF=1 result is honest and specific: **where the work is in the Truffle leaf, the backend is now
 within ~1.3–3× of Spark's warm, parallel, code-generated throughput** — remarkable for a single-threaded
