@@ -71,6 +71,8 @@ object TypedTruffleCompiler:
       case ProtoPhysicalPlan.PhysicalSort(order, child) =>
         val c = compile(child)
         SortQuery(c, order.map(so => sortKey(so, c.outputNames)))
+      case ProtoPhysicalPlan.PhysicalWindow(windowExprs, partitionSpec, orderSpec, child) =>
+        compileWindow(windowExprs, partitionSpec, orderSpec, child)
       case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) if grouping.isEmpty =>
         compileGlobalAggregate(aggs, child)
       case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) if grouping.isEmpty =>
@@ -199,6 +201,37 @@ object TypedTruffleCompiler:
     val rightKeyTarget = TypedKeysRoot(null, rightKeys.map(k => buildExpr(k, rightSchema)).toArray).getCallTarget
     val outputNames = leftSchema.fields.map(_.name) ++ rightSchema.fields.map(_.name)
     JoinQuery(leftSchema, rightSchema, leftKeyTarget, rightKeyTarget, leftKeys.size, joinType, outputNames)
+
+  private def compileWindow(
+      windowExprs: Vector[ProtoExpr],
+      partitionSpec: Vector[ProtoExpr],
+      orderSpec: Vector[SortOrder],
+      childPlan: ProtoPhysicalPlan
+  ): WindowQuery =
+    val child = compile(childPlan)
+    val names = child.outputNames
+    val partitionCols = partitionSpec.map {
+      case ProtoExpr.ColumnRef(name, _, _, _) => outputIndex(name, names)
+      case other =>
+        throw UnsupportedPlanException(s"window PARTITION BY must be a column ref, got ${other.getClass.getSimpleName}")
+    }
+    val orderKeys = orderSpec.map(so => sortKey(so, names))
+    val fns = windowExprs.map(parseWindowFn)
+    WindowQuery(child, partitionCols, orderKeys, fns, names ++ fns.map(_.name))
+
+  private def parseWindowFn(e: ProtoExpr): WindowFn =
+    e match
+      case ProtoExpr.Alias(inner, name) => WindowFn(windowKind(inner), name)
+      case other                        => WindowFn(windowKind(other), "window")
+
+  private def windowKind(e: ProtoExpr): WindowFnKind =
+    e match
+      case ProtoExpr.WindowExpr(fn, _, _, _) => windowKind(fn)
+      case ProtoExpr.RowNumber()             => WindowFnKind.RowNumber
+      case ProtoExpr.Rank()                  => WindowFnKind.Rank
+      case ProtoExpr.DenseRank()             => WindowFnKind.DenseRank
+      case other =>
+        throw UnsupportedPlanException(s"unsupported window function: ${other.getClass.getSimpleName}")
 
   private def scanSchema(p: ProtoPhysicalPlan): ProtoSchema =
     p match
@@ -350,6 +383,64 @@ final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQue
 
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
 
+enum WindowFnKind:
+  case RowNumber, Rank, DenseRank
+
+final case class WindowFn(kind: WindowFnKind, name: String)
+
+/** Ranking window functions over PARTITION BY + ORDER BY: ROW_NUMBER / RANK / DENSE_RANK. Partitions
+  * the child rows, orders each partition, and appends the rank columns to the child output. Aggregate
+  * windows, offset functions (LAG/LEAD), and explicit frames are not yet handled. */
+final class WindowQuery(
+    child: TypedQuery,
+    partitionCols: Vector[Int],
+    orderKeys: Vector[SortKey],
+    windowFns: Vector[WindowFn],
+    val outputNames: Vector[String]
+) extends TypedQuery:
+
+  def run(input: Batch): TypedResult =
+    val rows = child.run(input).boxedRows
+    val result = new Array[Vector[AnyRef]](rows.size)
+    val partitions = rows.indices.groupBy(i => partitionKey(rows(i)))
+
+    partitions.valuesIterator.foreach { idxs =>
+      val ordered = idxs.sortWith((x, y) => TypedResult.lessThan(rows(x), rows(y), orderKeys)).toVector
+      val m = ordered.size
+      val rank = new Array[Long](m)
+      val dense = new Array[Long](m)
+      var p = 0
+      while p < m do
+        if p == 0 then { rank(0) = 1L; dense(0) = 1L }
+        else if sameOrder(rows(ordered(p)), rows(ordered(p - 1))) then
+          rank(p) = rank(p - 1); dense(p) = dense(p - 1)
+        else { rank(p) = (p + 1).toLong; dense(p) = dense(p - 1) + 1 }
+        p += 1
+      var pos = 0
+      while pos < m do
+        val orig = ordered(pos)
+        val wvals = windowFns.map { fn =>
+          (fn.kind match
+            case WindowFnKind.RowNumber => java.lang.Long.valueOf((pos + 1).toLong)
+            case WindowFnKind.Rank      => java.lang.Long.valueOf(rank(pos))
+            case WindowFnKind.DenseRank => java.lang.Long.valueOf(dense(pos))
+          ): AnyRef
+        }
+        result(orig) = rows(orig) ++ wvals
+        pos += 1
+    }
+    new TypedResult(outputNames, result.toVector)
+
+  private def partitionKey(row: Vector[AnyRef]): List[AnyRef] =
+    partitionCols.map { c =>
+      row(c) match
+        case d: java.math.BigDecimal => d.stripTrailingZeros
+        case other                   => other
+    }.toList
+
+  private def sameOrder(a: Vector[AnyRef], b: Vector[AnyRef]): Boolean =
+    orderKeys.forall(k => TypedResult.compareKey(a, b, k) == 0)
+
 /** Equi hash join (inner + outer): build a hash table on the right keys, probe with the left, emit
   * `left ++ right` for each match. NULL keys never match (SQL semantics); decimal keys are
   * value-normalized. For LEFT/FULL OUTER, unmatched left rows are emitted with a null-padded right;
@@ -460,7 +551,7 @@ object TypedResult:
       case x: java.lang.Number => x.doubleValue
       case other               => other.toString
 
-  private def lessThan(a: Vector[AnyRef], b: Vector[AnyRef], keys: Vector[SortKey]): Boolean =
+  private[backend] def lessThan(a: Vector[AnyRef], b: Vector[AnyRef], keys: Vector[SortKey]): Boolean =
     var i = 0
     while i < keys.size do
       val c = compareKey(a, b, keys(i))
@@ -468,7 +559,7 @@ object TypedResult:
       i += 1
     false
 
-  private def compareKey(a: Vector[AnyRef], b: Vector[AnyRef], key: SortKey): Int =
+  private[backend] def compareKey(a: Vector[AnyRef], b: Vector[AnyRef], key: SortKey): Int =
     (a(key.column), b(key.column)) match
       case (null, null) => 0
       case (null, _)    => if key.nullsFirst then -1 else 1
