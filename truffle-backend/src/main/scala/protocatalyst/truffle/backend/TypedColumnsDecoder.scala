@@ -39,6 +39,10 @@ object TypedColumnsDecoder:
       case v: SmallIntVector => Array.tabulate(n)(i => if v.isNull(i) then 0L else v.get(i).toLong)
       case v: TinyIntVector  => Array.tabulate(n)(i => if v.isNull(i) then 0L else v.get(i).toLong)
       case v: DateDayVector  => Array.tabulate(n)(i => if v.isNull(i) then 0L else v.get(i).toLong)
+      case v: TimeStampMicroTZVector =>
+        Array.tabulate(n)(i => if v.isNull(i) then 0L else v.get(i))
+      case v: TimeStampMicroVector =>
+        Array.tabulate(n)(i => if v.isNull(i) then 0L else v.get(i))
       case v: Float8Vector   => Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.get(i))
       case v: Float4Vector   => Array.tabulate(n)(i => if v.isNull(i) then 0.0 else v.get(i).toDouble)
       case v: DecimalVector  =>

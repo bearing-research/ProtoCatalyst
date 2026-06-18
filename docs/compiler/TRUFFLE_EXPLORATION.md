@@ -291,8 +291,13 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    `DecimalVector` decode): exact decimal-range filtering (where `double` mis-rounds the
    `0.05`/`0.07` bounds) and null-preserving decimal projection are parity-checked. Deferred to
    **Layer 4**: decimal *arithmetic* with Spark precision/scale promotion, and exact decimal `SUM`
-   (currently accumulated as `double`). Remaining Layer-1 column type: date/timestamp — largely
-   mechanical (dates already flow as `long` epoch-days). The long/double/string/decimal + null core is done.
+   (currently accumulated as `double`). **Date/timestamp** filtering is in too — epoch-day/micros
+   `long`s, `DATE '…'` literals, timestamp decode — with date-range predicates parity-checked.
+   **Layer 1 is complete**: long/double/string/decimal/date+timestamp, all with nulls/3VL, across
+   filter, projection, and global aggregate — **16 parity tests** vs the interpreter. Scope boundaries
+   carried forward: decimal *arithmetic* and exact decimal `SUM` → Layer 4; grouped aggregate (GROUP
+   BY) → Layer 3; date *projection-output* representation (epoch-long vs the interpreter's date object)
+   left as a normalization detail. Next: Layer 2 (expression breadth — Cast, CASE, string/date functions).
 2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
    string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
    needs Catalyst-exact semantics, not just a plausible implementation.

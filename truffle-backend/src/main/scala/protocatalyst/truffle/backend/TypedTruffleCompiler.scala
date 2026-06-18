@@ -112,7 +112,7 @@ object TypedTruffleCompiler:
   private def kindOf(t: ProtoType): ColKind =
     t match
       case ProtoType.LongType | ProtoType.IntegerType | ProtoType.ShortType | ProtoType.ByteType |
-          ProtoType.DateType =>
+          ProtoType.DateType | ProtoType.TimestampType =>
         ColKind.LongCol
       case ProtoType.DoubleType | ProtoType.FloatType =>
         ColKind.DoubleCol
@@ -140,7 +140,9 @@ object TypedTruffleCompiler:
       case ProtoExpr.Literal(LiteralValue.ByteValue(v))    => TLit.Long(v.toLong)
       case ProtoExpr.Literal(LiteralValue.DoubleValue(v))  => TLit.Double(v)
       case ProtoExpr.Literal(LiteralValue.FloatValue(v))   => TLit.Double(v.toDouble)
-      case ProtoExpr.Literal(LiteralValue.DecimalValue(v)) => TLit.Dec(v.bigDecimal)
+      case ProtoExpr.Literal(LiteralValue.DecimalValue(v))   => TLit.Dec(v.bigDecimal)
+      case ProtoExpr.Literal(LiteralValue.DateValue(d))      => TLit.Long(d.toLong)
+      case ProtoExpr.Literal(LiteralValue.TimestampValue(t)) => TLit.Long(t)
       case ProtoExpr.Add(l, r)      => TArithFactory.AddNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Subtract(l, r) => TArithFactory.SubNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Multiply(l, r) => TArithFactory.MulNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
