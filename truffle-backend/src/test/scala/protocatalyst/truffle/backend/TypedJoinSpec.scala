@@ -120,4 +120,8 @@ class TypedJoinSpec extends FunSuite:
     // 5 matches + region R4 (regionkey 4, no nation) with NULL left
     checkJoin(JoinType.RightOuter, 6)
 
+  test("FULL OUTER join — both unmatched sides padded"):
+    // 5 matches + nation N3 (null right) + region R4 (null left)
+    checkJoin(JoinType.FullOuter, 7)
+
 end TypedJoinSpec
