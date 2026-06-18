@@ -54,25 +54,50 @@ class TruffleBackendParitySpec extends FunSuite:
     )
     (Batch.fromRoot(root, schema), schema)
 
-  /** Q6 selection as a physical plan: project (orderkey, extendedprice, discount) over a filter of
-    * discount ∈ [0.05, 0.07] AND quantity < 24. */
-  private def q6Selection(schema: ProtoSchema, n: Int): ProtoPhysicalPlan =
-    def col(name: String, tpe: ProtoType) = ProtoExpr.ColumnRef(name, None, tpe, false)
-    def lit(d: Double) = ProtoExpr.Literal(LiteralValue.DoubleValue(d))
-    val filter = ProtoExpr.And(
+  private def colRef(name: String, tpe: ProtoType) = ProtoExpr.ColumnRef(name, None, tpe, false)
+  private def dlit(d: Double) = ProtoExpr.Literal(LiteralValue.DoubleValue(d))
+
+  /** discount ∈ [0.05, 0.07] AND quantity < 24 — Q6's filter, shared by both plans below. */
+  private def q6FilterExpr: ProtoExpr =
+    ProtoExpr.And(
       Vector(
-        ProtoExpr.GtEq(col("discount", ProtoType.DoubleType), lit(0.05)),
-        ProtoExpr.LtEq(col("discount", ProtoType.DoubleType), lit(0.07)),
-        ProtoExpr.Lt(col("quantity", ProtoType.DoubleType), lit(24.0))
+        ProtoExpr.GtEq(colRef("discount", ProtoType.DoubleType), dlit(0.05)),
+        ProtoExpr.LtEq(colRef("discount", ProtoType.DoubleType), dlit(0.07)),
+        ProtoExpr.Lt(colRef("quantity", ProtoType.DoubleType), dlit(24.0))
       )
     )
+
+  private def scanOf(schema: ProtoSchema, n: Int) =
+    ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
+
+  /** Q6 selection: project (orderkey, extendedprice, discount) over the filter. */
+  private def q6Selection(schema: ProtoSchema, n: Int): ProtoPhysicalPlan =
     val proj = Vector(
-      col("orderkey", ProtoType.LongType),
-      col("extendedprice", ProtoType.DoubleType),
-      col("discount", ProtoType.DoubleType)
+      colRef("orderkey", ProtoType.LongType),
+      colRef("extendedprice", ProtoType.DoubleType),
+      colRef("discount", ProtoType.DoubleType)
     )
-    val scan = ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
-    ProtoPhysicalPlan.PhysicalProject(proj, ProtoPhysicalPlan.PhysicalFilter(filter, scan))
+    ProtoPhysicalPlan.PhysicalProject(
+      proj,
+      ProtoPhysicalPlan.PhysicalFilter(q6FilterExpr, scanOf(schema, n))
+    )
+
+  /** Q6 revenue: a *global* SUM(extendedprice * discount) over the filter (no GROUP BY). */
+  private def q6Revenue(schema: ProtoSchema, n: Int): ProtoPhysicalPlan =
+    val revenue = ProtoExpr.Alias(
+      ProtoExpr.Sum(
+        ProtoExpr.Multiply(
+          colRef("extendedprice", ProtoType.DoubleType),
+          colRef("discount", ProtoType.DoubleType)
+        )
+      ),
+      "revenue"
+    )
+    ProtoPhysicalPlan.HashAggregate(
+      Vector.empty,
+      Vector(revenue),
+      ProtoPhysicalPlan.PhysicalFilter(q6FilterExpr, scanOf(schema, n))
+    )
 
   /** Normalize a batch to rows with numeric cells as Double — same yardstick as the cross-backend harness. */
   private def readRows(b: Batch): Vector[Vector[Any]] =
@@ -111,5 +136,26 @@ class TruffleBackendParitySpec extends FunSuite:
     assert(localRows.size < n, "filter should drop some rows")
     assertEquals(truffleRows.size, localRows.size, "row counts must match")
     assert(rowsAgree(localRows, truffleRows), "Truffle and Local results must agree row-for-row")
+
+  test("Q6 revenue (filter + global SUM) — Truffle backend agrees with the Scala interpreter"):
+    val n = 8192
+    val alloc = new RootAllocator()
+    val (batch, schema) = buildBatch(n, alloc)
+    val physical = q6Revenue(schema, n)
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(physical))
+
+    val truffleRows = ProtoTruffleCompiler.compile(physical).run(batch).rows
+
+    assertEquals(localRows.size, 1, "global aggregate yields one row")
+    assertEquals(truffleRows.size, 1)
+    assert(
+      truffleRows.head.head.asInstanceOf[Double] > 0.0,
+      "revenue should be a positive sum"
+    )
+    assert(rowsAgree(localRows, truffleRows), "Truffle and Local revenue must agree")
 
 end TruffleBackendParitySpec

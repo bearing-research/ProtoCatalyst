@@ -234,8 +234,9 @@ expensive payoff) runs only if the perf number survives.
 > **Status: first milestone done (numeric subset).** A new Scala module `truffle-backend` carries
 > `ProtoTruffleCompiler`, which builds a fused-row Truffle plan (`truffle-exec/exec/GNodes`, the
 > general node library) from a real `ProtoPhysicalPlan` — `PhysicalProject`/`PhysicalFilter` over a
-> `TableScan`, with column refs, numeric literals, `+−×÷`, the six comparisons, and `AND/OR/NOT` over
-> numeric columns decoded to `double`. Validated:
+> `TableScan`, plus a fused single-pass **global aggregate** (`SUM/COUNT/MIN/MAX/AVG`, no GROUP BY),
+> with column refs, numeric literals, `+−×÷`, the six comparisons, and `AND/OR/NOT` over numeric
+> columns decoded to `double`. Validated:
 > - **Parity (the correctness win):** the same Q6-selection `ProtoPhysicalPlan` over an Arrow batch
 >   runs through *both* the project's Scala interpreter (`PhysicalPlanExecutor`) and the Truffle
 >   backend, and the rows agree (`TruffleBackendParitySpec`). The Truffle backend is now a third

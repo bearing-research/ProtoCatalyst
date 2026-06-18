@@ -7,7 +7,7 @@ import protocatalyst.executor.exec.Batch
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.plan.ProtoPhysicalPlan
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.truffle.exec.{CmpOp, GNodes}
+import protocatalyst.truffle.exec.{AggKind, CmpOp, GNodes}
 import protocatalyst.truffle.slice.ColumnBatch
 import protocatalyst.types.LiteralValue
 
@@ -15,25 +15,71 @@ import protocatalyst.types.LiteralValue
   * (`GNodes`), the AOT-safe winning shape from Phase 2. This is the bridge from the hand-built Q6
   * slice to the project's real IR — the same plans the Local Arrow executor and DataFusion run.
   *
-  * Supported today: `PhysicalProject` / `PhysicalFilter` over a `TableScan`, with column refs,
-  * numeric literals, `+ − × ÷`, the six comparisons, and `AND/OR/NOT`, over numeric columns (decoded
-  * to `double`). Anything else (decimals as exact decimals, strings, temporal arithmetic, aggregates,
-  * joins, null three-valued logic) is rejected with [[UnsupportedPlanException]] rather than guessed —
-  * the coverage gap is explicit, matching the doc's bounded scope.
+  * Supported today: `PhysicalProject` / `PhysicalFilter` over a `TableScan`, plus a global
+  * `HashAggregate`/`SortAggregate` (no GROUP BY) of `SUM/COUNT/MIN/MAX/AVG`; with column refs, numeric
+  * literals, `+ − × ÷`, the six comparisons, and `AND/OR/NOT`, over numeric columns (decoded to
+  * `double`). Anything else (decimals as exact decimals, strings, temporal arithmetic, grouped
+  * aggregates, joins, null three-valued logic) is rejected with [[UnsupportedPlanException]] rather
+  * than guessed — the coverage gap is explicit, matching the doc's bounded scope.
   */
 object ProtoTruffleCompiler:
 
   final class UnsupportedPlanException(message: String) extends RuntimeException(message)
 
   def compile(plan: ProtoPhysicalPlan): CompiledTruffleQuery =
+    plan match
+      case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) if grouping.isEmpty =>
+        compileGlobalAggregate(aggs, child)
+      case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) if grouping.isEmpty =>
+        compileGlobalAggregate(aggs, child)
+      case _: ProtoPhysicalPlan.HashAggregate | _: ProtoPhysicalPlan.SortAggregate =>
+        throw UnsupportedPlanException("grouped aggregate (GROUP BY) not yet supported")
+      case _ => compileFilterProject(plan)
+
+  private def indexOf(schema: ProtoSchema): String => Int = name =>
+    val i = schema.fields.indexWhere(_.name.equalsIgnoreCase(name))
+    if i < 0 then throw UnsupportedPlanException(s"column not found: $name") else i
+
+  private def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTruffleQuery =
     val (projList, filterOpt, scanSchema) = decompose(plan)
-    val index: String => Int = name =>
-      val i = scanSchema.fields.indexWhere(_.name.equalsIgnoreCase(name))
-      if i < 0 then throw UnsupportedPlanException(s"column not found: $name") else i
+    val index = indexOf(scanSchema)
     val projections = projList.map(e => buildExpr(e, index)).toArray
     val filterNode = filterOpt.map(c => buildPred(c, index)).orNull
     val root = GNodes.FilterProjectRoot(null, filterNode, projections)
-    CompiledTruffleQuery(root.getCallTarget, scanSchema, projList.map(outputName), projections.length)
+    CompiledTruffleQuery(
+      root.getCallTarget,
+      scanSchema,
+      projList.map(outputName),
+      projections.length,
+      aggregate = false
+    )
+
+  private def compileGlobalAggregate(
+      aggs: Vector[ProtoExpr],
+      child: ProtoPhysicalPlan
+  ): CompiledTruffleQuery =
+    val (filterOpt, scanSchema) = filterAndScan(child)
+    val index = indexOf(scanSchema)
+    val parsed = aggs.map(a => buildAgg(a, index))
+    val kinds = parsed.map(_._1).toArray
+    val inputs = parsed.map(_._2).toArray
+    val filterNode = filterOpt.map(c => buildPred(c, index)).orNull
+    val root = GNodes.GlobalAggRoot(null, filterNode, inputs, kinds)
+    CompiledTruffleQuery(root.getCallTarget, scanSchema, parsed.map(_._3), kinds.length, aggregate = true)
+
+  /** Map a (possibly aliased) aggregate expression to (kind, inner-expr-or-null, output name). */
+  private def buildAgg(e: ProtoExpr, index: String => Int): (AggKind, GNodes.Expr, String) =
+    e match
+      case ProtoExpr.Alias(child, name) =>
+        val (k, inp, _) = buildAgg(child, index)
+        (k, inp, name)
+      case ProtoExpr.Sum(c)      => (AggKind.SUM, buildExpr(c, index), "sum")
+      case ProtoExpr.Count(_, _) => (AggKind.COUNT, null, "count")
+      case ProtoExpr.Min(c)      => (AggKind.MIN, buildExpr(c, index), "min")
+      case ProtoExpr.Max(c)      => (AggKind.MAX, buildExpr(c, index), "max")
+      case ProtoExpr.Avg(c)      => (AggKind.AVG, buildExpr(c, index), "avg")
+      case other =>
+        throw UnsupportedPlanException(s"unsupported aggregate: ${other.getClass.getSimpleName}")
 
   /** Peel `Project(Filter(Scan))` (in any subset) into (projections, optional filter, scan schema). */
   private def decompose(
@@ -117,7 +163,8 @@ final class CompiledTruffleQuery(
     callTarget: CallTarget,
     val inputSchema: ProtoSchema,
     val outputNames: Vector[String],
-    numProjections: Int
+    numOutputColumns: Int,
+    aggregate: Boolean
 ):
 
   /** End-to-end: decode the Arrow columns to `double[]`, then run the fused AST. */
@@ -135,13 +182,14 @@ final class CompiledTruffleQuery(
       c += 1
     new ColumnBatch(cols, n)
 
-  /** Run the fused filter→project AST over already-decoded columns. */
+  /** Run the fused AST over already-decoded columns. For a global aggregate the output is a single
+    * row; otherwise survivors are bounded by the input row count. */
   def execute(cb: ColumnBatch): TruffleResult =
-    val n = cb.rowCount
-    val out = new Array[Array[Double]](numProjections)
+    val capacity = if aggregate then 1 else math.max(1, cb.rowCount)
+    val out = new Array[Array[Double]](numOutputColumns)
     var p = 0
-    while p < numProjections do
-      out(p) = new Array[Double](n)
+    while p < numOutputColumns do
+      out(p) = new Array[Double](capacity)
       p += 1
     val k = callTarget.call(cb, out).asInstanceOf[java.lang.Integer].intValue
     TruffleResult(outputNames, out, k)
