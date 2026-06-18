@@ -8,7 +8,7 @@ Truffle at ~1.6× the codegen ceiling, a native-image AOT existence proof (runti
 partial evaluation intact, ~30× faster cold start), and a typed, null-aware backend over the project's
 own IR with interpreter parity across all SQL column types, a broad expression surface, and global +
 grouped aggregation, ORDER BY/LIMIT/DISTINCT, inner + outer joins, and the full window-function family
-(49 parity tests as of this writing).*
+(51 parity tests as of this writing). Operators compose — e.g. a filter under a join, GROUP BY over a join — via a table-catalog execution model.*
 
 > **Goal & positioning.** This is a **research prototype and case study** — the first application of
 > Truffle to a big-data execution engine — **not** a Spark-merge deliverable. It runs on
@@ -50,7 +50,7 @@ no-codegen interpreter, **fused row-at-a-time is the winning shape**.
 in-binary), cold-starting **~30× faster** than the JVM (~10 ms vs ~310 ms). To our knowledge the first
 demonstration of a runtime-planned query engine executing in a native image with runtime compilation.
 
-**Correctness & coverage — 49 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
+**Correctness & coverage — 51 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
 - **Types:** long, double, string, decimal (exact `compareTo` **and** exact arbitrary-precision
   `BigDecimal` `+`/`−`/`×`/`SUM`), date/timestamp — all with three-valued NULL logic.
 - **Expressions (~40):** arithmetic incl. `Divide` (÷0→NULL), all six comparisons, `AND`/`OR`/`NOT`
@@ -61,6 +61,9 @@ demonstration of a runtime-planned query engine executing in a native image with
 - **Operators:** filter, projection, global + grouped aggregate (null-aware), `ORDER BY`/`LIMIT`/
   `DISTINCT`, inner + outer (LEFT/RIGHT/FULL) equi-joins, and the full window-function family
   (ranking, aggregate `OVER`, `LAG`/`LEAD`/`NTILE`, `FIRST`/`LAST`/`NTH_VALUE`).
+- **Composition:** a table-catalog execution model (`run(Map[String, Batch])`) lets operators compose
+  — filters/projects/aggregates run *under* a join, and ORDER BY/LIMIT/GROUP BY run *over* one (the
+  TPC-H Q3/Q5/Q10 join→group-by shape), parity-checked.
 
 **Positioning.** A research prototype + case study (the first application of Truffle to a big-data
 execution engine), **not** a Spark-merge deliverable — see the goal/positioning note above and §6/§8.
@@ -68,7 +71,7 @@ execution engine), **not** a Spark-merge deliverable — see the goal/positionin
 **Not done (honest scope):** decimal arithmetic + `SUM` *match the interpreter* (arbitrary-precision
 `BigDecimal`), but Spark's **capped `decimal(38,s)` precision/scale promotion** + ANSI edge cases are
 not (Layer 4); decimal `MIN`/`MAX`/`AVG` still go through `double`; also explicit window frames
-(`ROWS`/`RANGE BETWEEN`), non-equi / under-join filters, and the Layer-5 `SparkPlan` front-end that any
+(`ROWS`/`RANGE BETWEEN`), non-equi join conditions, and the Layer-5 `SparkPlan` front-end that any
 real Spark integration would require.
 
 ---
@@ -392,7 +395,8 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    (`SUM`/`COUNT`/`MIN`/`MAX`/`AVG OVER`, whole-partition), offset (`LAG`/`LEAD`), `NTILE`, and
    `FIRST_VALUE`/`LAST_VALUE`/`NTH_VALUE` — all over `PARTITION BY` + `ORDER BY`, parity-checked
    (incl. ties and NULL out-of-bounds). Remaining Layer 3: explicit window frames (`ROWS`/`RANGE
-   BETWEEN`), join conditions beyond equi-keys, and filters/projects *under* a join.
+   BETWEEN`) and join conditions beyond equi-keys. (Filters/projects/aggregates now compose with
+   joins via the catalog execution model — see the Results summary.)
 4. **Semantics parity (the oracle).** Match Spark exactly: type coercion, decimal precision/scale,
    null propagation, overflow (ANSI vs legacy), collation, rounding. Validated against Spark.
 5. **Front-end swap — the actual Spark graft.** Replace the `ProtoPhysicalPlan` builder with one
