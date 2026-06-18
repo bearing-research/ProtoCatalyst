@@ -518,15 +518,50 @@ execution with template instantiation at C++ compile time) that
 avoids the Janino class of problem but isn't directly portable to
 the JVM ecosystem.
 
-**Bottom line.** Plausible research direction, no prior art for
-big-data engines, performance is the open question, and the
-strategic-coupling concern is real. If a research group with
-Truffle experience took this on (Oracle GraalVM team
-collaborating with Databricks or the Spark community), it would
-be a 2–3 year effort and the result would be the first published
-case study of Truffle for an analytics engine. Worth flagging as
-a possibility; not actionable for the Spark community in its
-current state.
+**Update (2026-06): a prototype turned the open question into
+measurements.** A scoped exploration built this option's core on
+ProtoCatalyst's own IR — Truffle expression/operator nodes (Java, since
+the Truffle DSL is a Java annotation processor) for a TPC-H Q6
+filter→project, executed three ways: fused row-at-a-time, naive
+materialized batch, and selection-vector vectorized. Full writeup +
+methodology: [`../compiler/TRUFFLE_EXPLORATION.md`](../compiler/TRUFFLE_EXPLORATION.md).
+Headline findings, against a hand-written fused Java loop as the WSCG
+proxy ceiling (GraalVM 21, JMH):
+
+- **Fused row-at-a-time Truffle is ~1.6× the codegen ceiling** (1.6–2.7×
+  depending on how much work clears the filter) — the *optimistic* end of
+  the 1.5–3× band predicted above, not the pessimistic end. So the
+  regression is real but smaller than feared for the fused shape.
+- **The "batch-shaped nodes might do better" hope was wrong.** Naive batch
+  is ~4× the ceiling and selection-vector vectorization ~2.2× — both
+  *worse* than fused row, because node-granular vectorization pays one
+  materialization pass per operator while fusion is a single
+  register-resident pass. Beating fused row needs *kernel fusion* (several
+  ops compiled into one SIMD loop) — i.e. exactly the runtime codegen AOT
+  forbids. **For an AOT-safe, no-codegen interpreter, fusion wins.**
+- **The AOT existence proof holds, and is stronger than expected.** A
+  *runtime-built* plan (the `spark.sql(userInput)` analogue) runs inside a
+  GraalVM `native-image` binary with **zero runtime bytecode generation**
+  *and* the optimizing runtime intact (the binary reports the Graal Truffle
+  runtime, not interpreted — partial evaluation works in-binary). Cold
+  start ~10 ms vs ~310 ms for the same code on the JVM (~30×).
+
+What this does **not** show: it is a single-operator slice over primitive
+columns on our IR, not full Catalyst, and the row shape is essentially a
+fused interpreter. The expression/operator-coverage and Spark-front-end
+costs below are unchanged. The rating stays *research-grade* — but it is
+now **prototype-validated** research, not extrapolation: the perf cost is
+bounded (~1.6× for the fused shape) and the AOT+PE-in-native-image claim is
+demonstrated rather than asserted.
+
+**Bottom line.** Plausible research direction, **now with a working
+prototype and measured numbers** (above), no prior art for big-data engines
+otherwise, and the strategic-coupling concern is real. If a research group
+with Truffle experience took this on (Oracle GraalVM team collaborating
+with Databricks or the Spark community), it would be a 2–3 year effort and
+the result would be the first published case study of Truffle for an
+analytics engine. Worth flagging as a possibility; not actionable for the
+Spark community in its current state.
 
 #### Option C: Accept interpreted-mode-only under native-image
 
@@ -560,7 +595,7 @@ is probably:
 |---|---|---|---|---|
 | A (compile-time codegen) | 1–2 years | Typed-only | ≈ Spark | Yes, but constrained |
 | A + vectorized Tier 2 | ~3–5 years | Full | ≈ Spark (vectorized) | Yes — alternative-engine build |
-| B (Truffle) | 2–3 years | Full Spark | 2–3× regression? | Research-grade |
+| B (Truffle) | 2–3 years | Full Spark | ~1.6× (fused; slice-measured) | Research-grade (prototype-validated) |
 | C (interpreted-only) | weeks | Full Spark | 3–10× regression | Tooling-only |
 | Wait for Catalyst rewrite | indefinite | n/a | n/a | Indefinite |
 
@@ -572,7 +607,11 @@ track already points (the Arrow executor + DataFusion backend run runtime-parsed
 This is why the recommendations in §7 of this document **don't
 prescribe full-Spark native-image** as a near-term goal. The path
 forward is Phase 1 (Connect client) and Phase 3 (Leyden); Phase 2
-remains a research direction.
+remains a research direction — though Option B (Truffle) now has a
+working prototype with measured numbers
+([`../compiler/TRUFFLE_EXPLORATION.md`](../compiler/TRUFFLE_EXPLORATION.md)):
+fused row-at-a-time at ~1.6× the codegen ceiling, and a runtime-built plan
+proven to run under `native-image` with partial evaluation intact.
 
 ### Phase 3: Leyden adoption for full Spark (~6 months)
 
@@ -625,7 +664,13 @@ roadmap"**. Use the §6 phase 1 list as the proposed action items.
 Park it. The Janino blocker isn't solvable without a Catalyst
 rewrite. Pursue alternative directions (Leyden for cold-start,
 ProtoCatalyst-like external execution for AOT-native processing)
-rather than trying to AOT-compile Catalyst itself.
+rather than trying to AOT-compile Catalyst itself. One such
+alternative direction is now prototyped: a Truffle-based executor
+([`../compiler/TRUFFLE_EXPLORATION.md`](../compiler/TRUFFLE_EXPLORATION.md))
+demonstrates that a runtime-built plan can run under `native-image` with
+partial evaluation intact and no Janino — the only measured path that keeps
+*dynamic SQL* on the AOT-native side, at a bounded ~1.6× fused-shape cost.
+Still a 2–3 year build for full Catalyst coverage; not near-term.
 
 ---
 
