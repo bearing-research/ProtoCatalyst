@@ -165,4 +165,40 @@ class TypedJoinSpec extends FunSuite:
     assertEquals(typedRows.size, 3, "nations 0,1,2 (regionkeys 0,1,2) each join one region")
     assertEquals(typedRows, localRows, "filter-under-join must match the interpreter")
 
+  test("composition: GROUP BY over a join — COUNT(*) nations per region"):
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val key = ProtoExpr.ColumnRef("regionkey", None, ProtoType.LongType, false)
+    val join = ProtoPhysicalPlan.HashJoin(
+      ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Vector(key),
+      Vector(key),
+      None,
+      BuildSide.BuildRight
+    )
+    val plan = ProtoPhysicalPlan.HashAggregate(
+      Vector(ProtoExpr.ColumnRef("rname", None, ProtoType.StringType, false)),
+      Vector(ProtoExpr.Alias(ProtoExpr.Count(ProtoExpr.Literal(LiteralValue.IntValue(1)), false), "cnt")),
+      join
+    )
+
+    val catalog = new Catalog()
+    catalog.registerTable("nation", nationBatch)
+    catalog.registerTable("region", regionBatch)
+    catalog.registerStatistics("nation", Statistics(6, 600))
+    catalog.registerStatistics("region", Statistics(4, 400))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan)).sortBy(_.head.toString)
+    val typedRows = TypedTruffleCompiler
+      .compile(plan)
+      .run(Map("nation" -> nationBatch, "region" -> regionBatch))
+      .rows
+      .sortBy(_.head.toString)
+
+    // R0→2 (nations 0,4), R1→2 (nations 1,5), R2→1 (nation 2); R4 has no nations (inner join).
+    assertEquals(typedRows.size, 3)
+    assertEquals(typedRows, localRows, "GROUP BY over a join must match the interpreter")
+
 end TypedJoinSpec

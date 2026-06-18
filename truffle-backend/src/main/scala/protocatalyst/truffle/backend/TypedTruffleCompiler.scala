@@ -73,18 +73,61 @@ object TypedTruffleCompiler:
         SortQuery(c, order.map(so => sortKey(so, c.outputNames)))
       case ProtoPhysicalPlan.PhysicalWindow(windowExprs, partitionSpec, orderSpec, child) =>
         compileWindow(windowExprs, partitionSpec, orderSpec, child)
-      case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) if grouping.isEmpty =>
-        compileGlobalAggregate(aggs, child)
-      case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) if grouping.isEmpty =>
-        compileGlobalAggregate(aggs, child)
       case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) =>
-        compileGroupedAggregate(grouping, aggs, child)
+        compileAggregate(grouping, aggs, child)
       case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) =>
-        compileGroupedAggregate(grouping, aggs, child)
+        compileAggregate(grouping, aggs, child)
       case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, _, _) => compileJoin(l, r, jt, lk, rk)
       case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, _, _) => compileJoin(l, r, jt, lk, rk)
       case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, _) => compileJoin(l, r, jt, lk, rk)
       case _ => compileFilterProject(plan)
+
+  /** Route an aggregate: a single-table (Filter/Scan) child uses the Truffle-accelerated leaf path;
+    * anything else (a join, a projected child, …) uses the row-based aggregate over the child query. */
+  private def compileAggregate(
+      grouping: Vector[ProtoExpr],
+      aggs: Vector[ProtoExpr],
+      child: ProtoPhysicalPlan
+  ): TypedQuery =
+    if isSingleTableLeaf(child) then
+      if grouping.isEmpty then compileGlobalAggregate(aggs, child)
+      else compileGroupedAggregate(grouping, aggs, child)
+    else compileRowAggregate(grouping, aggs, child)
+
+  private def isSingleTableLeaf(p: ProtoPhysicalPlan): Boolean =
+    p match
+      case ProtoPhysicalPlan.TableScan(_, _, _, _) => true
+      case ProtoPhysicalPlan.PhysicalFilter(_, c)  => isSingleTableLeaf(c)
+      case _                                       => false
+
+  /** Row-based aggregate over an arbitrary child query (e.g. a join) — groups the child's output rows
+    * and aggregates them, so GROUP BY composes on top of any operator. */
+  private def compileRowAggregate(
+      grouping: Vector[ProtoExpr],
+      aggs: Vector[ProtoExpr],
+      child: ProtoPhysicalPlan
+  ): RowAggregateQuery =
+    val childQuery = compile(child)
+    val names = childQuery.outputNames
+    val groupCols = grouping.map(g => keyColumn(g, names))
+    val parsed = aggs.map(a => parseRowAgg(a, names))
+    val outputNames = grouping.map(outputName) ++ parsed.map(_._3)
+    RowAggregateQuery(childQuery, groupCols, parsed.map(_._1).toVector, parsed.map(_._2).toVector, outputNames)
+
+  /** Map a (possibly aliased) aggregate to (kind, child-output column index, name) — the row-based
+    * analogue of `buildAgg`; the input must be a column ref (or a literal for COUNT(*)). */
+  private def parseRowAgg(e: ProtoExpr, names: Vector[String]): (AggKind, Int, String) =
+    e match
+      case ProtoExpr.Alias(inner, name) =>
+        val (k, c, _) = parseRowAgg(inner, names)
+        (k, c, name)
+      case ProtoExpr.Sum(c)      => (AggKind.SUM, aggCol(c, names), "sum")
+      case ProtoExpr.Count(c, _) => (AggKind.COUNT, aggColOrNeg(c, names), "count")
+      case ProtoExpr.Min(c)      => (AggKind.MIN, aggCol(c, names), "min")
+      case ProtoExpr.Max(c)      => (AggKind.MAX, aggCol(c, names), "max")
+      case ProtoExpr.Avg(c)      => (AggKind.AVG, aggCol(c, names), "avg")
+      case other =>
+        throw UnsupportedPlanException(s"unsupported aggregate: ${other.getClass.getSimpleName}")
 
   private def compileGroupedAggregate(
       grouping: Vector[ProtoExpr],
@@ -713,6 +756,88 @@ final class JoinQuery(
         case other                   => other)
       k += 1
     Some(acc.toList)
+
+/** Row-based aggregate over a child query's output rows — used when GROUP BY sits above a join (or any
+  * non-single-table child). Groups boxed rows by the grouping columns and computes
+  * SUM/COUNT/MIN/MAX/AVG (SUM exact for decimals). Output is grouping keys ++ aggregate results; a
+  * global aggregate (no grouping) always emits one row. */
+final class RowAggregateQuery(
+    child: TypedQuery,
+    groupCols: Vector[Int],
+    aggKinds: Vector[AggKind],
+    aggInputCols: Vector[Int],
+    val outputNames: Vector[String]
+) extends TypedQuery:
+
+  def tableNames: Set[String] = child.tableNames
+
+  def run(tables: Map[String, Batch]): TypedResult =
+    val rows = child.run(tables).boxedRows
+    if groupCols.isEmpty then new TypedResult(outputNames, Vector(aggregateGroup(rows.indices, rows)))
+    else
+      val groups =
+        scala.collection.mutable.LinkedHashMap[List[AnyRef], scala.collection.mutable.ArrayBuffer[Int]]()
+      var i = 0
+      while i < rows.size do
+        val key = groupCols.map(c => normalizeKey(rows(i)(c))).toList
+        groups.getOrElseUpdate(key, scala.collection.mutable.ArrayBuffer[Int]()) += i
+        i += 1
+      val out = groups.valuesIterator.map { idxs =>
+        groupCols.map(c => rows(idxs.head)(c)) ++ aggregateGroup(idxs, rows)
+      }.toVector
+      new TypedResult(outputNames, out)
+
+  private def aggregateGroup(idxs: scala.collection.IndexedSeq[Int], rows: Vector[Vector[AnyRef]]): Vector[AnyRef] =
+    aggKinds.indices.map { a =>
+      val col = aggInputCols(a)
+      (aggKinds(a) match
+        case AggKind.COUNT =>
+          val c = if col < 0 then idxs.size else idxs.count(i => rows(i)(col) != null)
+          java.lang.Long.valueOf(c.toLong)
+        case AggKind.SUM => sumBoxed(idxs.iterator.map(i => rows(i)(col)))
+        case AggKind.AVG =>
+          val vals = idxs.iterator.map(i => rows(i)(col)).filter(_ != null).toVector
+          if vals.isEmpty then null
+          else
+            java.lang.Double.valueOf(vals.map(_.asInstanceOf[java.lang.Number].doubleValue).sum / vals.size)
+        case AggKind.MIN => extreme(idxs, col, rows, min = true)
+        case AggKind.MAX => extreme(idxs, col, rows, min = false)
+      ): AnyRef
+    }.toVector
+
+  private def normalizeKey(v: AnyRef): AnyRef =
+    v match
+      case d: java.math.BigDecimal => d.stripTrailingZeros
+      case other                   => other
+
+  private def sumBoxed(vs: Iterator[AnyRef]): AnyRef =
+    var acc: AnyRef = null
+    vs.foreach { v =>
+      if v != null then
+        acc = (acc, v) match
+          case (null, d: java.math.BigDecimal)                    => d
+          case (null, n: java.lang.Number)                        => java.lang.Double.valueOf(n.doubleValue)
+          case (a: java.math.BigDecimal, d: java.math.BigDecimal) => a.add(d)
+          case (a: java.lang.Number, n: java.lang.Number)         => java.lang.Double.valueOf(a.doubleValue + n.doubleValue)
+          case _                                                  => acc
+    }
+    acc
+
+  private def extreme(idxs: scala.collection.IndexedSeq[Int], col: Int, rows: Vector[Vector[AnyRef]], min: Boolean): AnyRef =
+    var best: AnyRef = null
+    idxs.foreach { i =>
+      val v = rows(i)(col)
+      if v != null then
+        if best == null then best = v
+        else
+          val c = (v, best) match
+            case (p: java.math.BigDecimal, q: java.math.BigDecimal) => p.compareTo(q)
+            case (p: java.lang.Number, q: java.lang.Number)         => java.lang.Double.compare(p.doubleValue, q.doubleValue)
+            case (p: String, q: String)                             => p.compareTo(q)
+            case _                                                  => v.toString.compareTo(best.toString)
+          if (min && c < 0) || (!min && c > 0) then best = v
+    }
+    best
 
 /** Typed result rows (boxed Long/Double/String/BigDecimal/null), with the result-level transforms and
   * a normalized `rows` view for comparison (numbers → Double, NULL → null) — the cross-backend harness
