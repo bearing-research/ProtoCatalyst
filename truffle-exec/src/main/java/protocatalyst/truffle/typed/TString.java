@@ -163,4 +163,94 @@ public final class TString {
             return (start >= end) ? "" : s.substring(start, end);
         }
     }
+
+    /** REPLACE(str, search, replace) — all literal occurrences; NULL if any argument is NULL. */
+    public static final class Replace extends TExpr {
+        @Child private TExpr str;
+        @Child private TExpr search;
+        @Child private TExpr replacement;
+
+        public Replace(TExpr str, TExpr search, TExpr replacement) {
+            this.str = str;
+            this.search = search;
+            this.replacement = replacement;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            Object s = str.executeGeneric(frame);
+            Object se = search.executeGeneric(frame);
+            Object re = replacement.executeGeneric(frame);
+            if (SqlNull.isNull(s) || SqlNull.isNull(se) || SqlNull.isNull(re)) {
+                return SqlNull.INSTANCE;
+            }
+            String search0 = se.toString();
+            return search0.isEmpty() ? s.toString() : s.toString().replace(search0, re.toString());
+        }
+    }
+
+    /** LPAD/RPAD(str, len, pad): pad to length (truncating if longer); NULL if any argument is NULL. */
+    public static final class Pad extends TExpr {
+        @Child private TExpr str;
+        @Child private TExpr len;
+        @Child private TExpr pad;
+        private final boolean left;
+
+        public Pad(TExpr str, TExpr len, TExpr pad, boolean left) {
+            this.str = str;
+            this.len = len;
+            this.pad = pad;
+            this.left = left;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            Object sv = str.executeGeneric(frame);
+            Object lv = len.executeGeneric(frame);
+            Object pv = pad.executeGeneric(frame);
+            if (SqlNull.isNull(sv) || SqlNull.isNull(lv) || SqlNull.isNull(pv)) {
+                return SqlNull.INSTANCE;
+            }
+            String s = sv.toString();
+            int target = (int) ((Number) lv).longValue();
+            String p = pv.toString();
+            if (target <= 0) {
+                return "";
+            }
+            if (s.length() >= target) {
+                return s.substring(0, target);
+            }
+            if (p.isEmpty()) {
+                return s;
+            }
+            StringBuilder padding = new StringBuilder();
+            while (padding.length() < target - s.length()) {
+                padding.append(p);
+            }
+            String pad0 = padding.substring(0, target - s.length());
+            return left ? pad0 + s : s + pad0;
+        }
+    }
+
+    /** REPEAT(str, n): the string repeated n times; NULL if any argument is NULL. */
+    public static final class Repeat extends TExpr {
+        @Child private TExpr str;
+        @Child private TExpr times;
+
+        public Repeat(TExpr str, TExpr times) {
+            this.str = str;
+            this.times = times;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            Object sv = str.executeGeneric(frame);
+            Object tv = times.executeGeneric(frame);
+            if (SqlNull.isNull(sv) || SqlNull.isNull(tv)) {
+                return SqlNull.INSTANCE;
+            }
+            int t = (int) ((Number) tv).longValue();
+            return (t <= 0) ? "" : sv.toString().repeat(t);
+        }
+    }
 }

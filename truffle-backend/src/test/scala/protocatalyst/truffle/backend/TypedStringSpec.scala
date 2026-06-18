@@ -115,6 +115,17 @@ class TypedStringSpec extends FunSuite:
   test("UPPER(flag) preserves and agrees"):
     checkProjection(Vector(ProtoExpr.Upper(flagRef)))
 
+  test("REPLACE / LPAD / RPAD / REPEAT"):
+    val ilit = (i: Int) => ProtoExpr.Literal(LiteralValue.IntValue(i))
+    checkProjection(
+      Vector(
+        ProtoExpr.Replace(slit("banana"), slit("a"), slit("o")),
+        ProtoExpr.Lpad(flagRef, ilit(3), slit("*")),
+        ProtoExpr.Rpad(flagRef, ilit(3), slit("*")),
+        ProtoExpr.StringRepeat(flagRef, ilit(2))
+      )
+    )
+
   test("CONCAT / REVERSE / SUBSTRING / TRIM"):
     val ilit = (i: Int) => ProtoExpr.Literal(LiteralValue.IntValue(i))
     checkProjection(

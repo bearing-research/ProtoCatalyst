@@ -342,6 +342,11 @@ object TypedTruffleCompiler:
       case ProtoExpr.Substring(str, pos, len) =>
         TString.Substring(buildExpr(str, schema), buildExpr(pos, schema), buildExpr(len, schema))
       case ProtoExpr.Trim(c, _, trimType) => TString.Trim(buildExpr(c, schema), trimMode(trimType))
+      case ProtoExpr.Replace(s, search, r) =>
+        TString.Replace(buildExpr(s, schema), buildExpr(search, schema), buildExpr(r, schema))
+      case ProtoExpr.Lpad(s, l, p) => TString.Pad(buildExpr(s, schema), buildExpr(l, schema), buildExpr(p, schema), true)
+      case ProtoExpr.Rpad(s, l, p) => TString.Pad(buildExpr(s, schema), buildExpr(l, schema), buildExpr(p, schema), false)
+      case ProtoExpr.StringRepeat(s, t) => TString.Repeat(buildExpr(s, schema), buildExpr(t, schema))
       case ProtoExpr.Year(c)              => TDate.Year(buildExpr(c, schema))
       case ProtoExpr.Month(c)             => TDate.Month(buildExpr(c, schema))
       case ProtoExpr.DayOfMonth(c)        => TDate.DayOfMonth(buildExpr(c, schema))
