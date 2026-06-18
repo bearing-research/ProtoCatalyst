@@ -28,22 +28,23 @@ object TypedTruffleCompiler:
 
   def compileFilterCount(plan: ProtoPhysicalPlan): TypedFilterCount =
     val (filterOpt, schema, tableName, _) = filterAndScan(plan)
-    val predicate = filterOpt
-      .map(c => buildPred(c, schema))
-      .getOrElse(throw UnsupportedPlanException("expected a Filter over a TableScan"))
-    val root = TFilterCountRoot(null, predicate)
-    TypedFilterCount(root.getCallTarget, schema, tableName, neededColumns(schema, filterOpt.toSeq))
+    val cond = filterOpt.getOrElse(throw UnsupportedPlanException("expected a Filter over a TableScan"))
+    // A thunk so each parallel slice gets its own AST (Truffle nodes aren't thread-safe to share).
+    val buildTarget = () => TFilterCountRoot(null, buildPred(cond, schema)).getCallTarget
+    TypedFilterCount(buildTarget, schema, tableName, neededColumns(schema, Seq(cond)))
 
   /** Compile `Project`/`Filter` over a `TableScan` into a typed, null-preserving filter→project. */
   def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTypedQuery =
     val (projList, filterOpt, schema, tableName, alias) = decompose(plan)
-    val projections = projList.map(e => buildExpr(e, schema)).toArray
-    val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
-    val root = TypedFilterProjectRoot(null, filterNode, projections)
+    val buildTarget = () =>
+      val projections = projList.map(e => buildExpr(e, schema)).toArray
+      val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
+      TypedFilterProjectRoot(null, filterNode, projections).getCallTarget
     CompiledTypedQuery(
-      root.getCallTarget, schema, tableName,
+      buildTarget, schema, tableName,
       qualify(projList.map(outputName), alias),
-      neededColumns(schema, filterOpt.toSeq ++ projList)
+      neededColumns(schema, filterOpt.toSeq ++ projList),
+      LeafMerge.Concat
     )
 
   private def decompose(
@@ -161,17 +162,23 @@ object TypedTruffleCompiler:
       child: ProtoPhysicalPlan
   ): CompiledTypedQuery =
     val (filterOpt, schema, tableName, _) = filterAndScan(child)
-    val keyNodes = grouping.map(g => buildExpr(g, schema)).toArray
-    val parsed = aggs.map(a => buildAgg(a, schema))
-    val kinds = parsed.map(_._1).toArray
-    val inputs = parsed.map(_._2).toArray
-    val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
-    val root = TypedGroupedAggRoot(null, filterNode, keyNodes, inputs, kinds)
+    val parsed = aggs.map(a => buildAgg(a, schema)) // built once for kinds/names (nodes discarded)
+    val aggKinds = parsed.map(_._1)
     // Output columns: grouping keys first, then aggregates (the interpreter's order).
     val names = grouping.map(outputName) ++ parsed.map(_._3)
+    val buildTarget = () =>
+      val keyNodes = grouping.map(g => buildExpr(g, schema)).toArray
+      val p = aggs.map(a => buildAgg(a, schema))
+      val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
+      TypedGroupedAggRoot(null, filterNode, keyNodes, p.map(_._2).toArray, p.map(_._1).toArray).getCallTarget
+    // SUM/COUNT/MIN/MAX finals re-aggregate across slices; AVG can't, so it stays serial.
+    val merge =
+      if aggKinds.contains(AggKind.AVG) then LeafMerge.Serial
+      else LeafMerge.Agg(grouping.size, aggKinds)
     CompiledTypedQuery(
-      root.getCallTarget, schema, tableName, names,
-      neededColumns(schema, filterOpt.toSeq ++ grouping ++ aggs)
+      buildTarget, schema, tableName, names,
+      neededColumns(schema, filterOpt.toSeq ++ grouping ++ aggs),
+      merge
     )
 
   private def compileGlobalAggregate(
@@ -179,14 +186,19 @@ object TypedTruffleCompiler:
       child: ProtoPhysicalPlan
   ): CompiledTypedQuery =
     val (filterOpt, schema, tableName, _) = filterAndScan(child)
-    val parsed = aggs.map(a => buildAgg(a, schema))
-    val kinds = parsed.map(_._1).toArray
-    val inputs = parsed.map(_._2).toArray
-    val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
-    val root = TypedGlobalAggRoot(null, filterNode, inputs, kinds)
+    val parsed = aggs.map(a => buildAgg(a, schema)) // built once for kinds/names (nodes discarded)
+    val aggKinds = parsed.map(_._1)
+    val buildTarget = () =>
+      val p = aggs.map(a => buildAgg(a, schema))
+      val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
+      TypedGlobalAggRoot(null, filterNode, p.map(_._2).toArray, p.map(_._1).toArray).getCallTarget
+    val merge =
+      if aggKinds.contains(AggKind.AVG) then LeafMerge.Serial
+      else LeafMerge.Agg(0, aggKinds)
     CompiledTypedQuery(
-      root.getCallTarget, schema, tableName, parsed.map(_._3),
-      neededColumns(schema, filterOpt.toSeq ++ aggs)
+      buildTarget, schema, tableName, parsed.map(_._3),
+      neededColumns(schema, filterOpt.toSeq ++ aggs),
+      merge
     )
 
   /** Map a (possibly aliased) aggregate to (kind, inner-expr, name). COUNT uses a placeholder input
@@ -524,15 +536,25 @@ object TypedTruffleCompiler:
 
 /** A compiled typed filter: counts rows passing the predicate under three-valued logic. */
 final class TypedFilterCount(
-    callTarget: CallTarget,
+    buildTarget: () => CallTarget,
     schema: ProtoSchema,
     tableName: String,
     neededCols: Set[Int]
 ):
 
   def count(tables: Map[String, Batch]): Long =
-    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema, neededCols)
-    callTarget.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
+    val batch = tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName"))
+    // Count parallelizes cleanly — the per-slice counts simply sum.
+    if ParallelScan.shouldParallelize(batch.rowCount) then
+      val slices = ParallelScan.slices(batch, ParallelScan.parallelism)
+      val total = ParallelScan.parMap(slices)(sb => java.lang.Long.valueOf(countSlice(sb, buildTarget()))).map(_.longValue).sum
+      slices.foreach(_.close())
+      total
+    else countSlice(batch, buildTarget())
+
+  private def countSlice(batch: Batch, target: CallTarget): Long =
+    val cols = TypedColumnsDecoder.decode(batch, schema, neededCols)
+    target.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
 
   def count(input: Batch): Long = count(Map(tableName -> input))
 
@@ -554,24 +576,134 @@ sealed trait TypedQuery:
       case _ =>
         throw IllegalArgumentException(s"run(Batch) requires exactly one input table, found $tableNames")
 
-/** Leaf query: a Truffle call target (filter→project, or a global/grouped aggregate) over one table. */
+/** How a leaf's per-row-range partial results combine, so the scan can run in parallel over row
+  * slices. `Concat` (filter/project) just appends rows in slice order; `Agg` re-groups partials by the
+  * first `numKeys` columns and combines each aggregate column by its kind (SUM/COUNT add, MIN/MAX
+  * extreme) — valid because those finals are themselves mergeable. `Serial` opts a leaf out of
+  * parallelism (e.g. AVG, whose per-slice finals can't be re-averaged without per-slice counts). */
+enum LeafMerge:
+  case Concat
+  case Agg(numKeys: Int, kinds: Vector[AggKind])
+  case Serial
+
+/** Parallel-scan helpers: zero-copy row slicing + a parallel map. The Arrow root is sliced serially
+  * (slicing reads the source vectors — not safe to do concurrently), then each slice is decoded and
+  * executed on its own thread. Each task builds a *fresh* Truffle AST (`buildTarget()`); Truffle nodes
+  * mutate specialization state on first calls, so sharing one AST across threads would race. */
+object ParallelScan:
+  import scala.jdk.CollectionConverters.*
+
+  val parallelism: Int = math.max(1, Runtime.getRuntime.availableProcessors - 1)
+  /** Below this row count the fork/join + slice overhead isn't worth it — run serially. A `var` only so
+    * tests can force the parallel path over small fixtures; production never mutates it. */
+  @volatile var threshold: Int = 250_000
+
+  def shouldParallelize(rowCount: Int): Boolean = parallelism > 1 && rowCount >= threshold
+
+  /** Contiguous, zero-copy row-range slices of `batch` (caller closes them). */
+  def slices(batch: Batch, p: Int): Vector[Batch] =
+    val n = batch.rowCount
+    val chunk = (n + p - 1) / p
+    (0 until p).iterator
+      .map(i => (i * chunk, math.min(chunk, n - i * chunk)))
+      .takeWhile(_._2 > 0)
+      .map((start, len) => Batch.fromRoot(batch.root.slice(start, len), batch.schema))
+      .toVector
+
+  /** Map over slices on the common fork/join pool, preserving slice order. */
+  def parMap[A](items: Vector[Batch])(f: Batch => A): Vector[A] =
+    items.asJava.parallelStream().map(b => f(b)).collect(java.util.stream.Collectors.toList).asScala.toVector
+
+/** Combine two per-slice aggregate finals — the same arithmetic the row-aggregate path uses, applied
+  * across slices. SUM/COUNT add; MIN/MAX take the extreme; all null-aware (a SUM/MIN/MAX over a slice
+  * with no surviving rows is null). AVG is never combined here — its leaf is marked `Serial`. */
+object AggMerge:
+  def normKey(v: AnyRef): AnyRef = v match
+    case d: java.math.BigDecimal => d.stripTrailingZeros
+    case other                   => other
+
+  def combine(kind: AggKind, a: AnyRef, b: AnyRef): AnyRef =
+    kind match
+      case AggKind.COUNT => java.lang.Long.valueOf(asLong(a) + asLong(b))
+      case AggKind.SUM   => add(a, b)
+      case AggKind.MIN   => extreme(a, b, min = true)
+      case AggKind.MAX   => extreme(a, b, min = false)
+      case AggKind.AVG   => add(a, b) // unreachable (AVG ⇒ Serial); defined for totality
+
+  private def asLong(v: AnyRef): Long = if v == null then 0L else v.asInstanceOf[java.lang.Number].longValue
+
+  private def add(a: AnyRef, b: AnyRef): AnyRef =
+    (a, b) match
+      case (null, y) => y
+      case (x, null) => x
+      case (x: java.math.BigDecimal, y: java.math.BigDecimal) => x.add(y)
+      case (x: java.lang.Number, y: java.lang.Number)         => java.lang.Double.valueOf(x.doubleValue + y.doubleValue)
+      case _                                                  => a
+
+  private def extreme(a: AnyRef, b: AnyRef, min: Boolean): AnyRef =
+    (a, b) match
+      case (null, y) => y
+      case (x, null) => x
+      case (x, y) =>
+        val c = (x, y) match
+          case (p: java.math.BigDecimal, q: java.math.BigDecimal) => p.compareTo(q)
+          case (p: java.lang.Number, q: java.lang.Number)         => java.lang.Double.compare(p.doubleValue, q.doubleValue)
+          case (p: String, q: String)                             => p.compareTo(q)
+          case _                                                  => x.toString.compareTo(y.toString)
+        if (min && c <= 0) || (!min && c >= 0) then x else y
+
+/** Leaf query: a Truffle call target (filter→project, or a global/grouped aggregate) over one table.
+  * Holds `buildTarget`, a thunk that builds a fresh AST per call, so a large scan can be split into row
+  * slices decoded + executed in parallel (`merge` says how the partials recombine). */
 final class CompiledTypedQuery(
-    callTarget: CallTarget,
+    buildTarget: () => CallTarget,
     schema: ProtoSchema,
     tableName: String,
     val outputNames: Vector[String],
-    neededCols: Set[Int]
+    neededCols: Set[Int],
+    merge: LeafMerge
 ) extends TypedQuery:
 
   def tableNames: Set[String] = Set(tableName)
 
   def run(tables: Map[String, Batch]): TypedResult =
-    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema, neededCols)
+    val batch = tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName"))
+    merge match
+      case LeafMerge.Serial => runSlice(batch, buildTarget())
+      case _ if !ParallelScan.shouldParallelize(batch.rowCount) => runSlice(batch, buildTarget())
+      case _ =>
+        val slices = ParallelScan.slices(batch, ParallelScan.parallelism)
+        val partials = ParallelScan.parMap(slices)(sb => runSlice(sb, buildTarget()))
+        slices.foreach(_.close())
+        merge match
+          case LeafMerge.Concat            => new TypedResult(outputNames, partials.flatMap(_.boxedRows))
+          case LeafMerge.Agg(numKeys, kinds) => mergeAgg(partials, numKeys, kinds)
+          case LeafMerge.Serial            => partials.head // unreachable
+
+  /** Decode + execute one (possibly sliced) batch through a fresh call target. */
+  private def runSlice(batch: Batch, target: CallTarget): TypedResult =
+    val cols = TypedColumnsDecoder.decode(batch, schema, neededCols)
     val numCols = outputNames.size
     val out = Array.ofDim[AnyRef](numCols, math.max(1, cols.rowCount))
-    val k = callTarget.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
+    val k = target.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
     val boxed = (0 until k).map(j => (0 until numCols).map(c => out(c)(j)).toVector).toVector
     new TypedResult(outputNames, boxed)
+
+  /** Re-aggregate per-slice partials: group by the first `numKeys` columns, combine each aggregate
+    * column by its kind. Global aggregate is `numKeys == 0` (one combined group). */
+  private def mergeAgg(partials: Vector[TypedResult], numKeys: Int, kinds: Vector[AggKind]): TypedResult =
+    val groups = scala.collection.mutable.LinkedHashMap[List[AnyRef], Array[AnyRef]]()
+    for p <- partials; row <- p.boxedRows do
+      val key = (0 until numKeys).map(c => AggMerge.normKey(row(c))).toList
+      groups.get(key) match
+        case None => groups(key) = row.toArray
+        case Some(acc) =>
+          var a = 0
+          while a < kinds.size do
+            val col = numKeys + a
+            acc(col) = AggMerge.combine(kinds(a), acc(col), row(col))
+            a += 1
+    new TypedResult(outputNames, groups.valuesIterator.map(_.toVector).toVector)
 
 /** LIMIT n — the result-level operators are plain row transforms over a child query. */
 final class LimitQuery(child: TypedQuery, limit: Int) extends TypedQuery:
