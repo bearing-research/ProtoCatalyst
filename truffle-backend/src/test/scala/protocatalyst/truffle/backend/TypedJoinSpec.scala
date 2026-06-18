@@ -296,4 +296,40 @@ class TypedJoinSpec extends FunSuite:
     assertEquals(typed.size, 5, "5 inner-join rows")
     assertEquals(typed, local, "project over a join must match the interpreter")
 
+  test("nested-loop cross join: nation × region = 6 × 4 = 24 rows"):
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val plan = ProtoPhysicalPlan.NestedLoopJoin(
+      ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      None
+    )
+    val (local, typed) = runComposed(plan, nationBatch, regionBatch)
+    assertEquals(typed.size, 24, "full cross product")
+    assertEquals(typed, local, "cross join must match the interpreter")
+
+  test("nested-loop non-equi join on uniquely-named columns: nationkey < (nation's) regionkey"):
+    // Over-join conditions resolve columns by bare name, so they're correct when the referenced names
+    // are unique across the join. Here `nationkey` and `nname` are unique; `regionkey` is shared, so
+    // a condition on it would bind to the first (qualifier disambiguation is the documented gap).
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("nationkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(2L))
+    )
+    val plan = ProtoPhysicalPlan.NestedLoopJoin(
+      ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Some(cond)
+    )
+    val (local, typed) = runComposed(plan, nationBatch, regionBatch)
+    // nationkey < 2 → nations 0,1 (2 of them) × 4 regions = 8 rows.
+    assertEquals(typed.size, 8)
+    assertEquals(typed, local, "non-equi nested-loop join must match the interpreter")
+
 end TypedJoinSpec

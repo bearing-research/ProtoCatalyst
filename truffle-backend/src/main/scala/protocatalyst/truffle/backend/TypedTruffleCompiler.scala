@@ -80,6 +80,10 @@ object TypedTruffleCompiler:
       case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, cond, _) => compileJoin(l, r, jt, lk, rk, cond)
       case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, cond, _) => compileJoin(l, r, jt, lk, rk, cond)
       case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, cond) => compileJoin(l, r, jt, lk, rk, cond)
+      // Nested-loop / cross join: no equi-keys — a cross product filtered by the condition, which the
+      // hash join expresses as empty key lists (every left row matches the single empty-key bucket).
+      case ProtoPhysicalPlan.NestedLoopJoin(l, r, jt, cond) =>
+        compileJoin(l, r, jt, Vector.empty, Vector.empty, cond)
       // Filter/Project over a non-single-table child (a join, an aggregate → HAVING, …): row-based,
       // so WHERE/HAVING/SELECT compose over joins. Single-table Filter/Project use the Truffle leaf.
       case ProtoPhysicalPlan.PhysicalFilter(cond, child) if !isSingleTable(child) =>
