@@ -1,11 +1,24 @@
 # Truffle as an AOT-clean execution backend — an exploration plan
 
-*Status: **planning / doc-only**. No code yet. This is the executable counterpart to
+*Status: **implemented research prototype** (was: planning doc). The executable counterpart to
 [`../scala3-encoder/AOT_ROADMAP.md`](../scala3-encoder/AOT_ROADMAP.md) §6 **Option B** ("Re-express
-Catalyst as a GraalVM Truffle language"). The roadmap argues Truffle is a plausible-but-unproven way
-to make Spark's query execution AOT-safe without runtime bytecode generation, and flags the central
-unknown as **"a risk, not a measurement."** This document is the plan to **turn that risk into a
-measurement** — cheaply, and in a way that keeps a path to Spark.*
+Catalyst as a GraalVM Truffle language"). The roadmap flagged the central unknown as **"a risk, not a
+measurement"**; this work turned it into a measurement and then into a working engine: fused-row
+Truffle at ~1.6× the codegen ceiling, a native-image AOT existence proof (runtime-built plan runs with
+partial evaluation intact, ~30× faster cold start), and a typed, null-aware backend over the project's
+own IR with interpreter parity across all SQL column types, a broad expression surface, and global +
+grouped aggregation + ORDER BY/LIMIT/DISTINCT (34 parity tests as of this writing).*
+
+> **Goal & positioning.** This is a **research prototype and case study** — the first application of
+> Truffle to a big-data execution engine — **not** a Spark-merge deliverable. It runs on
+> ProtoCatalyst's IR, not Spark's Catalyst, and even completed it would be an *alternative engine*
+> (columnar-plugin style, à la Comet/Gluten), not a Catalyst patch; it also regresses vs WSCG (~1.6×)
+> and carries a Truffle/vendor-coupling concern (§6, §8). The genuinely *upstreamable* contribution of
+> this overall project is the **encoder track** (the 2-line `ScalaReflection` patch + Scala-3 macro);
+> the Truffle work's Spark-facing value is the measured evidence behind a potential AOT JIRA, not this
+> code. Continued operator/semantics build-out (joins, Layer 4) deepens the prototype and the
+> write-up; it does **not** move toward merge-ability — that would require the separate Layer-5 pivot
+> (consume a real `SparkPlan`). See §6 (migration path) and §8 (what this is / is not).*
 
 ---
 
@@ -315,7 +328,10 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    own group; decimal keys normalized). `GROUP BY flag` with `COUNT(*)` + `SUM(discount)` is
    parity-checked (results sorted, since group order differs by engine). Uses a `HashMap`, so it's the
    one node that isn't fully partial-evaluable — a specialized hash table is a later perf refinement.
-   Remaining: joins, sort, limit, distinct, window.
+   **ORDER BY / LIMIT / DISTINCT** are also in — result-level transforms (`TypedQuery` wrappers)
+   honoring each sort key's direction and `NULLS FIRST/LAST`, parity-checked. The single-input
+   operator surface is now complete (filter, project, global + grouped aggregate, sort, limit,
+   distinct). Remaining Layer 3: **joins** (the multi-input structural lift) and window.
 4. **Semantics parity (the oracle).** Match Spark exactly: type coercion, decimal precision/scale,
    null propagation, overflow (ANSI vs legacy), collation, rounding. Validated against Spark.
 5. **Front-end swap — the actual Spark graft.** Replace the `ProtoPhysicalPlan` builder with one

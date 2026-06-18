@@ -4,7 +4,7 @@ import com.oracle.truffle.api.CallTarget
 
 import protocatalyst.executor.exec.Batch
 import protocatalyst.expr.ProtoExpr
-import protocatalyst.plan.ProtoPhysicalPlan
+import protocatalyst.plan.{NullOrdering, ProtoPhysicalPlan, SortDirection, SortOrder}
 import protocatalyst.schema.ProtoSchema
 import protocatalyst.truffle.exec.AggKind
 import protocatalyst.truffle.typed.*
@@ -64,8 +64,13 @@ object TypedTruffleCompiler:
       case _                                  => "expr"
 
   /** Dispatch: a global aggregate (no GROUP BY) or a filter→project. */
-  def compile(plan: ProtoPhysicalPlan): CompiledTypedQuery =
+  def compile(plan: ProtoPhysicalPlan): TypedQuery =
     plan match
+      case ProtoPhysicalPlan.PhysicalLimit(limit, child) => LimitQuery(compile(child), limit)
+      case ProtoPhysicalPlan.PhysicalDistinct(child)     => DistinctQuery(compile(child))
+      case ProtoPhysicalPlan.PhysicalSort(order, child) =>
+        val c = compile(child)
+        SortQuery(c, order.map(so => sortKey(so, c.outputNames)))
       case ProtoPhysicalPlan.HashAggregate(grouping, aggs, child) if grouping.isEmpty =>
         compileGlobalAggregate(aggs, child)
       case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) if grouping.isEmpty =>
@@ -160,6 +165,24 @@ object TypedTruffleCompiler:
       case ProtoExpr.Literal(LiteralValue.LongValue(v)) => v.toInt
       case other =>
         throw UnsupportedPlanException(s"expected an integer literal, got ${other.getClass.getSimpleName}")
+
+  /** Resolve an ORDER BY key to (output column, direction, null ordering). The key must reference an
+    * output column by name (the common case after projection). */
+  private def sortKey(so: SortOrder, names: Vector[String]): SortKey =
+    val column = so.child match
+      case ProtoExpr.ColumnRef(name, _, _, _) => outputIndex(name, names)
+      case ProtoExpr.Alias(_, name)           => outputIndex(name, names)
+      case other =>
+        throw UnsupportedPlanException(s"sort key must be a column reference, got ${other.getClass.getSimpleName}")
+    SortKey(
+      column,
+      so.direction == SortDirection.Ascending,
+      so.nullOrdering == NullOrdering.NullsFirst
+    )
+
+  private def outputIndex(name: String, names: Vector[String]): Int =
+    val i = names.indexWhere(_.equalsIgnoreCase(name))
+    if i < 0 then throw UnsupportedPlanException(s"sort key not in output: $name") else i
 
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
     e match
@@ -266,30 +289,87 @@ final class TypedFilterCount(callTarget: CallTarget, schema: ProtoSchema):
     val cols = TypedColumnsDecoder.decode(input, schema)
     callTarget.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
 
-/** A compiled typed filter→project: produces null-preserving rows. */
+/** A compiled typed query: produces null-preserving result rows. */
+sealed trait TypedQuery:
+  def outputNames: Vector[String]
+  def run(input: Batch): TypedResult
+
+/** Leaf query: a Truffle call target (filter→project, or a global/grouped aggregate). */
 final class CompiledTypedQuery(
     callTarget: CallTarget,
     schema: ProtoSchema,
     val outputNames: Vector[String]
-):
+) extends TypedQuery:
 
   def run(input: Batch): TypedResult =
     val cols = TypedColumnsDecoder.decode(input, schema)
-    val numProjections = outputNames.size
-    val out = Array.ofDim[AnyRef](numProjections, math.max(1, cols.rowCount))
+    val numCols = outputNames.size
+    val out = Array.ofDim[AnyRef](numCols, math.max(1, cols.rowCount))
     val k = callTarget.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
-    TypedResult(outputNames, out, k)
+    val boxed = (0 until k).map(j => (0 until numCols).map(c => out(c)(j)).toVector).toVector
+    new TypedResult(outputNames, boxed)
 
-/** Typed result rows, normalized for cross-engine comparison: numeric cells become `Double` and SQL
-  * NULL becomes `null` — the same yardstick the cross-backend harness and the interpreter use. */
-final class TypedResult(val names: Vector[String], cols: Array[Array[AnyRef]], val rowCount: Int):
+/** LIMIT n — the result-level operators are plain row transforms over a child query. */
+final class LimitQuery(child: TypedQuery, limit: Int) extends TypedQuery:
+  def outputNames: Vector[String] = child.outputNames
+  def run(input: Batch): TypedResult = child.run(input).take(limit)
 
-  def rows: Vector[Vector[Any]] =
-    (0 until rowCount).map { j =>
-      names.indices.map { c =>
-        cols(c)(j) match
-          case null                => null
-          case x: java.lang.Number => x.doubleValue: Any
-          case other               => other.toString: Any
-      }.toVector
-    }.toVector
+/** DISTINCT. */
+final class DistinctQuery(child: TypedQuery) extends TypedQuery:
+  def outputNames: Vector[String] = child.outputNames
+  def run(input: Batch): TypedResult = child.run(input).distinct
+
+/** ORDER BY, honoring each key's direction and NULLS FIRST/LAST. */
+final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQuery:
+  def outputNames: Vector[String] = child.outputNames
+  def run(input: Batch): TypedResult = child.run(input).sortedBy(keys)
+
+final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
+
+/** Typed result rows (boxed Long/Double/String/BigDecimal/null), with the result-level transforms and
+  * a normalized `rows` view for comparison (numbers → Double, NULL → null) — the cross-backend harness
+  * yardstick. */
+final class TypedResult(val names: Vector[String], val boxedRows: Vector[Vector[AnyRef]]):
+
+  def rowCount: Int = boxedRows.size
+
+  def rows: Vector[Vector[Any]] = boxedRows.map(_.map(TypedResult.normalize))
+
+  def take(k: Int): TypedResult = new TypedResult(names, boxedRows.take(math.max(0, k)))
+
+  def distinct: TypedResult = new TypedResult(names, boxedRows.distinct)
+
+  def sortedBy(keys: Vector[SortKey]): TypedResult =
+    new TypedResult(names, boxedRows.sortWith((a, b) => TypedResult.lessThan(a, b, keys)))
+
+object TypedResult:
+
+  private def normalize(v: AnyRef): Any =
+    v match
+      case null                => null
+      case x: java.lang.Number => x.doubleValue
+      case other               => other.toString
+
+  private def lessThan(a: Vector[AnyRef], b: Vector[AnyRef], keys: Vector[SortKey]): Boolean =
+    var i = 0
+    while i < keys.size do
+      val c = compareKey(a, b, keys(i))
+      if c != 0 then return c < 0
+      i += 1
+    false
+
+  private def compareKey(a: Vector[AnyRef], b: Vector[AnyRef], key: SortKey): Int =
+    (a(key.column), b(key.column)) match
+      case (null, null) => 0
+      case (null, _)    => if key.nullsFirst then -1 else 1
+      case (_, null)    => if key.nullsFirst then 1 else -1
+      case (x, y) =>
+        val c = compareNonNull(x, y)
+        if key.ascending then c else -c
+
+  private def compareNonNull(x: AnyRef, y: AnyRef): Int =
+    (x, y) match
+      case (p: java.math.BigDecimal, q: java.math.BigDecimal) => p.compareTo(q)
+      case (p: java.lang.Number, q: java.lang.Number) => java.lang.Double.compare(p.doubleValue, q.doubleValue)
+      case (p: String, q: String)                     => p.compareTo(q)
+      case _                                          => x.toString.compareTo(y.toString)
