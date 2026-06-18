@@ -53,35 +53,40 @@ scan) — the others are scan-bound the same way and the interpreter baseline is
 at SF=1 (it allocates Arrow intermediates per `execute` without freeing them, exhausting off-heap
 memory; the Truffle path produces GC'd heap rows and does not leak, but is decode-bound — see below).
 
-| Query | spark | truffle (JVM, PE) | interpreter |
-|------:|------:|------------------:|------------:|
-| Q1    |  696 ms | — | — |
-| Q3    |  689 ms | — | — |
-| Q5    | 1073 ms | — | — |
-| Q6    |  170 ms | **~1500 ms** median (best 720 ms; 1956 serial; 6105 pre-pruning) | 3503 ms |
-| Q10   |  715 ms | — | — |
+| Query | spark | truffle (JVM, PE) | interpreter | truffle ÷ spark |
+|------:|------:|------------------:|------------:|----------------:|
+| Q1    |  696 ms | **1343 ms** median (best 630) | — | 1.9× |
+| Q3    |  689 ms | — | — | |
+| Q5    | 1073 ms | — | — | |
+| Q6    |  170 ms | **1118 ms** median (best 840) | 3503 ms | 6.6× |
+| Q10   |  715 ms | — | — | |
 
-Two optimizations narrowed the SF=1 gap from its original state, in order of impact:
+Three optimizations narrowed the SF=1 gap from its original state, in order of impact. The Q6
+progression: **6.1 s → 1.96 s → ~1.5 s → 1.12 s** (≈ 5.4× total); the Truffle backend is now ~1.9× off
+Spark on Q1 and ~6.6× on Q6, down from ~36×.
 
-1. **Column-pruned decode.** The leaf decodes the Arrow batch into primitive column arrays per
-   execution (`TypedColumnsDecoder`). It used to decode *every* column; it now decodes **only the
-   columns a query references** (Q6 touches 4 of lineitem's 16). That cut Q6 from **6.1 s → 1.96 s
-   (3.1×)** and moved the Truffle backend from *slower* than the interpreter (which reads Arrow
-   directly) to **faster** than it. PE accelerates the AST, not the decode — pruning the decode is what
-   mattered.
-2. **Parallel scan.** The leaf now row-slices a large table across the fork/join pool (each slice with
-   its own AST, since Truffle nodes aren't thread-safe). Best case **~0.72 s** on Q6 (~2.7× over the
-   1.96 s serial), but **GC-noisy** (median ~1.5 s, p90 ~2.7 s).
+1. **Column-pruned decode.** The leaf decoded *every* column; it now decodes **only the columns a query
+   references** (Q6 touches 4 of lineitem's 16). Q6 **6.1 s → 1.96 s (3.1×)**, moving the Truffle
+   backend from *slower* than the interpreter (which reads Arrow directly) to **faster** than it. PE
+   accelerates the AST, not the decode — pruning the decode is what mattered.
+2. **Parallel scan.** The leaf row-slices a large table across the fork/join pool (each slice with its
+   own AST, since Truffle nodes aren't thread-safe). Best case ~0.72 s on Q6, but GC-noisy — because
+   the money columns are `DECIMAL(38,18)` and the `DecimalVector` decode boxes **one `BigDecimal` per
+   cell**, leaving the leaf allocation/GC-bound. Threads can't speed up GC.
+3. **Decimal → double decode.** A compile-time analysis decodes a decimal column used *only* as
+   `CAST(col AS DOUBLE)` straight into a `double[]` (no per-cell `BigDecimal`); exact-decimal columns
+   are untouched. The TPC-H revenue columns are all cast-to-double, so this removed most of the churn:
+   **Q1 2.49 s → 1.34 s** (both money columns cast → both `double`); **Q6 ~1.5 s → 1.12 s** (only
+   extendedprice cast — discount/quantity stay decimal, used bare in the filter).
 
-The reason parallelism doesn't cleanly multiply: the money columns are `DECIMAL(38,18)`, and the
-`DecimalVector` decode boxes **one `BigDecimal` per cell** — millions of allocations per query — so the
-leaf is now **allocation/GC-bound**, and more threads can't speed up GC. **Spark still leads ~11×** on
-Q6 warm. The next lever is therefore the decode itself: decode decimals destined for `double`
-arithmetic straight into `double[]` (no boxing), or execute directly over Arrow with no materialized
-arrays — not more parallelism.
+**Spark still leads** (parallel scan + WSCG vs a single JVM process), and there's residual GC variance
+(p90 ~1.8–2.1 s) from the remaining boxed values (decimal filter columns, result rows, group maps). The
+remaining headroom is executing directly over Arrow with no materialized arrays, and recognizing
+"decimal compared against a double literal" as double-safe (would convert Q6's filter columns too).
 
 None of this is the prototype's thesis: the contribution is the **cold-start / small-or-filtered-data**
-regime (§3), where decode + single-thread costs are immaterial and startup dominates.
+regime (§3), where decode + single-thread costs are immaterial and startup dominates. But the SF=1 gap
+going from ~36× to ~2–7× shows the backend is not architecturally far from Spark's warm throughput.
 
 ---
 
