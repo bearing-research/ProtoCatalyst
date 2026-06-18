@@ -369,7 +369,7 @@ lazy val truffleExec = project
 // Runs on GraalVM so partial evaluation is available. Out of the root aggregate (exploratory).
 lazy val truffleBackend = project
   .in(file("truffle-backend"))
-  .dependsOn(core, arrow, executor, truffleExec)
+  .dependsOn(core, arrow, executor, truffleExec, sqlParser)
   .enablePlugins(JmhPlugin)
   .settings(
     name := "protocatalyst-truffle-backend",
@@ -385,7 +385,11 @@ lazy val truffleBackend = project
       "--add-opens=java.base/java.nio=ALL-UNNAMED",
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     ),
-    run / fork := true
+    run / fork := true,
+    run / javaOptions ++= Seq(
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    )
   )
 
 // Execution-wall demonstrator (Scala 2.13). A verbatim copy of Spark 4.1.2's
