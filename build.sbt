@@ -363,6 +363,31 @@ lazy val truffleExec = project
     Jmh / fork := true
   )
 
+// Truffle backend (Scala 3) — the ProtoPhysicalPlan → Truffle AST builder + harness integration.
+// Bridges the Java fused-row node library (truffleExec) to the real IR: numeric Filter/Project plans
+// run through Truffle and are parity-checked against the Scala interpreter (PhysicalPlanExecutor).
+// Runs on GraalVM so partial evaluation is available. Out of the root aggregate (exploratory).
+lazy val truffleBackend = project
+  .in(file("truffle-backend"))
+  .dependsOn(core, arrow, executor, truffleExec)
+  .enablePlugins(JmhPlugin)
+  .settings(
+    name := "protocatalyst-truffle-backend",
+    commonSettings,
+    javaHome := Some(file("/Library/Java/JavaVirtualMachines/graalvm-21.jdk/Contents/Home")),
+    Test / fork := true,
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    ),
+    Jmh / fork := true,
+    Jmh / javaOptions ++= Seq(
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    ),
+    run / fork := true
+  )
+
 // Execution-wall demonstrator (Scala 2.13). A verbatim copy of Spark 4.1.2's
 // `org.apache.spark.sql.catalyst.ScalaReflection` with two lines changed (lazy `universe`;
 // `encodeFieldNameToIdentifier` via NameTransformer). Compiled here against spark-catalyst 4.1.2 +

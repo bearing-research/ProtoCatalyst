@@ -231,6 +231,31 @@ expensive payoff) runs only if the perf number survives.
 - Expand expression/operator coverage to pass the existing 12 cases (aggregates, joins, sort, outer
   joins with nulls). Coverage is *demand-driven by the harness*, not speculative.
 
+> **Status: first milestone done (numeric subset).** A new Scala module `truffle-backend` carries
+> `ProtoTruffleCompiler`, which builds a fused-row Truffle plan (`truffle-exec/exec/GNodes`, the
+> general node library) from a real `ProtoPhysicalPlan` — `PhysicalProject`/`PhysicalFilter` over a
+> `TableScan`, with column refs, numeric literals, `+−×÷`, the six comparisons, and `AND/OR/NOT` over
+> numeric columns decoded to `double`. Validated:
+> - **Parity (the correctness win):** the same Q6-selection `ProtoPhysicalPlan` over an Arrow batch
+>   runs through *both* the project's Scala interpreter (`PhysicalPlanExecutor`) and the Truffle
+>   backend, and the rows agree (`TruffleBackendParitySpec`). The Truffle backend is now a third
+>   correctness-validated engine on the real IR.
+> - **Gate number (`Q6BackendBench`, 65536 rows, filter-only, µs/op):** `truffleExec` (pure fused AST)
+>   **142**, `truffleFull` (incl. Arrow→`double[]` decode) **1266**, `scalaInterp` (`PhysicalPlanExecutor`)
+>   **~14700**. Fused Truffle execution is ~100× the project's tree-walking columnar interpreter (which
+>   boxes, builds index collections, and copies per cell); even with decode, ~11×. The `scalaInterp`
+>   figure is leak-affected (the executor copies the table per call and frees only at allocator close)
+>   so it's an order-of-magnitude read, not precise; the Truffle numbers are clean (on-heap).
+> - **The decode tax is visible and real:** `truffleFull` (1266) ≫ `truffleExec` (142) shows the
+>   Arrow→`double[]` materialization dominates end-to-end. A production backend would read Arrow
+>   buffers directly inside the nodes (or operate on Arrow's primitive buffers) to erase it.
+>
+> **Honestly bounded.** Not wired into `TpchCrossBackendSuite` directly: real TPC-H lineitem columns
+> are `DECIMAL(38,18)`, outside the numeric-double subset, so parity is shown against the same
+> interpreter on a hand-built numeric plan instead. Decimal-exact arithmetic, strings, temporal,
+> aggregates, joins, and three-valued null logic remain the (large) coverage gap — the path to full
+> Catalyst, not this milestone.
+
 ### Phase 4 — The AOT payoff (the reason this is worth it)
 - `native-image` a `parse → optimize → Truffle AST → execute` driver and prove **dynamic SQL runs in a
   native binary with zero runtime codegen** — the existence proof §6/Option B says does not exist.
