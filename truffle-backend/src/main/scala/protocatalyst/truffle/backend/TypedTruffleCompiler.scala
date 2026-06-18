@@ -134,6 +134,13 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"unsupported cast target: ${other.getClass.getSimpleName}")
 
+  private def constInt(e: ProtoExpr): Int =
+    e match
+      case ProtoExpr.Literal(LiteralValue.IntValue(v))  => v
+      case ProtoExpr.Literal(LiteralValue.LongValue(v)) => v.toInt
+      case other =>
+        throw UnsupportedPlanException(s"expected an integer literal, got ${other.getClass.getSimpleName}")
+
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
     e match
       case ProtoExpr.ColumnRef(name, _, _, _) =>
@@ -168,6 +175,14 @@ object TypedTruffleCompiler:
         val values = branches.map(b => buildExpr(b._2, schema)).toArray
         TControl.CaseWhen(conditions, values, elseValue.map(e => buildExpr(e, schema)).orNull)
       case ProtoExpr.Cast(child, targetType) => TCast(buildExpr(child, schema), castTarget(targetType))
+      case ProtoExpr.Upper(c)                => TString.Upper(buildExpr(c, schema))
+      case ProtoExpr.Lower(c)                => TString.Lower(buildExpr(c, schema))
+      case ProtoExpr.Length(c)               => TString.Length(buildExpr(c, schema))
+      case ProtoExpr.Abs(c)                  => TMath.Abs(buildExpr(c, schema))
+      case ProtoExpr.Sqrt(c)                 => TMath.Sqrt(buildExpr(c, schema))
+      case ProtoExpr.Floor(c)                => TMath.Floor(buildExpr(c, schema))
+      case ProtoExpr.Ceil(c)                 => TMath.Ceil(buildExpr(c, schema))
+      case ProtoExpr.Round(c, scale)         => TMath.Round(buildExpr(c, schema), constInt(scale))
       case ProtoExpr.Alias(child, _)         => buildExpr(child, schema)
       case other =>
         throw UnsupportedPlanException(s"unsupported expression: ${other.getClass.getSimpleName}")

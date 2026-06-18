@@ -69,6 +69,30 @@ class TypedStringSpec extends FunSuite:
       }
     }
 
+  private def checkProjection(proj: Vector[ProtoExpr]): Unit =
+    val alloc = new RootAllocator()
+    val (batch, schema) = buildBatch(alloc)
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(100L))
+    )
+    val plan = ProtoPhysicalPlan.PhysicalProject(proj, ProtoPhysicalPlan.PhysicalFilter(cond, scanOf(schema)))
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+    val typedRows = TypedTruffleCompiler.compileFilterProject(plan).run(batch).rows
+    assertEquals(typedRows.size, n)
+    assert(rowsAgree(localRows, typedRows), s"mismatch:\n  local=$localRows\n  typed=$typedRows")
+
+  private def flagRef = ProtoExpr.ColumnRef("flag", None, ProtoType.StringType, true)
+
+  test("LOWER(flag) and LENGTH(flag) — NULL-aware string functions"):
+    checkProjection(Vector(ProtoExpr.Lower(flagRef), ProtoExpr.Length(flagRef)))
+
+  test("UPPER(flag) preserves and agrees"):
+    checkProjection(Vector(ProtoExpr.Upper(flagRef)))
+
   test("string equality filter (flag = 'A') matches the interpreter, NULLs excluded"):
     val alloc = new RootAllocator()
     val (batch, schema) = buildBatch(alloc)

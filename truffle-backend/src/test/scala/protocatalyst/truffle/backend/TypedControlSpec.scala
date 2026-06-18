@@ -107,4 +107,18 @@ class TypedControlSpec extends FunSuite:
     val orderkeyRef = ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false)
     checkProjection(Vector(ProtoExpr.Cast(orderkeyRef, ProtoType.DoubleType)))
 
+  test("ABS(discount - 1.0)"):
+    checkProjection(Vector(ProtoExpr.Abs(ProtoExpr.Subtract(discountRef, dlit(1.0)))))
+
+  test("SQRT(discount)"):
+    checkProjection(Vector(ProtoExpr.Sqrt(discountRef)))
+
+  test("ROUND(discount, 1)"):
+    checkProjection(
+      Vector(ProtoExpr.Round(discountRef, ProtoExpr.Literal(LiteralValue.IntValue(1))))
+    )
+
+  test("FLOOR(discount) and CEIL(discount)"):
+    checkProjection(Vector(ProtoExpr.Floor(discountRef), ProtoExpr.Ceil(discountRef)))
+
 end TypedControlSpec
