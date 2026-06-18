@@ -254,7 +254,41 @@ expensive payoff) runs only if the perf number survives.
 > are `DECIMAL(38,18)`, outside the numeric-double subset, so parity is shown against the same
 > interpreter on a hand-built numeric plan instead. Decimal-exact arithmetic, strings, temporal,
 > aggregates, joins, and three-valued null logic remain the (large) coverage gap — the path to full
-> Catalyst, not this milestone.
+> Catalyst, below.
+
+#### Path to Catalyst parity (capability layers)
+
+Where the Phase-3 milestone sits (numeric-double Filter/Project) → full Catalyst, ordered by leverage.
+Each layer is independently testable against the project's interpreter and, ultimately, **Spark as the
+correctness oracle** (the same discipline the encoder work uses, via `spark-catalyst` + golden fixtures).
+
+1. **Typed value model + nulls — the foundational rewrite.** Replace the double-only model with typed
+   reads (long / double / decimal / boolean / string / date / timestamp) directly over Arrow vectors,
+   plus three-valued null logic (Arrow validity bitmaps → null propagation). **This is where the
+   Truffle DSL earns its keep:** `@Specialization` per operand type (e.g. `Add` specialized for
+   long/double/Decimal) is exactly the uninitialized→specialized→generic machinery the DSL generates
+   (Phase 0 set it up). Everything downstream depends on this; it is the make-or-break layer.
+2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
+   string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
+   needs Catalyst-exact semantics, not just a plausible implementation.
+3. **Stateful operators.** Global + grouped aggregate (HashAggregate accumulator model), Sort, Limit,
+   Distinct, the three joins, Window. Aggregates and joins are the structural lifts (state, later
+   spilling).
+4. **Semantics parity (the oracle).** Match Spark exactly: type coercion, decimal precision/scale,
+   null propagation, overflow (ANSI vs legacy), collation, rounding. Validated against Spark.
+5. **Front-end swap — the actual Spark graft.** Replace the `ProtoPhysicalPlan` builder with one
+   consuming Catalyst's `SparkPlan`/`Expression` trees directly; **reuse the entire node library
+   unchanged**. This is the step that turns the prototype into a Spark executor (§6 migration map).
+6. **Scale-out + native-image.** Wire every TPC-H query through the cross-backend harness;
+   native-image the full backend; benchmark cold-start + throughput at scale.
+
+**Sequencing.** Layers 1→4 are the engine (the "2–3 year" estimate in
+[`../scala3-encoder/AOT_ROADMAP.md`](../scala3-encoder/AOT_ROADMAP.md) §6 Option B); Layer 5 is the
+Spark graft; Layer 6 is hardening. Near-term leverage order: a fused **global aggregate** (next
+increment) unlocks real Q6; **decimals + grouped aggregate** unlock Q1; then **Layer 1 (typed values +
+nulls) is the gate to everything else** and should land before breadth (Layer 2) to avoid rework. The
+honest bottleneck is not operator breadth — it's that full parity is fundamentally a *typed,
+null-aware, Spark-semantics-exact* system, and Layers 1 + 4 are the bulk of the multi-year cost.
 
 ### Phase 4 — The AOT payoff (the reason this is worth it)
 - `native-image` a `parse → optimize → Truffle AST → execute` driver and prove **dynamic SQL runs in a
