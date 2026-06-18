@@ -27,31 +27,31 @@ object TypedTruffleCompiler:
     case LongCol, DoubleCol, StringCol, DecimalCol
 
   def compileFilterCount(plan: ProtoPhysicalPlan): TypedFilterCount =
-    val (filterOpt, schema) = filterAndScan(plan)
+    val (filterOpt, schema, tableName) = filterAndScan(plan)
     val predicate = filterOpt
       .map(c => buildPred(c, schema))
       .getOrElse(throw UnsupportedPlanException("expected a Filter over a TableScan"))
     val root = TFilterCountRoot(null, predicate)
-    TypedFilterCount(root.getCallTarget, schema)
+    TypedFilterCount(root.getCallTarget, schema, tableName)
 
   /** Compile `Project`/`Filter` over a `TableScan` into a typed, null-preserving filter→project. */
   def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTypedQuery =
-    val (projList, filterOpt, schema) = decompose(plan)
+    val (projList, filterOpt, schema, tableName) = decompose(plan)
     val projections = projList.map(e => buildExpr(e, schema)).toArray
     val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
     val root = TypedFilterProjectRoot(null, filterNode, projections)
-    CompiledTypedQuery(root.getCallTarget, schema, projList.map(outputName))
+    CompiledTypedQuery(root.getCallTarget, schema, tableName, projList.map(outputName))
 
   private def decompose(
       plan: ProtoPhysicalPlan
-  ): (Vector[ProtoExpr], Option[ProtoExpr], ProtoSchema) =
+  ): (Vector[ProtoExpr], Option[ProtoExpr], ProtoSchema, String) =
     plan match
       case ProtoPhysicalPlan.PhysicalProject(projList, child) =>
-        val (filt, schema) = filterAndScan(child)
-        (projList, filt, schema)
+        val (filt, schema, name) = filterAndScan(child)
+        (projList, filt, schema, name)
       case other =>
-        val (filt, schema) = filterAndScan(other)
-        (identityProjections(schema), filt, schema)
+        val (filt, schema, name) = filterAndScan(other)
+        (identityProjections(schema), filt, schema, name)
 
   private def identityProjections(schema: ProtoSchema): Vector[ProtoExpr] =
     schema.fields.map(f => ProtoExpr.ColumnRef(f.name, None, f.dataType, f.nullable))
@@ -81,6 +81,9 @@ object TypedTruffleCompiler:
         compileGroupedAggregate(grouping, aggs, child)
       case ProtoPhysicalPlan.SortAggregate(grouping, aggs, child) =>
         compileGroupedAggregate(grouping, aggs, child)
+      case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, _, _) => compileJoin(l, r, jt, lk, rk)
+      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, _, _) => compileJoin(l, r, jt, lk, rk)
+      case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, _) => compileJoin(l, r, jt, lk, rk)
       case _ => compileFilterProject(plan)
 
   private def compileGroupedAggregate(
@@ -88,7 +91,7 @@ object TypedTruffleCompiler:
       aggs: Vector[ProtoExpr],
       child: ProtoPhysicalPlan
   ): CompiledTypedQuery =
-    val (filterOpt, schema) = filterAndScan(child)
+    val (filterOpt, schema, tableName) = filterAndScan(child)
     val keyNodes = grouping.map(g => buildExpr(g, schema)).toArray
     val parsed = aggs.map(a => buildAgg(a, schema))
     val kinds = parsed.map(_._1).toArray
@@ -97,19 +100,19 @@ object TypedTruffleCompiler:
     val root = TypedGroupedAggRoot(null, filterNode, keyNodes, inputs, kinds)
     // Output columns: grouping keys first, then aggregates (the interpreter's order).
     val names = grouping.map(outputName) ++ parsed.map(_._3)
-    CompiledTypedQuery(root.getCallTarget, schema, names)
+    CompiledTypedQuery(root.getCallTarget, schema, tableName, names)
 
   private def compileGlobalAggregate(
       aggs: Vector[ProtoExpr],
       child: ProtoPhysicalPlan
   ): CompiledTypedQuery =
-    val (filterOpt, schema) = filterAndScan(child)
+    val (filterOpt, schema, tableName) = filterAndScan(child)
     val parsed = aggs.map(a => buildAgg(a, schema))
     val kinds = parsed.map(_._1).toArray
     val inputs = parsed.map(_._2).toArray
     val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
     val root = TypedGlobalAggRoot(null, filterNode, inputs, kinds)
-    CompiledTypedQuery(root.getCallTarget, schema, parsed.map(_._3))
+    CompiledTypedQuery(root.getCallTarget, schema, tableName, parsed.map(_._3))
 
   /** Map a (possibly aliased) aggregate to (kind, inner-expr, name). COUNT uses a placeholder input
     * (its value is ignored — COUNT(*) counts surviving rows), so the `@Children` array has no nulls. */
@@ -126,13 +129,13 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"unsupported aggregate: ${other.getClass.getSimpleName}")
 
-  private def filterAndScan(plan: ProtoPhysicalPlan): (Option[ProtoExpr], ProtoSchema) =
+  private def filterAndScan(plan: ProtoPhysicalPlan): (Option[ProtoExpr], ProtoSchema, String) =
     plan match
       case ProtoPhysicalPlan.PhysicalFilter(cond, child) =>
-        val (_, schema) = filterAndScan(child)
-        (Some(cond), schema)
-      case ProtoPhysicalPlan.TableScan(_, _, schema, _) =>
-        (None, schema)
+        val (_, schema, name) = filterAndScan(child)
+        (Some(cond), schema, name)
+      case ProtoPhysicalPlan.TableScan(name, _, schema, _) =>
+        (None, schema, name)
       case other =>
         throw UnsupportedPlanException(s"unsupported operator: ${other.getClass.getSimpleName}")
 
@@ -207,21 +210,33 @@ object TypedTruffleCompiler:
     val i = names.indexWhere(_.equalsIgnoreCase(name))
     if i < 0 then throw UnsupportedPlanException(s"sort key not in output: $name") else i
 
-  /** Compile an equi-join into an inner hash join over its two table inputs. Outer joins, join
-    * conditions beyond the equi-keys, and filters/projects *under* the join are not yet handled. */
-  def compileJoin(plan: ProtoPhysicalPlan): JoinQuery =
-    val (left, right, joinType, leftKeys, rightKeys) = plan match
-      case ProtoPhysicalPlan.HashJoin(l, r, jt, lk, rk, _, _)          => (l, r, jt, lk, rk)
-      case ProtoPhysicalPlan.BroadcastHashJoin(l, r, jt, lk, rk, _, _) => (l, r, jt, lk, rk)
-      case ProtoPhysicalPlan.SortMergeJoin(l, r, jt, lk, rk, _)        => (l, r, jt, lk, rk)
+  /** Compile an equi-join. Each side is compiled as a full child query (so filters/projects/aggregates
+    * *under* a join run first and compose); the join then matches their row outputs on the key columns. */
+  private def compileJoin(
+      left: ProtoPhysicalPlan,
+      right: ProtoPhysicalPlan,
+      joinType: JoinType,
+      leftKeys: Vector[ProtoExpr],
+      rightKeys: Vector[ProtoExpr]
+  ): JoinQuery =
+    val leftChild = compile(left)
+    val rightChild = compile(right)
+    val leftKeyCols = leftKeys.map(k => keyColumn(k, leftChild.outputNames))
+    val rightKeyCols = rightKeys.map(k => keyColumn(k, rightChild.outputNames))
+    JoinQuery(
+      leftChild,
+      rightChild,
+      leftKeyCols,
+      rightKeyCols,
+      joinType,
+      leftChild.outputNames ++ rightChild.outputNames
+    )
+
+  private def keyColumn(k: ProtoExpr, names: Vector[String]): Int =
+    k match
+      case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
       case other =>
-        throw UnsupportedPlanException(s"not a supported equi-join: ${other.getClass.getSimpleName}")
-    val leftSchema = scanSchema(left)
-    val rightSchema = scanSchema(right)
-    val leftKeyTarget = TypedKeysRoot(null, leftKeys.map(k => buildExpr(k, leftSchema)).toArray).getCallTarget
-    val rightKeyTarget = TypedKeysRoot(null, rightKeys.map(k => buildExpr(k, rightSchema)).toArray).getCallTarget
-    val outputNames = leftSchema.fields.map(_.name) ++ rightSchema.fields.map(_.name)
-    JoinQuery(leftSchema, rightSchema, leftKeyTarget, rightKeyTarget, leftKeys.size, joinType, outputNames)
+        throw UnsupportedPlanException(s"join key must be a column ref, got ${other.getClass.getSimpleName}")
 
   private def compileWindow(
       windowExprs: Vector[ProtoExpr],
@@ -281,14 +296,6 @@ object TypedTruffleCompiler:
     c match
       case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
       case _                               => -1 // COUNT(literal) / COUNT(*) → count all rows
-
-  private def scanSchema(p: ProtoPhysicalPlan): ProtoSchema =
-    p match
-      case ProtoPhysicalPlan.TableScan(_, _, schema, _) => schema
-      case ProtoPhysicalPlan.PhysicalFilter(_, child)   => scanSchema(child)
-      case ProtoPhysicalPlan.PhysicalProject(_, child)  => scanSchema(child)
-      case other =>
-        throw UnsupportedPlanException(s"join child must be a scan, got ${other.getClass.getSimpleName}")
 
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =
     e match
@@ -409,26 +416,44 @@ object TypedTruffleCompiler:
     sb.toString
 
 /** A compiled typed filter: counts rows passing the predicate under three-valued logic. */
-final class TypedFilterCount(callTarget: CallTarget, schema: ProtoSchema):
+final class TypedFilterCount(callTarget: CallTarget, schema: ProtoSchema, tableName: String):
 
-  def count(input: Batch): Long =
-    val cols = TypedColumnsDecoder.decode(input, schema)
+  def count(tables: Map[String, Batch]): Long =
+    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema)
     callTarget.call(new TRow(cols)).asInstanceOf[java.lang.Long].longValue
 
-/** A compiled typed query: produces null-preserving result rows. */
+  def count(input: Batch): Long = count(Map(tableName -> input))
+
+/** A compiled typed query: produces null-preserving result rows. Executes against a catalog of input
+  * tables (so joins compose — each leaf scan resolves its own table by name). */
 sealed trait TypedQuery:
   def outputNames: Vector[String]
-  def run(input: Batch): TypedResult
 
-/** Leaf query: a Truffle call target (filter→project, or a global/grouped aggregate). */
+  /** The tables this query reads (by name). */
+  def tableNames: Set[String]
+
+  /** Run against a catalog of input tables. */
+  def run(tables: Map[String, Batch]): TypedResult
+
+  /** Convenience for single-table queries. */
+  final def run(input: Batch): TypedResult =
+    tableNames.toList match
+      case sole :: Nil => run(Map(sole -> input))
+      case _ =>
+        throw IllegalArgumentException(s"run(Batch) requires exactly one input table, found $tableNames")
+
+/** Leaf query: a Truffle call target (filter→project, or a global/grouped aggregate) over one table. */
 final class CompiledTypedQuery(
     callTarget: CallTarget,
     schema: ProtoSchema,
+    tableName: String,
     val outputNames: Vector[String]
 ) extends TypedQuery:
 
-  def run(input: Batch): TypedResult =
-    val cols = TypedColumnsDecoder.decode(input, schema)
+  def tableNames: Set[String] = Set(tableName)
+
+  def run(tables: Map[String, Batch]): TypedResult =
+    val cols = TypedColumnsDecoder.decode(tables.getOrElse(tableName, throw IllegalArgumentException(s"input table not found: $tableName")), schema)
     val numCols = outputNames.size
     val out = Array.ofDim[AnyRef](numCols, math.max(1, cols.rowCount))
     val k = callTarget.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
@@ -438,17 +463,20 @@ final class CompiledTypedQuery(
 /** LIMIT n — the result-level operators are plain row transforms over a child query. */
 final class LimitQuery(child: TypedQuery, limit: Int) extends TypedQuery:
   def outputNames: Vector[String] = child.outputNames
-  def run(input: Batch): TypedResult = child.run(input).take(limit)
+  def tableNames: Set[String] = child.tableNames
+  def run(tables: Map[String, Batch]): TypedResult = child.run(tables).take(limit)
 
 /** DISTINCT. */
 final class DistinctQuery(child: TypedQuery) extends TypedQuery:
   def outputNames: Vector[String] = child.outputNames
-  def run(input: Batch): TypedResult = child.run(input).distinct
+  def tableNames: Set[String] = child.tableNames
+  def run(tables: Map[String, Batch]): TypedResult = child.run(tables).distinct
 
 /** ORDER BY, honoring each key's direction and NULLS FIRST/LAST. */
 final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQuery:
   def outputNames: Vector[String] = child.outputNames
-  def run(input: Batch): TypedResult = child.run(input).sortedBy(keys)
+  def tableNames: Set[String] = child.tableNames
+  def run(tables: Map[String, Batch]): TypedResult = child.run(tables).sortedBy(keys)
 
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
 
@@ -480,8 +508,10 @@ final class WindowQuery(
     val outputNames: Vector[String]
 ) extends TypedQuery:
 
-  def run(input: Batch): TypedResult =
-    val rows = child.run(input).boxedRows
+  def tableNames: Set[String] = child.tableNames
+
+  def run(tables: Map[String, Batch]): TypedResult =
+    val rows = child.run(tables).boxedRows
     val result = new Array[Vector[AnyRef]](rows.size)
     val partitions = rows.indices.groupBy(i => partitionKey(rows(i)))
 
@@ -615,80 +645,68 @@ final class WindowQuery(
   * value-normalized. For LEFT/FULL OUTER, unmatched left rows are emitted with a null-padded right;
   * for RIGHT/FULL OUTER, unmatched right rows with a null-padded left. Two explicit inputs (joins are
   * inherently multi-input). */
+/** Equi hash join (inner + outer) — a composable `TypedQuery`. Runs both child queries against the
+  * catalog (so filters/projects/aggregates under the join execute first), builds a hash table on the
+  * right child's key columns, probes with the left, and emits `left-row ++ right-row` per match. NULL
+  * keys never match; decimal keys are value-normalized. LEFT/FULL emit unmatched left rows with a
+  * null-padded right; RIGHT/FULL emit unmatched right rows with a null-padded left. */
 final class JoinQuery(
-    leftSchema: ProtoSchema,
-    rightSchema: ProtoSchema,
-    leftKeyTarget: CallTarget,
-    rightKeyTarget: CallTarget,
-    numKeys: Int,
+    leftChild: TypedQuery,
+    rightChild: TypedQuery,
+    leftKeyCols: Vector[Int],
+    rightKeyCols: Vector[Int],
     joinType: JoinType,
     val outputNames: Vector[String]
-):
+) extends TypedQuery:
+
+  def tableNames: Set[String] = leftChild.tableNames ++ rightChild.tableNames
 
   private val emitUnmatchedLeft = joinType == JoinType.LeftOuter || joinType == JoinType.FullOuter
   private val emitUnmatchedRight = joinType == JoinType.RightOuter || joinType == JoinType.FullOuter
 
-  def run(leftBatch: Batch, rightBatch: Batch): TypedResult =
-    val left = TypedColumnsDecoder.decode(leftBatch, leftSchema)
-    val right = TypedColumnsDecoder.decode(rightBatch, rightSchema)
-    val leftKeys = evalKeys(leftKeyTarget, left)
-    val rightKeys = evalKeys(rightKeyTarget, right)
-    val numLeftCols = leftSchema.fields.size
-    val numRightCols = rightSchema.fields.size
-    val nullLeft = Vector.fill[AnyRef](numLeftCols)(null)
-    val nullRight = Vector.fill[AnyRef](numRightCols)(null)
+  def run(tables: Map[String, Batch]): TypedResult =
+    val left = leftChild.run(tables).boxedRows
+    val right = rightChild.run(tables).boxedRows
+    val nullLeft = Vector.fill[AnyRef](leftChild.outputNames.size)(null)
+    val nullRight = Vector.fill[AnyRef](rightChild.outputNames.size)(null)
 
     val table =
       scala.collection.mutable.HashMap[List[AnyRef], scala.collection.mutable.ArrayBuffer[Int]]()
     var ri = 0
-    while ri < right.rowCount do
-      keyAt(rightKeys, ri).foreach { key =>
+    while ri < right.size do
+      keyOf(right(ri), rightKeyCols).foreach { key =>
         table.getOrElseUpdate(key, scala.collection.mutable.ArrayBuffer[Int]()) += ri
       }
       ri += 1
-    val matchedRight = Array.fill(right.rowCount)(false)
+    val matchedRight = Array.fill(right.size)(false)
 
     val rows = scala.collection.mutable.ArrayBuffer[Vector[AnyRef]]()
     var li = 0
-    while li < left.rowCount do
-      val leftRow = rowBoxed(left, li, numLeftCols)
-      keyAt(leftKeys, li).flatMap(table.get) match
+    while li < left.size do
+      keyOf(left(li), leftKeyCols).flatMap(table.get) match
         case Some(matches) =>
           matches.foreach { rj =>
-            rows += (leftRow ++ rowBoxed(right, rj, numRightCols))
+            rows += (left(li) ++ right(rj))
             matchedRight(rj) = true
           }
         case None =>
-          if emitUnmatchedLeft then rows += (leftRow ++ nullRight)
+          if emitUnmatchedLeft then rows += (left(li) ++ nullRight)
       li += 1
 
     if emitUnmatchedRight then
       var rj = 0
-      while rj < right.rowCount do
-        if !matchedRight(rj) then rows += (nullLeft ++ rowBoxed(right, rj, numRightCols))
+      while rj < right.size do
+        if !matchedRight(rj) then rows += (nullLeft ++ right(rj))
         rj += 1
 
     new TypedResult(outputNames, rows.toVector)
 
-  private def rowBoxed(cols: TypedColumns, row: Int, numCols: Int): Vector[AnyRef] =
-    val v = new Array[AnyRef](numCols)
-    var c = 0
-    while c < numCols do
-      v(c) = cols.getBoxed(c, row)
-      c += 1
-    v.toVector
-
-  private def evalKeys(target: CallTarget, cols: TypedColumns): Array[Array[AnyRef]] =
-    val out = Array.ofDim[AnyRef](numKeys, math.max(1, cols.rowCount))
-    target.call(new TRow(cols), out)
-    out
-
   /** The key tuple for a row, or None if any component is NULL (NULL never joins). */
-  private def keyAt(keys: Array[Array[AnyRef]], row: Int): Option[List[AnyRef]] =
+  private def keyOf(row: Vector[AnyRef], keyCols: Vector[Int]): Option[List[AnyRef]] =
     val acc = scala.collection.mutable.ListBuffer[AnyRef]()
     var k = 0
-    while k < numKeys do
-      val v = keys(k)(row)
+    while k < keyCols.size do
+      val v = row(keyCols(k))
       if v == null then return None
       acc += (v match
         case d: java.math.BigDecimal => d.stripTrailingZeros

@@ -14,7 +14,7 @@ import protocatalyst.executor.physical.PhysicalPlanExecutor
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.plan.{BuildSide, JoinType, ProtoPhysicalPlan, Statistics}
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.types.{ProtoStructField, ProtoType}
+import protocatalyst.types.{LiteralValue, ProtoStructField, ProtoType}
 
 /** Layer-3 inner equi-join: `nation ⋈ region ON nation.regionkey = region.regionkey`, parity-checked
   * against the interpreter. Output is left ++ right columns; rows are compared as sets (sorted), since
@@ -104,7 +104,11 @@ class TypedJoinSpec extends FunSuite:
     catalog.registerStatistics("region", Statistics(4, 400))
     val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan)).sortBy(_.mkString("|"))
     val typedRows =
-      TypedTruffleCompiler.compileJoin(plan).run(nationBatch, regionBatch).rows.sortBy(_.mkString("|"))
+      TypedTruffleCompiler
+        .compile(plan)
+        .run(Map("nation" -> nationBatch, "region" -> regionBatch))
+        .rows
+        .sortBy(_.mkString("|"))
 
     assertEquals(typedRows.size, expectedRows)
     assertEquals(typedRows, localRows, "join output must match the interpreter")
@@ -123,5 +127,42 @@ class TypedJoinSpec extends FunSuite:
   test("FULL OUTER join — both unmatched sides padded"):
     // 5 matches + nation N3 (null right) + region R4 (null left)
     checkJoin(JoinType.FullOuter, 7)
+
+  test("composition: (nation WHERE nationkey < 3) JOIN region — filter runs under the join"):
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val key = ProtoExpr.ColumnRef("regionkey", None, ProtoType.LongType, false)
+    val filteredNation = ProtoPhysicalPlan.PhysicalFilter(
+      ProtoExpr.Lt(
+        ProtoExpr.ColumnRef("nationkey", None, ProtoType.LongType, false),
+        ProtoExpr.Literal(LiteralValue.LongValue(3L))
+      ),
+      ProtoPhysicalPlan.TableScan("nation", None, nationSchema, Statistics(6, 600))
+    )
+    val plan = ProtoPhysicalPlan.HashJoin(
+      filteredNation,
+      ProtoPhysicalPlan.TableScan("region", None, regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Vector(key),
+      Vector(key),
+      None,
+      BuildSide.BuildRight
+    )
+
+    val catalog = new Catalog()
+    catalog.registerTable("nation", nationBatch)
+    catalog.registerTable("region", regionBatch)
+    catalog.registerStatistics("nation", Statistics(6, 600))
+    catalog.registerStatistics("region", Statistics(4, 400))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan)).sortBy(_.mkString("|"))
+    val typedRows = TypedTruffleCompiler
+      .compile(plan)
+      .run(Map("nation" -> nationBatch, "region" -> regionBatch))
+      .rows
+      .sortBy(_.mkString("|"))
+
+    assertEquals(typedRows.size, 3, "nations 0,1,2 (regionkeys 0,1,2) each join one region")
+    assertEquals(typedRows, localRows, "filter-under-join must match the interpreter")
 
 end TypedJoinSpec
