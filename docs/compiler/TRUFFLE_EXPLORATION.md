@@ -50,8 +50,8 @@ in-binary), cold-starting **~30× faster** than the JVM (~10 ms vs ~310 ms). To 
 demonstration of a runtime-planned query engine executing in a native image with runtime compilation.
 
 **Correctness & coverage — 35 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
-- **Types:** long, double, string, decimal (exact `compareTo`), date/timestamp — all with three-valued
-  NULL logic.
+- **Types:** long, double, string, decimal (exact `compareTo` **and** exact arbitrary-precision
+  `BigDecimal` `+`/`−`/`×`), date/timestamp — all with three-valued NULL logic.
 - **Expressions (~25):** arithmetic incl. `Divide` (÷0→NULL), all six comparisons, `AND`/`OR`/`NOT`
   (3VL), `IS [NOT] NULL`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, real `Cast`, `UPPER`/`LOWER`/
   `LENGTH`, `ABS`/`SQRT`/`FLOOR`/`CEIL`/`ROUND`, `IN`, `LIKE`.
@@ -61,9 +61,11 @@ demonstration of a runtime-planned query engine executing in a native image with
 **Positioning.** A research prototype + case study (the first application of Truffle to a big-data
 execution engine), **not** a Spark-merge deliverable — see the goal/positioning note above and §6/§8.
 
-**Not done (honest scope):** decimal arithmetic with Spark precision/scale and ANSI edge cases (Layer
-4), window functions, non-equi / under-join filters, the long tail of scalar functions, and the
-Layer-5 `SparkPlan` front-end that any real Spark integration would require.
+**Not done (honest scope):** decimal arithmetic *matching the interpreter* (arbitrary-precision
+`BigDecimal`) is done, but Spark's **capped `decimal(38,s)` precision/scale promotion** + ANSI edge
+cases are not (Layer 4); exact decimal `SUM` still accumulates in `double`; also window functions,
+non-equi / under-join filters, the long tail of scalar functions, and the Layer-5 `SparkPlan`
+front-end that any real Spark integration would require.
 
 ---
 

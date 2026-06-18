@@ -110,4 +110,27 @@ class TypedDecimalSpec extends FunSuite:
     assert(localRows.exists(_(1) == null), "some projected discount cells must be NULL")
     assert(rowsAgree(localRows, typedRows), "typed decimal projection must agree, NULLs included")
 
+  test("decimal arithmetic: discount * discount matches the interpreter (NULL-aware)"):
+    val alloc = new RootAllocator()
+    val (batch, schema) = buildBatch(alloc)
+    val proj = Vector(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Multiply(discountRef, discountRef)
+    )
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(100L))
+    )
+    val plan = ProtoPhysicalPlan.PhysicalProject(proj, ProtoPhysicalPlan.PhysicalFilter(cond, scanOf(schema)))
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+
+    val typedRows = TypedTruffleCompiler.compileFilterProject(plan).run(batch).rows
+    assertEquals(typedRows.size, n)
+    assert(localRows.exists(_(1) == null), "NULL discount → NULL product")
+    assert(rowsAgree(localRows, typedRows), "exact BigDecimal product must agree with the interpreter")
+
 end TypedDecimalSpec
