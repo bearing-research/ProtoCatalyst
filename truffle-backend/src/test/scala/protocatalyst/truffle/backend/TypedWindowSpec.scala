@@ -123,4 +123,14 @@ class TypedWindowSpec extends FunSuite:
     )
     checkWindow(windowPlan(schema, exprs, "orderkey"))
 
+  test("FIRST_VALUE/LAST_VALUE/NTH_VALUE(score) OVER (PARTITION BY category ORDER BY orderkey)"):
+    val (_, schema) = buildBatch(new RootAllocator())
+    val score = colRef("score")
+    val exprs = Vector(
+      ProtoExpr.Alias(ProtoExpr.FirstValue(score, false), "fv"),
+      ProtoExpr.Alias(ProtoExpr.LastValue(score, false), "lv"),
+      ProtoExpr.Alias(ProtoExpr.NthValue(score, ProtoExpr.Literal(LiteralValue.IntValue(2))), "nv")
+    )
+    checkWindow(windowPlan(schema, exprs, "orderkey"))
+
 end TypedWindowSpec

@@ -262,6 +262,12 @@ object TypedTruffleCompiler:
         WindowFn(WindowFnKind.Lag, aggCol(c, names), name, constInt(off), dflt.map(constBoxed).orNull)
       case ProtoExpr.Ntile(nExpr) =>
         WindowFn(WindowFnKind.Ntile, -1, name, constInt(nExpr))
+      case ProtoExpr.FirstValue(c, ignoreNulls) =>
+        WindowFn(WindowFnKind.FirstValue, aggCol(c, names), name, ignoreNulls = ignoreNulls)
+      case ProtoExpr.LastValue(c, ignoreNulls) =>
+        WindowFn(WindowFnKind.LastValue, aggCol(c, names), name, ignoreNulls = ignoreNulls)
+      case ProtoExpr.NthValue(c, nExpr) =>
+        WindowFn(WindowFnKind.NthValue, aggCol(c, names), name, constInt(nExpr))
       case other =>
         throw UnsupportedPlanException(s"unsupported window function: ${other.getClass.getSimpleName}")
 
@@ -437,16 +443,19 @@ final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQue
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
 
 enum WindowFnKind:
-  case RowNumber, Rank, DenseRank, Sum, Count, Min, Max, Avg, Lead, Lag, Ntile
+  case RowNumber, Rank, DenseRank, Sum, Count, Min, Max, Avg, Lead, Lag, Ntile, FirstValue, LastValue,
+    NthValue
 
 /** A window function: its kind, the input column index (-1 for ranking / COUNT(*) / NTILE), output
-  * name, and — for LAG/LEAD/NTILE — a constant `offset` (the offset, or bucket count) and `default`. */
+  * name, a constant `offset` (LAG/LEAD offset, NTILE bucket count, or NTH index), a LAG/LEAD `default`,
+  * and an `ignoreNulls` flag (FIRST_VALUE/LAST_VALUE). */
 final case class WindowFn(
     kind: WindowFnKind,
     inputCol: Int,
     name: String,
     offset: Int = 0,
-    default: AnyRef = null
+    default: AnyRef = null,
+    ignoreNulls: Boolean = false
 )
 
 /** Window functions over PARTITION BY + ORDER BY. Ranking (ROW_NUMBER/RANK/DENSE_RANK) is per-row by
@@ -479,8 +488,18 @@ final class WindowQuery(
         else { rank(p) = (p + 1).toLong; dense(p) = dense(p - 1) + 1 }
         p += 1
 
-      // Whole-partition aggregate values (computed once; same for every row in the partition).
-      val aggVals: Vector[AnyRef] = windowFns.map(fn => partitionAggregate(fn, idxs, rows))
+      // Whole-partition values (computed once; same for every row in the partition).
+      val constVals: Vector[AnyRef] = windowFns.map { fn =>
+        fn.kind match
+          case WindowFnKind.Sum | WindowFnKind.Count | WindowFnKind.Min | WindowFnKind.Max |
+              WindowFnKind.Avg =>
+            partitionAggregate(fn, idxs, rows)
+          case WindowFnKind.FirstValue => firstLastValue(ordered, fn, rows, first = true)
+          case WindowFnKind.LastValue  => firstLastValue(ordered, fn, rows, first = false)
+          case WindowFnKind.NthValue =>
+            if fn.offset >= 1 && fn.offset <= m then rows(ordered(fn.offset - 1))(fn.inputCol) else null
+          case _ => null // ranking / offset — per-row
+      }
 
       var pos = 0
       while pos < m do
@@ -493,7 +512,7 @@ final class WindowQuery(
             case WindowFnKind.Lead      => offsetValue(ordered, pos + fn.offset, fn, rows)
             case WindowFnKind.Lag       => offsetValue(ordered, pos - fn.offset, fn, rows)
             case WindowFnKind.Ntile     => java.lang.Long.valueOf(ntileBucket(pos, m, fn.offset).toLong)
-            case _                      => aggVals(fi)
+            case _                      => constVals(fi)
           ): AnyRef
         }
         result(orig) = rows(orig) ++ wvals
@@ -504,6 +523,14 @@ final class WindowQuery(
   /** LAG/LEAD: the input column of the partition row at `target` (ordered position), or the default. */
   private def offsetValue(ordered: Vector[Int], target: Int, fn: WindowFn, rows: Vector[Vector[AnyRef]]): AnyRef =
     if target >= 0 && target < ordered.size then rows(ordered(target))(fn.inputCol) else fn.default
+
+  /** FIRST_VALUE / LAST_VALUE over the ordered partition, optionally ignoring NULLs. */
+  private def firstLastValue(ordered: Vector[Int], fn: WindowFn, rows: Vector[Vector[AnyRef]], first: Boolean): AnyRef =
+    if ordered.isEmpty then null
+    else
+      val seq = if first then ordered else ordered.reverse
+      if fn.ignoreNulls then seq.iterator.map(i => rows(i)(fn.inputCol)).find(_ != null).orNull
+      else rows(seq.head)(fn.inputCol)
 
   /** NTILE bucket (1-based) for position `pos` in a partition of `m` rows split into `n` buckets:
     * the first `m % n` buckets get one extra row. */
