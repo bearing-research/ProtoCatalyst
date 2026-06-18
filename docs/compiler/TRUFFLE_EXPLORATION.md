@@ -50,6 +50,26 @@ no-codegen interpreter, **fused row-at-a-time is the winning shape**.
 in-binary), cold-starting **~30× faster** than the JVM (~10 ms vs ~310 ms). To our knowledge the first
 demonstration of a runtime-planned query engine executing in a native image with runtime compilation.
 
+**AOT, full pipeline (cold start vs Spark).** The *entire* compiler —
+`SQL → parse → optimize → physical-plan → Truffle AST → execute` — is now native-imaged
+(`TpchNativeDriver`), so a query given as a *SQL string at runtime* (the analogue of
+`spark.sql(userInput)`) runs end-to-end in the binary. All five benchmark queries (TPC-H
+Q1/Q3/Q5/Q6/Q10, results Spark-validated) run. Whole-process cold start at SF=0.01 — the wall time to
+a user's first result:
+
+| engine | Q6 | Q5 (6-way join) |
+|---|---|---|
+| Spark 4.1 (JVM, WSCG codegen) | 4.70 s | ~4.7 s |
+| this compiler, on the JVM | 1.08 s | 1.33 s |
+| **this compiler, native-image** | **~0.10 s** | **~0.27 s** |
+
+≈ **47× faster cold start than Spark** (≈ 10× faster than the same code on the JVM — JVM startup +
+class-loading eliminated). This build runs Truffle in **interpreter mode** (the optimizing runtime is
+dropped), which is the honest configuration for *cold* start — a single short execution is interpreted
+before partial evaluation would engage; PE-in-binary (steady-state) is the separate `Q6Native` result
+above. Data is read from Arrow IPC (parquet-mr/Hadoop do not native-image); build recipe +
+tracing-agent reflection config in `native/`.
+
 **Correctness & coverage — 58 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
 - **Types:** long, double, string, decimal (exact `compareTo` **and** exact arbitrary-precision
   `BigDecimal` `+`/`−`/`×`/`SUM`), date/timestamp — all with three-valued NULL logic.
