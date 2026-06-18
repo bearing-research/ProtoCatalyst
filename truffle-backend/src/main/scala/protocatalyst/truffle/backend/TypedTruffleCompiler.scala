@@ -342,6 +342,11 @@ object TypedTruffleCompiler:
       case ProtoExpr.Substring(str, pos, len) =>
         TString.Substring(buildExpr(str, schema), buildExpr(pos, schema), buildExpr(len, schema))
       case ProtoExpr.Trim(c, _, trimType) => TString.Trim(buildExpr(c, schema), trimMode(trimType))
+      case ProtoExpr.Year(c)              => TDate.Year(buildExpr(c, schema))
+      case ProtoExpr.Month(c)             => TDate.Month(buildExpr(c, schema))
+      case ProtoExpr.DayOfMonth(c)        => TDate.DayOfMonth(buildExpr(c, schema))
+      case ProtoExpr.DateAdd(s, d)        => TDate.Shift(buildExpr(s, schema), buildExpr(d, schema), true)
+      case ProtoExpr.DateSub(s, d)        => TDate.Shift(buildExpr(s, schema), buildExpr(d, schema), false)
       case ProtoExpr.Alias(child, _)      => buildExpr(child, schema)
       case other =>
         throw UnsupportedPlanException(s"unsupported expression: ${other.getClass.getSimpleName}")

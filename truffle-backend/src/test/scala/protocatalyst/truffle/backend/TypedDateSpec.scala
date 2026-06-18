@@ -70,4 +70,47 @@ class TypedDateSpec extends FunSuite:
     assertEquals(typedCount, localCount, "date comparison + 3VL must match the interpreter")
     assert(localCount > 0 && localCount < n, "some but not all rows are on/after the boundary")
 
+  test("YEAR/MONTH/DAYOFMONTH(shipdate) match the interpreter (NULL-aware)"):
+    val alloc = new RootAllocator()
+    val (batch, schema) = buildBatch(alloc)
+    val sd = ProtoExpr.ColumnRef("shipdate", None, ProtoType.DateType, true)
+    val proj = Vector(ProtoExpr.Year(sd), ProtoExpr.Month(sd), ProtoExpr.DayOfMonth(sd))
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("orderkey", None, ProtoType.LongType, false),
+      ProtoExpr.Literal(LiteralValue.LongValue(100L))
+    )
+    val plan = ProtoPhysicalPlan.PhysicalProject(
+      proj,
+      ProtoPhysicalPlan.PhysicalFilter(cond, ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L)))
+    )
+
+    val catalog = new Catalog()
+    catalog.registerTable("t", batch)
+    catalog.registerStatistics("t", Statistics(n.toLong, n * 64L))
+    val localRows = readRows(PhysicalPlanExecutor(catalog, alloc).execute(plan))
+
+    val typedRows = TypedTruffleCompiler.compileFilterProject(plan).run(batch).rows
+    assertEquals(typedRows.size, n)
+    assert(localRows.exists(_.head == null), "NULL shipdate → NULL year")
+    assert(rowsAgree(localRows, typedRows), "date-field extraction must agree, NULLs included")
+
+  private def readRows(b: Batch): Vector[Vector[Any]] =
+    (0 until b.rowCount).map { r =>
+      (0 until b.numColumns).map { c =>
+        b.column(c).getObject(r) match
+          case null                => null
+          case x: java.lang.Number => x.doubleValue: Any
+          case other               => other.toString: Any
+      }.toVector
+    }.toVector
+
+  private def rowsAgree(a: Vector[Vector[Any]], b: Vector[Vector[Any]]): Boolean =
+    a.size == b.size && a.zip(b).forall { (ra, rb) =>
+      ra.size == rb.size && ra.zip(rb).forall {
+        case (null, null)           => true
+        case (x: Double, y: Double) => math.abs(x - y) <= 1e-9 * math.max(1.0, math.abs(x))
+        case (x, y)                 => x == y
+      }
+    }
+
 end TypedDateSpec
