@@ -22,6 +22,51 @@ grouped aggregation + ORDER BY/LIMIT/DISTINCT (34 parity tests as of this writin
 
 ---
 
+## Results summary (what was built & measured)
+
+*A one-screen overview; details follow in §1–§8 and the per-phase status notes in §4.*
+
+**The artifact.** A Truffle-based query-execution backend on ProtoCatalyst's IR, in two parts: a Java
+node library (`truffle-exec` — the Truffle DSL nodes, since the DSL is a Java annotation processor) and
+a Scala compiler/driver (`truffle-backend`) that lowers a `ProtoPhysicalPlan` to a Truffle AST and runs
+it over Arrow data on GraalVM with partial evaluation.
+
+**Performance — the central question (Q6 slice, GraalVM 21, JMH; `rawJava` = a hand-written fused loop
+as the WSCG/codegen ceiling).**
+
+| shape | µs/op vs ceiling | reading |
+|---|---|---|
+| **fused row-at-a-time** | **~1.6×** (1.6–2.7× by selectivity) | optimistic end of Truffle's published 1.5–3× band |
+| selection-vector vectorized | ~2.2× | "vectorized done right" — still loses to fusion |
+| naive batch | ~4× | multi-pass materialization |
+
+A crossover experiment (heavy projection × selectivity) confirmed **fusion wins across the board**:
+beating fused row needs *kernel fusion* — i.e. the runtime codegen AOT forbids. So for an AOT-safe,
+no-codegen interpreter, **fused row-at-a-time is the winning shape**.
+
+**AOT — the unique payoff.** A *runtime-built* plan runs inside a GraalVM `native-image` binary with
+**zero runtime bytecode generation** *and* the optimizing runtime intact (partial evaluation
+in-binary), cold-starting **~30× faster** than the JVM (~10 ms vs ~310 ms). To our knowledge the first
+demonstration of a runtime-planned query engine executing in a native image with runtime compilation.
+
+**Correctness & coverage — 35 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
+- **Types:** long, double, string, decimal (exact `compareTo`), date/timestamp — all with three-valued
+  NULL logic.
+- **Expressions (~25):** arithmetic incl. `Divide` (÷0→NULL), all six comparisons, `AND`/`OR`/`NOT`
+  (3VL), `IS [NOT] NULL`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, real `Cast`, `UPPER`/`LOWER`/
+  `LENGTH`, `ABS`/`SQRT`/`FLOOR`/`CEIL`/`ROUND`, `IN`, `LIKE`.
+- **Operators:** filter, projection, global + grouped aggregate (null-aware), `ORDER BY`/`LIMIT`/
+  `DISTINCT`, and inner equi-join.
+
+**Positioning.** A research prototype + case study (the first application of Truffle to a big-data
+execution engine), **not** a Spark-merge deliverable — see the goal/positioning note above and §6/§8.
+
+**Not done (honest scope):** decimal arithmetic with Spark precision/scale and ANSI edge cases (Layer
+4), outer joins / window / non-equi conditions, the long tail of functions, and the Layer-5 `SparkPlan`
+front-end that any real Spark integration would require.
+
+---
+
 ## §0. Why do this at all (and why here)
 
 Spark executes SQL by generating Java source at query time and compiling it to bytecode with **Janino**
