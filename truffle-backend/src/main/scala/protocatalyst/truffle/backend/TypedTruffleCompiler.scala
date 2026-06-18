@@ -222,22 +222,38 @@ object TypedTruffleCompiler:
         throw UnsupportedPlanException(s"window PARTITION BY must be a column ref, got ${other.getClass.getSimpleName}")
     }
     val orderKeys = orderSpec.map(so => sortKey(so, names))
-    val fns = windowExprs.map(parseWindowFn)
+    val fns = windowExprs.map(e => parseWindowFn(e, names))
     WindowQuery(child, partitionCols, orderKeys, fns, names ++ fns.map(_.name))
 
-  private def parseWindowFn(e: ProtoExpr): WindowFn =
+  private def parseWindowFn(e: ProtoExpr, names: Vector[String]): WindowFn =
     e match
-      case ProtoExpr.Alias(inner, name) => WindowFn(windowKind(inner), name)
-      case other                        => WindowFn(windowKind(other), "window")
+      case ProtoExpr.Alias(inner, name) => buildWindowFn(inner, name, names)
+      case other                        => buildWindowFn(other, "window", names)
 
-  private def windowKind(e: ProtoExpr): WindowFnKind =
+  private def buildWindowFn(e: ProtoExpr, name: String, names: Vector[String]): WindowFn =
     e match
-      case ProtoExpr.WindowExpr(fn, _, _, _) => windowKind(fn)
-      case ProtoExpr.RowNumber()             => WindowFnKind.RowNumber
-      case ProtoExpr.Rank()                  => WindowFnKind.Rank
-      case ProtoExpr.DenseRank()             => WindowFnKind.DenseRank
+      case ProtoExpr.WindowExpr(fn, _, _, _) => buildWindowFn(fn, name, names)
+      case ProtoExpr.RowNumber()             => WindowFn(WindowFnKind.RowNumber, -1, name)
+      case ProtoExpr.Rank()                  => WindowFn(WindowFnKind.Rank, -1, name)
+      case ProtoExpr.DenseRank()             => WindowFn(WindowFnKind.DenseRank, -1, name)
+      case ProtoExpr.Sum(c)                  => WindowFn(WindowFnKind.Sum, aggCol(c, names), name)
+      case ProtoExpr.Count(c, _)             => WindowFn(WindowFnKind.Count, aggColOrNeg(c, names), name)
+      case ProtoExpr.Min(c)                  => WindowFn(WindowFnKind.Min, aggCol(c, names), name)
+      case ProtoExpr.Max(c)                  => WindowFn(WindowFnKind.Max, aggCol(c, names), name)
+      case ProtoExpr.Avg(c)                  => WindowFn(WindowFnKind.Avg, aggCol(c, names), name)
       case other =>
         throw UnsupportedPlanException(s"unsupported window function: ${other.getClass.getSimpleName}")
+
+  private def aggCol(c: ProtoExpr, names: Vector[String]): Int =
+    c match
+      case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
+      case other =>
+        throw UnsupportedPlanException(s"window aggregate input must be a column ref, got ${other.getClass.getSimpleName}")
+
+  private def aggColOrNeg(c: ProtoExpr, names: Vector[String]): Int =
+    c match
+      case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
+      case _                               => -1 // COUNT(literal) / COUNT(*) → count all rows
 
   private def scanSchema(p: ProtoPhysicalPlan): ProtoSchema =
     p match
@@ -400,13 +416,16 @@ final class SortQuery(child: TypedQuery, keys: Vector[SortKey]) extends TypedQue
 final case class SortKey(column: Int, ascending: Boolean, nullsFirst: Boolean)
 
 enum WindowFnKind:
-  case RowNumber, Rank, DenseRank
+  case RowNumber, Rank, DenseRank, Sum, Count, Min, Max, Avg
 
-final case class WindowFn(kind: WindowFnKind, name: String)
+/** A window function: its kind, the input column index it aggregates (-1 for ranking and COUNT(*)),
+  * and its output name. */
+final case class WindowFn(kind: WindowFnKind, inputCol: Int, name: String)
 
-/** Ranking window functions over PARTITION BY + ORDER BY: ROW_NUMBER / RANK / DENSE_RANK. Partitions
-  * the child rows, orders each partition, and appends the rank columns to the child output. Aggregate
-  * windows, offset functions (LAG/LEAD), and explicit frames are not yet handled. */
+/** Window functions over PARTITION BY + ORDER BY. Ranking (ROW_NUMBER/RANK/DENSE_RANK) is per-row by
+  * partition order; aggregate windows (SUM/COUNT/MIN/MAX/AVG OVER) are whole-partition (every row gets
+  * the partition aggregate — the interpreter's frame). Offset functions (LAG/LEAD), NTILE, and
+  * explicit frames are not yet handled. */
 final class WindowQuery(
     child: TypedQuery,
     partitionCols: Vector[Int],
@@ -432,20 +451,72 @@ final class WindowQuery(
           rank(p) = rank(p - 1); dense(p) = dense(p - 1)
         else { rank(p) = (p + 1).toLong; dense(p) = dense(p - 1) + 1 }
         p += 1
+
+      // Whole-partition aggregate values (computed once; same for every row in the partition).
+      val aggVals: Vector[AnyRef] = windowFns.map(fn => partitionAggregate(fn, idxs, rows))
+
       var pos = 0
       while pos < m do
         val orig = ordered(pos)
-        val wvals = windowFns.map { fn =>
+        val wvals = windowFns.zipWithIndex.map { (fn, fi) =>
           (fn.kind match
             case WindowFnKind.RowNumber => java.lang.Long.valueOf((pos + 1).toLong)
             case WindowFnKind.Rank      => java.lang.Long.valueOf(rank(pos))
             case WindowFnKind.DenseRank => java.lang.Long.valueOf(dense(pos))
+            case _                      => aggVals(fi)
           ): AnyRef
         }
         result(orig) = rows(orig) ++ wvals
         pos += 1
     }
     new TypedResult(outputNames, result.toVector)
+
+  private def partitionAggregate(fn: WindowFn, idxs: IndexedSeq[Int], rows: Vector[Vector[AnyRef]]): AnyRef =
+    fn.kind match
+      case WindowFnKind.Count =>
+        val c = if fn.inputCol < 0 then idxs.size else idxs.count(i => rows(i)(fn.inputCol) != null)
+        java.lang.Long.valueOf(c.toLong)
+      case WindowFnKind.Sum =>
+        sumBoxed(idxs.iterator.map(i => rows(i)(fn.inputCol)))
+      case WindowFnKind.Avg =>
+        val vals = idxs.iterator.map(i => rows(i)(fn.inputCol)).filter(_ != null).toVector
+        if vals.isEmpty then null
+        else java.lang.Double.valueOf(vals.map(_.asInstanceOf[java.lang.Number].doubleValue).sum / vals.size)
+      case WindowFnKind.Min => extremeBoxed(idxs, fn.inputCol, rows, min = true)
+      case WindowFnKind.Max => extremeBoxed(idxs, fn.inputCol, rows, min = false)
+      case _                => null // ranking — handled per-row
+
+  private def sumBoxed(vs: Iterator[AnyRef]): AnyRef =
+    var acc: AnyRef = null
+    vs.foreach { v =>
+      if v != null then
+        acc = (acc, v) match
+          case (null, d: java.math.BigDecimal)                    => d
+          case (null, n: java.lang.Number)                        => java.lang.Double.valueOf(n.doubleValue)
+          case (a: java.math.BigDecimal, d: java.math.BigDecimal) => a.add(d)
+          case (a: java.lang.Number, n: java.lang.Number)         => java.lang.Double.valueOf(a.doubleValue + n.doubleValue)
+          case _                                                  => acc
+    }
+    acc
+
+  private def extremeBoxed(idxs: IndexedSeq[Int], col: Int, rows: Vector[Vector[AnyRef]], min: Boolean): AnyRef =
+    var best: AnyRef = null
+    idxs.foreach { i =>
+      val v = rows(i)(col)
+      if v != null then
+        if best == null then best = v
+        else
+          val c = compareVals(v, best)
+          if (min && c < 0) || (!min && c > 0) then best = v
+    }
+    best
+
+  private def compareVals(x: AnyRef, y: AnyRef): Int =
+    (x, y) match
+      case (p: java.math.BigDecimal, q: java.math.BigDecimal) => p.compareTo(q)
+      case (p: java.lang.Number, q: java.lang.Number)         => java.lang.Double.compare(p.doubleValue, q.doubleValue)
+      case (p: String, q: String)                             => p.compareTo(q)
+      case _                                                  => x.toString.compareTo(y.toString)
 
   private def partitionKey(row: Vector[AnyRef]): List[AnyRef] =
     partitionCols.map { c =>

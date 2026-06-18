@@ -12,7 +12,7 @@ import protocatalyst.executor.physical.PhysicalPlanExecutor
 import protocatalyst.expr.ProtoExpr
 import protocatalyst.plan.{NullOrdering, ProtoPhysicalPlan, SortDirection, SortOrder, Statistics}
 import protocatalyst.schema.ProtoSchema
-import protocatalyst.types.{ProtoStructField, ProtoType}
+import protocatalyst.types.{LiteralValue, ProtoStructField, ProtoType}
 
 /** Layer-3 ranking window functions over PARTITION BY + ORDER BY, parity-checked against the
   * interpreter. `category` = orderkey/3 (3 partitions of 3); `score` has ties within partitions so
@@ -88,5 +88,23 @@ class TypedWindowSpec extends FunSuite:
       ProtoExpr.WindowExpr(ProtoExpr.DenseRank(), part, ord, None)
     )
     checkWindow(windowPlan(schema, exprs, "score"))
+
+  test("aggregate windows: SUM/COUNT/AVG/MIN/MAX(score) OVER (PARTITION BY category)"):
+    val (_, schema) = buildBatch(new RootAllocator())
+    val score = colRef("score")
+    val exprs = Vector(
+      ProtoExpr.Alias(ProtoExpr.Sum(score), "sm"),
+      ProtoExpr.Alias(ProtoExpr.Count(ProtoExpr.Literal(LiteralValue.IntValue(1)), false), "cnt"),
+      ProtoExpr.Alias(ProtoExpr.Avg(score), "av"),
+      ProtoExpr.Alias(ProtoExpr.Min(score), "mn"),
+      ProtoExpr.Alias(ProtoExpr.Max(score), "mx")
+    )
+    val plan = ProtoPhysicalPlan.PhysicalWindow(
+      exprs,
+      Vector(colRef("category")),
+      Vector.empty,
+      ProtoPhysicalPlan.TableScan("t", None, schema, Statistics(n.toLong, n * 64L))
+    )
+    checkWindow(plan)
 
 end TypedWindowSpec
