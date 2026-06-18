@@ -146,6 +146,16 @@ object TypedTruffleCompiler:
       case ProtoExpr.Add(l, r)      => TArithFactory.AddNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Subtract(l, r) => TArithFactory.SubNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Multiply(l, r) => TArithFactory.MulNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Divide(l, r)   => TControl.Divide(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Coalesce(children) =>
+        TControl.Coalesce(children.map(c => buildExpr(c, schema)).toArray)
+      case ProtoExpr.NullIf(l, r) => TControl.NullIf(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.If(p, t, f) =>
+        TControl.If(buildPred(p, schema), buildExpr(t, schema), buildExpr(f, schema))
+      case ProtoExpr.CaseWhen(branches, elseValue) =>
+        val conditions = branches.map(b => buildPred(b._1, schema)).toArray
+        val values = branches.map(b => buildExpr(b._2, schema)).toArray
+        TControl.CaseWhen(conditions, values, elseValue.map(e => buildExpr(e, schema)).orNull)
       case ProtoExpr.Cast(child, _) => buildExpr(child, schema)
       case ProtoExpr.Alias(child, _) => buildExpr(child, schema)
       case other =>
@@ -163,6 +173,9 @@ object TypedTruffleCompiler:
       case ProtoExpr.GtEq(l, r)  => TCompareFactory.GeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.Eq(l, r)    => TCompareFactory.EqNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
       case ProtoExpr.NotEq(l, r) => TCompareFactory.NeNodeGen.create(buildExpr(l, schema), buildExpr(r, schema))
+      case ProtoExpr.Not(c)        => TLogic.Not(buildPred(c, schema))
+      case ProtoExpr.IsNull(c)     => TControl.IsNull(buildExpr(c, schema))
+      case ProtoExpr.IsNotNull(c)  => TControl.IsNotNull(buildExpr(c, schema))
       case other =>
         throw UnsupportedPlanException(s"unsupported predicate: ${other.getClass.getSimpleName}")
 

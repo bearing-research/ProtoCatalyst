@@ -300,7 +300,10 @@ correctness oracle** (the same discipline the encoder work uses, via `spark-cata
    left as a normalization detail. Next: Layer 2 (expression breadth — Cast, CASE, string/date functions).
 2. **Expression coverage (~10 → ~93).** Cast (real coercion rules), CASE/IF/Coalesce/NullIf, In, Like,
    string/date/math functions, decimal arithmetic with precision/scale. Mechanical but large; each
-   needs Catalyst-exact semantics, not just a plausible implementation.
+   needs Catalyst-exact semantics, not just a plausible implementation. **Started:** null-handling +
+   control flow — `IS [NOT] NULL`, three-valued `NOT`, `COALESCE`, `NULLIF`, `IF`, `CASE WHEN`, and
+   `Divide` (÷0 → NULL), all NULL-aware and parity-checked (`TypedControlSpec`, `truffle-exec/typed/
+   TControl`). Remaining: real `Cast` coercion, `In`, `Like`, and string/date/math functions.
 3. **Stateful operators.** Global + grouped aggregate (HashAggregate accumulator model), Sort, Limit,
    Distinct, the three joins, Window. Aggregates and joins are the structural lifts (state, later
    spilling).

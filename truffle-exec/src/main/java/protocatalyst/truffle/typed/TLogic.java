@@ -63,4 +63,22 @@ public final class TLogic {
             return anyNull ? SqlNull.INSTANCE : Boolean.FALSE;
         }
     }
+
+    /** Three-valued NOT: NOT NULL = NULL, NOT TRUE = FALSE, NOT FALSE = TRUE. */
+    public static final class Not extends TExpr {
+        @Child private TExpr child;
+
+        public Not(TExpr child) {
+            this.child = child;
+        }
+
+        @Override
+        public Object executeGeneric(VirtualFrame frame) {
+            Object v = child.executeGeneric(frame);
+            if (SqlNull.isNull(v)) {
+                return SqlNull.INSTANCE;
+            }
+            return Boolean.TRUE.equals(v) ? Boolean.FALSE : Boolean.TRUE;
+        }
+    }
 }
