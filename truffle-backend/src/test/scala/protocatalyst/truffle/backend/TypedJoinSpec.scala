@@ -311,9 +311,8 @@ class TypedJoinSpec extends FunSuite:
     assertEquals(typed, local, "cross join must match the interpreter")
 
   test("nested-loop non-equi join on uniquely-named columns: nationkey < (nation's) regionkey"):
-    // Over-join conditions resolve columns by bare name, so they're correct when the referenced names
-    // are unique across the join. Here `nationkey` and `nname` are unique; `regionkey` is shared, so
-    // a condition on it would bind to the first (qualifier disambiguation is the documented gap).
+    // Bare (unqualified) references resolve against the first matching name — fine when the referenced
+    // name is unique across the join (`nationkey` here). Shared names need a qualifier (next test).
     val alloc = new RootAllocator()
     val (nationBatch, nationSchema) = nation(alloc)
     val (regionBatch, regionSchema) = region(alloc)
@@ -331,5 +330,53 @@ class TypedJoinSpec extends FunSuite:
     // nationkey < 2 → nations 0,1 (2 of them) × 4 regions = 8 rows.
     assertEquals(typed.size, 8)
     assertEquals(typed, local, "non-equi nested-loop join must match the interpreter")
+
+  test("qualifier disambiguation: (n) × (r) ON n.nationkey < r.regionkey — shared `regionkey`"):
+    // Both sides expose `regionkey`. The condition references the *region* side via the qualifier
+    // `r`; with alias-qualified leaf names (n.*, r.*) and qualifier-aware resolution it binds to
+    // r.regionkey. (Bare-name resolution would wrongly bind to nation's regionkey → 0 rows.)
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val cond = ProtoExpr.Lt(
+      ProtoExpr.ColumnRef("nationkey", Some("n"), ProtoType.LongType, false),
+      ProtoExpr.ColumnRef("regionkey", Some("r"), ProtoType.LongType, false)
+    )
+    val plan = ProtoPhysicalPlan.NestedLoopJoin(
+      ProtoPhysicalPlan.TableScan("nation", Some("n"), nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", Some("r"), regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Some(cond)
+    )
+    val (local, typed) = runComposed(plan, nationBatch, regionBatch)
+    // nk0<{1,2,4}=3, nk1<{2,4}=2, nk2<{4}=1, nk3<{4}=1, nk4/nk5 none → 7 pairs.
+    assertEquals(typed.size, 7, "n.nationkey < r.regionkey must bind regionkey to the region side")
+    assertEquals(typed, local, "qualified non-equi join must match the interpreter")
+
+  test("qualified equi-join: n.regionkey = r.regionkey then SELECT n.nname, r.rname"):
+    // The realistic TPC-H shape: aliased tables, qualified equi-keys on a shared name, and a
+    // downstream projection that reaches both qualified `regionkey`s through their qualifiers.
+    val alloc = new RootAllocator()
+    val (nationBatch, nationSchema) = nation(alloc)
+    val (regionBatch, regionSchema) = region(alloc)
+    val join = ProtoPhysicalPlan.HashJoin(
+      ProtoPhysicalPlan.TableScan("nation", Some("n"), nationSchema, Statistics(6, 600)),
+      ProtoPhysicalPlan.TableScan("region", Some("r"), regionSchema, Statistics(4, 400)),
+      JoinType.Inner,
+      Vector(ProtoExpr.ColumnRef("regionkey", Some("n"), ProtoType.LongType, false)),
+      Vector(ProtoExpr.ColumnRef("regionkey", Some("r"), ProtoType.LongType, false)),
+      None,
+      BuildSide.BuildRight
+    )
+    val plan = ProtoPhysicalPlan.PhysicalProject(
+      Vector(
+        ProtoExpr.ColumnRef("nname", Some("n"), ProtoType.StringType, false),
+        ProtoExpr.ColumnRef("rname", Some("r"), ProtoType.StringType, false)
+      ),
+      join
+    )
+    val (local, typed) = runComposed(plan, nationBatch, regionBatch)
+    assertEquals(typed.size, 5, "5 matched nations")
+    assertEquals(typed, local, "qualified equi-join + project must match the interpreter")
 
 end TypedJoinSpec

@@ -19,11 +19,33 @@ object RowEval:
   def holds(predicate: ProtoExpr, row: Vector[AnyRef], names: Vector[String]): Boolean =
     eval(predicate, row, names) == java.lang.Boolean.TRUE
 
+  /** The unqualified suffix of a (possibly `qualifier.col`) name. */
+  private def suffix(fieldName: String): String =
+    val i = fieldName.lastIndexOf('.')
+    if i >= 0 then fieldName.substring(i + 1) else fieldName
+
+  /** Resolve a column reference to its index in `names`, mirroring the executor's
+    * `ExprEvaluator.resolveColumn`: with a qualifier, prefer an exact `qualifier.name` match (this is
+    * what disambiguates same-named columns across a join, since leaves qualify their fields by alias),
+    * else fall back to a bare/suffix match; without a qualifier, prefer an exact bare match, else the
+    * unqualified suffix. Returns -1 when nothing matches. */
+  def resolveIndex(name: String, qualifier: Option[String], names: Vector[String]): Int =
+    qualifier match
+      case Some(q) =>
+        val exact = names.indexWhere(_.equalsIgnoreCase(s"$q.$name"))
+        if exact >= 0 then exact
+        else names.indexWhere(n => n.equalsIgnoreCase(name) || suffix(n).equalsIgnoreCase(name))
+      case None =>
+        val exact = names.indexWhere(_.equalsIgnoreCase(name))
+        if exact >= 0 then exact
+        else names.indexWhere(n => suffix(n).equalsIgnoreCase(name))
+
   def eval(e: ProtoExpr, row: Vector[AnyRef], names: Vector[String]): AnyRef =
     e match
-      case ProtoExpr.ColumnRef(n, _, _, _) =>
-        val i = names.indexWhere(_.equalsIgnoreCase(n))
-        if i < 0 then throw IllegalArgumentException(s"column not in row: $n") else row(i)
+      case ProtoExpr.ColumnRef(n, q, _, _) =>
+        val i = resolveIndex(n, q, names)
+        if i < 0 then throw IllegalArgumentException(s"column not in row: ${q.map(_ + ".").getOrElse("")}$n")
+        else row(i)
       case ProtoExpr.Literal(v)      => litBoxed(v)
       case ProtoExpr.Alias(c, _)     => eval(c, row, names)
       case ProtoExpr.Cast(c, _)      => eval(c, row, names) // numeric cast ≈ pass-through here

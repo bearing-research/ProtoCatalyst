@@ -27,7 +27,7 @@ object TypedTruffleCompiler:
     case LongCol, DoubleCol, StringCol, DecimalCol
 
   def compileFilterCount(plan: ProtoPhysicalPlan): TypedFilterCount =
-    val (filterOpt, schema, tableName) = filterAndScan(plan)
+    val (filterOpt, schema, tableName, _) = filterAndScan(plan)
     val predicate = filterOpt
       .map(c => buildPred(c, schema))
       .getOrElse(throw UnsupportedPlanException("expected a Filter over a TableScan"))
@@ -36,22 +36,22 @@ object TypedTruffleCompiler:
 
   /** Compile `Project`/`Filter` over a `TableScan` into a typed, null-preserving filter→project. */
   def compileFilterProject(plan: ProtoPhysicalPlan): CompiledTypedQuery =
-    val (projList, filterOpt, schema, tableName) = decompose(plan)
+    val (projList, filterOpt, schema, tableName, alias) = decompose(plan)
     val projections = projList.map(e => buildExpr(e, schema)).toArray
     val filterNode = filterOpt.map(c => buildPred(c, schema)).orNull
     val root = TypedFilterProjectRoot(null, filterNode, projections)
-    CompiledTypedQuery(root.getCallTarget, schema, tableName, projList.map(outputName))
+    CompiledTypedQuery(root.getCallTarget, schema, tableName, qualify(projList.map(outputName), alias))
 
   private def decompose(
       plan: ProtoPhysicalPlan
-  ): (Vector[ProtoExpr], Option[ProtoExpr], ProtoSchema, String) =
+  ): (Vector[ProtoExpr], Option[ProtoExpr], ProtoSchema, String, Option[String]) =
     plan match
       case ProtoPhysicalPlan.PhysicalProject(projList, child) =>
-        val (filt, schema, name) = filterAndScan(child)
-        (projList, filt, schema, name)
+        val (filt, schema, name, alias) = filterAndScan(child)
+        (projList, filt, schema, name, alias)
       case other =>
-        val (filt, schema, name) = filterAndScan(other)
-        (identityProjections(schema), filt, schema, name)
+        val (filt, schema, name, alias) = filterAndScan(other)
+        (identityProjections(schema), filt, schema, name, alias)
 
   private def identityProjections(schema: ProtoSchema): Vector[ProtoExpr] =
     schema.fields.map(f => ProtoExpr.ColumnRef(f.name, None, f.dataType, f.nullable))
@@ -153,7 +153,7 @@ object TypedTruffleCompiler:
       aggs: Vector[ProtoExpr],
       child: ProtoPhysicalPlan
   ): CompiledTypedQuery =
-    val (filterOpt, schema, tableName) = filterAndScan(child)
+    val (filterOpt, schema, tableName, _) = filterAndScan(child)
     val keyNodes = grouping.map(g => buildExpr(g, schema)).toArray
     val parsed = aggs.map(a => buildAgg(a, schema))
     val kinds = parsed.map(_._1).toArray
@@ -168,7 +168,7 @@ object TypedTruffleCompiler:
       aggs: Vector[ProtoExpr],
       child: ProtoPhysicalPlan
   ): CompiledTypedQuery =
-    val (filterOpt, schema, tableName) = filterAndScan(child)
+    val (filterOpt, schema, tableName, _) = filterAndScan(child)
     val parsed = aggs.map(a => buildAgg(a, schema))
     val kinds = parsed.map(_._1).toArray
     val inputs = parsed.map(_._2).toArray
@@ -191,15 +191,25 @@ object TypedTruffleCompiler:
       case other =>
         throw UnsupportedPlanException(s"unsupported aggregate: ${other.getClass.getSimpleName}")
 
-  private def filterAndScan(plan: ProtoPhysicalPlan): (Option[ProtoExpr], ProtoSchema, String) =
+  private def filterAndScan(
+      plan: ProtoPhysicalPlan
+  ): (Option[ProtoExpr], ProtoSchema, String, Option[String]) =
     plan match
       case ProtoPhysicalPlan.PhysicalFilter(cond, child) =>
-        val (_, schema, name) = filterAndScan(child)
-        (Some(cond), schema, name)
-      case ProtoPhysicalPlan.TableScan(name, _, schema, _) =>
-        (None, schema, name)
+        val (_, schema, name, alias) = filterAndScan(child)
+        (Some(cond), schema, name, alias)
+      case ProtoPhysicalPlan.TableScan(name, alias, schema, _) =>
+        (None, schema, name, alias)
       case other =>
         throw UnsupportedPlanException(s"unsupported operator: ${other.getClass.getSimpleName}")
+
+  /** Prefix each output name with `alias.` (unless it already carries a qualifier), mirroring the
+    * executor's `qualifyFields`. This lets a join's combined output disambiguate same-named columns
+    * from the two sides (e.g. `n.regionkey` vs `r.regionkey`); unaliased scans keep bare names. */
+  private def qualify(names: Vector[String], alias: Option[String]): Vector[String] =
+    alias match
+      case Some(a) => names.map(n => if n.contains('.') then n else s"$a.$n")
+      case None    => names
 
   private def kindOf(t: ProtoType): ColKind =
     t match
@@ -258,8 +268,8 @@ object TypedTruffleCompiler:
     * output column by name (the common case after projection). */
   private def sortKey(so: SortOrder, names: Vector[String]): SortKey =
     val column = so.child match
-      case ProtoExpr.ColumnRef(name, _, _, _) => outputIndex(name, names)
-      case ProtoExpr.Alias(_, name)           => outputIndex(name, names)
+      case ProtoExpr.ColumnRef(name, q, _, _) => outputIndex(name, q, names)
+      case ProtoExpr.Alias(_, name)           => outputIndex(name, None, names)
       case other =>
         throw UnsupportedPlanException(s"sort key must be a column reference, got ${other.getClass.getSimpleName}")
     SortKey(
@@ -268,9 +278,12 @@ object TypedTruffleCompiler:
       so.nullOrdering == NullOrdering.NullsFirst
     )
 
-  private def outputIndex(name: String, names: Vector[String]): Int =
-    val i = names.indexWhere(_.equalsIgnoreCase(name))
-    if i < 0 then throw UnsupportedPlanException(s"sort key not in output: $name") else i
+  /** Resolve a column reference (name + optional qualifier) to its index in the child's output names,
+    * using the same qualifier-aware matching as the executor (see `RowEval.resolveIndex`). */
+  private def outputIndex(name: String, qualifier: Option[String], names: Vector[String]): Int =
+    val i = RowEval.resolveIndex(name, qualifier, names)
+    if i < 0 then throw UnsupportedPlanException(s"column not in output: ${qualifier.map(_ + ".").getOrElse("")}$name")
+    else i
 
   /** Compile an equi-join. Each side is compiled as a full child query (so filters/projects/aggregates
     * *under* a join run first and compose); the join then matches their row outputs on the key columns. */
@@ -298,7 +311,7 @@ object TypedTruffleCompiler:
 
   private def keyColumn(k: ProtoExpr, names: Vector[String]): Int =
     k match
-      case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
+      case ProtoExpr.ColumnRef(n, q, _, _) => outputIndex(n, q, names)
       case other =>
         throw UnsupportedPlanException(s"join key must be a column ref, got ${other.getClass.getSimpleName}")
 
@@ -311,7 +324,7 @@ object TypedTruffleCompiler:
     val child = compile(childPlan)
     val names = child.outputNames
     val partitionCols = partitionSpec.map {
-      case ProtoExpr.ColumnRef(name, _, _, _) => outputIndex(name, names)
+      case ProtoExpr.ColumnRef(name, q, _, _) => outputIndex(name, q, names)
       case other =>
         throw UnsupportedPlanException(s"window PARTITION BY must be a column ref, got ${other.getClass.getSimpleName}")
     }
@@ -352,13 +365,13 @@ object TypedTruffleCompiler:
 
   private def aggCol(c: ProtoExpr, names: Vector[String]): Int =
     c match
-      case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
+      case ProtoExpr.ColumnRef(n, q, _, _) => outputIndex(n, q, names)
       case other =>
         throw UnsupportedPlanException(s"window aggregate input must be a column ref, got ${other.getClass.getSimpleName}")
 
   private def aggColOrNeg(c: ProtoExpr, names: Vector[String]): Int =
     c match
-      case ProtoExpr.ColumnRef(n, _, _, _) => outputIndex(n, names)
+      case ProtoExpr.ColumnRef(n, q, _, _) => outputIndex(n, q, names)
       case _                               => -1 // COUNT(literal) / COUNT(*) → count all rows
 
   private def buildExpr(e: ProtoExpr, schema: ProtoSchema): TExpr =

@@ -8,7 +8,7 @@ Truffle at ~1.6× the codegen ceiling, a native-image AOT existence proof (runti
 partial evaluation intact, ~30× faster cold start), and a typed, null-aware backend over the project's
 own IR with interpreter parity across all SQL column types, a broad expression surface, and global +
 grouped aggregation, ORDER BY/LIMIT/DISTINCT, inner + outer joins, and the full window-function family
-(56 parity tests as of this writing). Operators fully compose via a table-catalog execution model — WHERE/SELECT/GROUP BY/HAVING/ORDER BY all run over joins, with residual join conditions.*
+(58 parity tests as of this writing). Operators fully compose via a table-catalog execution model — WHERE/SELECT/GROUP BY/HAVING/ORDER BY all run over joins, with residual join conditions.*
 
 > **Goal & positioning.** This is a **research prototype and case study** — the first application of
 > Truffle to a big-data execution engine — **not** a Spark-merge deliverable. It runs on
@@ -50,7 +50,7 @@ no-codegen interpreter, **fused row-at-a-time is the winning shape**.
 in-binary), cold-starting **~30× faster** than the JVM (~10 ms vs ~310 ms). To our knowledge the first
 demonstration of a runtime-planned query engine executing in a native image with runtime compilation.
 
-**Correctness & coverage — 56 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
+**Correctness & coverage — 58 parity tests vs the project's interpreter (`PhysicalPlanExecutor`).**
 - **Types:** long, double, string, decimal (exact `compareTo` **and** exact arbitrary-precision
   `BigDecimal` `+`/`−`/`×`/`SUM`), date/timestamp — all with three-valued NULL logic.
 - **Expressions (~40):** arithmetic incl. `Divide` (÷0→NULL), all six comparisons, `AND`/`OR`/`NOT`
@@ -64,8 +64,11 @@ demonstration of a runtime-planned query engine executing in a native image with
 - **Composition:** a table-catalog execution model (`run(Map[String, Batch])`) lets operators fully
   compose. Filters/projects/aggregates run *under* a join; and WHERE, SELECT, GROUP BY, **HAVING**,
   ORDER BY, LIMIT run *over* one — plus residual join `ON` conditions (`a.x = b.x AND a.y < b.y`),
-  correct for outer joins. The single-table Truffle-PE fast path is kept; the over-join layer is
-  Scala row-at-a-time (`RowEval`/`Row*Query`). Parity-checked on the TPC-H Q3/Q5/Q10 shape.
+  correct for outer joins. Aliased scans qualify their fields (`n.col`) and references resolve
+  qualifier-aware (exact `q.name`, else unqualified suffix), so a join's *shared* column names
+  (`n.regionkey` vs `r.regionkey`) disambiguate — matching the executor's `resolveColumn`. The
+  single-table Truffle-PE fast path is kept; the over-join layer is Scala row-at-a-time
+  (`RowEval`/`Row*Query`). Parity-checked on the TPC-H Q3/Q5/Q10 shape.
 
 **Positioning.** A research prototype + case study (the first application of Truffle to a big-data
 execution engine), **not** a Spark-merge deliverable — see the goal/positioning note above and §6/§8.
@@ -73,9 +76,8 @@ execution engine), **not** a Spark-merge deliverable — see the goal/positionin
 **Not done (honest scope):** decimal arithmetic + `SUM` *match the interpreter* (arbitrary-precision
 `BigDecimal`), but Spark's **capped `decimal(38,s)` precision/scale promotion** + ANSI edge cases are
 not (Layer 4); decimal `MIN`/`MAX`/`AVG` still go through `double`; also explicit window frames
-(`ROWS`/`RANGE BETWEEN`), qualifier disambiguation for *shared* column names in over-join
-conditions/projections (equi-keys are unaffected; conditions on uniquely-named columns work), and the
-Layer-5 `SparkPlan` front-end that any real Spark integration would require.
+(`ROWS`/`RANGE BETWEEN`) and the Layer-5 `SparkPlan` front-end that any real Spark integration would
+require.
 
 ---
 
