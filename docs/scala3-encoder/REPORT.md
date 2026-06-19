@@ -575,12 +575,13 @@ not "one tidy module"; it is three parts of very different size.
 >    `Dataset`/`functions`/`Aggregator` methods that thread one) from `[T: TypeTag]` to the derived
 >    form. These span `sql-api` / `catalyst` / `sql-core`, handled with per-version sources.
 
-**Part 3 is not cost this proposal introduces — Scala 3 forces it.** `TypeTag` is a scala-reflect
-construct that does not exist on Scala 3, so *any* Scala-3 Spark must drop it from those signatures as
-part of the general cross-build effort (SPARK-44272 et al.). What this proposal uniquely supplies is the
-thing the rewritten signatures derive *into*; without it you remove `TypeTag` and have **nothing** to
-replace the derivation — which is exactly why encoders are *the* structural blocker (§1–§3), not one
-among many. So the honest framing is "we unblock the 16-signature change," not "we add it."
+**Part 3 is not cost this proposal introduces — it is inherent to Scala 3.** `TypeTag` is a
+scala-reflect construct that does not exist on Scala 3, so *any* Scala-3 build of those APIs must drop
+it from the signatures regardless of how encoders are derived. What this proposal uniquely supplies is
+the thing the rewritten signatures derive *into*; without it you remove `TypeTag` and have **nothing**
+to replace the derivation — which is exactly why encoders are *the* structural blocker (§1–§3), not one
+among many. So the honest framing is "we supply the missing derivation that the inevitable signature
+change needs," not "we add the change."
 
 There is a design lever for how contained Part 3 is, and it is Spark's call:
 (a) per-version source directories (`scala-2.13` / `scala-3`) in each affected module — the standard

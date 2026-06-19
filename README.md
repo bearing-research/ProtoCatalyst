@@ -65,10 +65,10 @@ Three parts, in increasing size (full detail: [REPORT §11/§11b](docs/scala3-en
    `SparkSession.implicits`, `ExpressionEncoder.apply`, and the `Dataset`/`functions`/`Aggregator`
    methods that thread one), spanning `sql-api`/`catalyst`/`sql-core`.
 
-**Part 3 is not cost this introduces** — `TypeTag` does not exist on Scala 3, so *any* Scala-3 Spark
-must drop it (the general cross-build effort, SPARK-44272 et al.). This work supplies the derivation
-those rewritten signatures need; without it you remove `TypeTag` and have nothing to replace the
-derivation. The end-user `Dataset` usage surface (`spark.createDataset`, `ds.map`, `as[T]`) is unchanged.
+**Part 3 is not cost this introduces** — `TypeTag` does not exist on Scala 3, so *any* Scala-3 build of
+those APIs must drop it regardless of how encoders are derived. This work supplies the derivation those
+rewritten signatures need; without it you remove `TypeTag` and have nothing to replace the derivation.
+The end-user `Dataset` usage surface (`spark.createDataset`, `ds.map`, `as[T]`) is unchanged.
 
 ---
 
