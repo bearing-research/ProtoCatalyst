@@ -1,5 +1,10 @@
 # Truffle as an AOT-clean execution backend — an exploration plan
 
+> **→ For the consolidated case-study write-up (architecture · how it works · where we are · future
+> direction), start at [`TRUFFLE_BACKEND.md`](TRUFFLE_BACKEND.md).** This doc is the phased design
+> history and per-phase status notes behind it; [`BENCHMARK_RESULTS.md`](BENCHMARK_RESULTS.md) has the
+> numbers.
+
 *Status: **implemented research prototype** (was: planning doc). The executable counterpart to
 [`../scala3-encoder/AOT_ROADMAP.md`](../scala3-encoder/AOT_ROADMAP.md) §6 **Option B** ("Re-express
 Catalyst as a GraalVM Truffle language"). The roadmap flagged the central unknown as **"a risk, not a
