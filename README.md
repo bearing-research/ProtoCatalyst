@@ -1,216 +1,166 @@
 # ProtoCatalyst
 
-A Scala 3 library that moves safe, deterministic parts of Spark SQL/Catalyst work from runtime to compile time — encoder derivation, query optimization, and plan serialization all happen during compilation, producing pre-optimized artifacts that Spark executes directly.
+**Replacing Apache Spark's runtime-reflection encoder derivation with Scala 3 compile-time
+derivation — to help unblock Spark's migration to Scala 3.**
 
-## Key Features
+Spark derives `Dataset[T]` encoders through `ScalaReflection.encoderFor[T: TypeTag]`, which uses the
+Scala 2 runtime-reflection universe. That universe is the structural blocker for a Scala 3 Spark — and,
+as of Scala 3.8, it does not merely fail to derive, it **crashes on initialization**
+([scala/scala3#25896](https://github.com/scala/scala3/issues/25896): `FatalError: class Array does not
+have a member apply`, an open, high-priority compiler regression that names Spark). ProtoCatalyst
+derives the same encoders at **compile time** with no `scala.reflect.runtime`, producing Spark's own
+`AgnosticEncoder`, validated against Spark's reflective output.
 
-- **Compile-Time Query Optimization**: 41 optimizer rules run at compile time via `quote { }` DSL and `SqlMacro.compileOptimized`
-- **Type-Safe Query DSL**: `quote { Table[User]("users").filter(_.age > 18).select(_.name) }` — fully type-checked at compile time
-- **Compile-Time SQL Parsing**: SQL strings parsed, validated, and optimized during compilation
-- **Compile-Time Encoder Derivation**: Type-safe encoder derivation using Scala 3 `inline` and `Mirror` — no runtime reflection
-- **InlineRowSerializer**: compile-time-specialized row serialization with no runtime reflection
-- **Dual Serialization Formats**: JSON and Protobuf artifact formats with PCAT binary container
-- **Spark Execution Bridge**: `SparkQueryRunner.execute(bytes, spark)` — pre-optimized plans run as DataFrames
-- **Arrow Integration**: Compile-time specialized Arrow columnar format writes
+> The headline work is the **encoder / reflection replacement** below. The repo also contains a broader
+> compile-time query compiler and a Truffle execution-backend exploration — see [Also in this
+> repo](#also-in-this-repo) — but those are secondary.
 
-## Architecture
+---
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     COMPILE TIME (scalac)                        │
-├─────────────────────────────────────────────────────────────────┤
-│  DSL                              SQL                            │
-│  quote {                          SqlMacro.compileOptimized(     │
-│    Table[User]("users")             "SELECT name FROM users      │
-│      .filter(_.age > 18)             WHERE age > 18"             │
-│      .select(_.name)              )                              │
-│  }                                                               │
-│       │                                │                         │
-│       └──────────┬─────────────────────┘                         │
-│                  ▼                                                │
-│          ProtoLogicalPlan (compile-time IR)                       │
-│                  │                                                │
-│                  ▼                                                │
-│          Optimizer.optimize() — 41 rules at compile time         │
-│                  │                                                │
-│                  ▼                                                │
-│          CompiledArtifact → PCAT bytes (JSON or Protobuf)        │
-└─────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     RUNTIME (Spark)                              │
-├─────────────────────────────────────────────────────────────────┤
-│  SparkQueryRunner.execute(bytes, spark)                          │
-│       │                                                          │
-│       ▼                                                          │
-│  ArtifactParser → Spark LogicalPlan (pre-optimized)             │
-│       │                                                          │
-│       ▼                                                          │
-│  DataFrame results (Spark handles physical planning + AQE)      │
-└─────────────────────────────────────────────────────────────────┘
-```
+## The replacement, in one example
 
-## Quick Start
-
-### Type-Safe Query DSL
+Derive a real Spark `ExpressionEncoder[T]` from a **Scala 3** process — no `TypeTag`, no runtime
+reflection — and feed it straight into Spark's unmodified serializer/deserializer:
 
 ```scala
-import protocatalyst.dsl.*
-import protocatalyst.dsl.functions.*
+import protocatalyst.encoder.spark.AgnosticDerivation.deriveAgnosticEncoder
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 
-case class User(name: String, age: Int, salary: Double) derives ProtoEncoder
+case class Address(street: String, city: String, zip: String)
+case class Person(name: String, age: Int, address: Address)
 
-// Compile-time optimized query
-val query = quote {
-  Table[User]("users")
-    .filter(_.age > 18)
-    .select(u => (u.name, u.salary))
-}
-
-// Serialize to bytes for Spark execution
-val bytes: Array[Byte] = query.toBytes
+// A single Mirror/inline macro emits Spark's AgnosticEncoder directly — the compile-time
+// equivalent of ScalaReflection.encoderFor[Person], with nothing from scala.reflect.runtime.
+val enc: ExpressionEncoder[Person] = ExpressionEncoder(deriveAgnosticEncoder[Person])
 ```
 
-### SQL Path
+`deriveAgnosticEncoder[T]` (module `encoder-spark`) is a `Mirror`/`inline` derivation that produces the
+exact `AgnosticEncoder` Spark would have built reflectively. Everything downstream — `ExpressionEncoder`,
+the serializer/deserializer codegen, Spark Connect's wire protocol — is **untouched**, because they
+already consume `AgnosticEncoder`.
 
-```scala
-import protocatalyst.query.*
+### Faithfulness
 
-// SQL parsed and optimized at compile time
-val query = CompiledQuery.sqlOptimized[User]("SELECT name FROM users WHERE age > 18 AND true")
-// "AND true" folded away at compile time
-```
+The derived encoder is validated against Spark itself, not just against our own interpreter:
+- **Structural + byte parity** vs goldens generated by Spark's reflective `ScalaReflection.encoderFor`
+  across the full corpus (primitives, decimals, temporal, `Option`, collections, `Map`, nested
+  products, tuples, plus Scala-3 enums/extension types).
+- **End-to-end execution**: with a 2-line `ScalaReflection` patch (below), the derived encoder round-trips
+  real values through Spark's **unmodified** codegen ser/deser from a Scala 3 process (`ExecutionWallSpec`).
 
-### Spark Execution
+---
 
-```scala
-// In Spark (Scala 2.13)
-import protocatalyst.catalyst.SparkQueryRunner
+## Migrating to Spark
 
-val df: DataFrame = SparkQueryRunner.execute(bytes, spark)
-df.show()
-```
+The change is scoped, and most of it is work **Scala 3 forces regardless**, not cost this approach adds.
+Three parts, in increasing size (full detail: [REPORT §11/§11b](docs/scala3-encoder/REPORT.md)):
 
-### Encoder Derivation
+1. **De-reflect the `ScalaReflection` object** so it loads on Scala 3 — `val universe` → `lazy val`,
+   `encodeFieldNameToIdentifier` → `NameTransformer.encode`, and `findConstructor`'s scala-reflect
+   fallback. A handful of lines; fixes the #25896 crash. This is the small, self-contained
+   **down-payment** PR (demonstrated verbatim in module `spark-reflection-patch`).
+2. **Provide the Scala-3 derivation** — the one-file `Mirror` macro above; the reflective body stays
+   for Scala 2.13. Same `AgnosticEncoder` output, so everything downstream is unchanged.
+3. **Change the ~16 `TypeTag` context bounds** in the public encoder-producing signatures (`Encoders`,
+   `SparkSession.implicits`, `ExpressionEncoder.apply`, and the `Dataset`/`functions`/`Aggregator`
+   methods that thread one), spanning `sql-api`/`catalyst`/`sql-core`.
 
-```scala
-import protocatalyst.encoder.*
+**Part 3 is not cost this introduces** — `TypeTag` does not exist on Scala 3, so *any* Scala-3 Spark
+must drop it (the general cross-build effort, SPARK-44272 et al.). This work supplies the derivation
+those rewritten signatures need; without it you remove `TypeTag` and have nothing to replace the
+derivation. The end-user `Dataset` usage surface (`spark.createDataset`, `ds.map`, `as[T]`) is unchanged.
 
-case class Person(name: String, age: Int, address: Address) derives ProtoEncoder
+---
 
-val serializer = InlineRowSerializer.derived[Person]
-val row: Array[Any] = serializer.serialize(Person("Alice", 30, address))
-val restored: Person = serializer.deserialize(row)
-```
+## Results (encoder derivation)
 
-## DSL Operations
+Measured against Spark 4.1.2 (JDK 21, Apple Silicon); methodology and caveats in
+[REPORT.md](docs/scala3-encoder/REPORT.md) §9–§10:
 
-| Category | Operations |
-|----------|-----------|
-| **Filtering** | `.filter(_.age > 18)`, `.where(...)` |
-| **Projection** | `.select(_.name)`, `.select(u => (u.name, u.age))` |
-| **Sorting** | `.orderBy(_.salary.desc)` |
-| **Limiting** | `.limit(10)`, `.distinct` |
-| **Joins** | `.join(t2).on(...)`, `.leftJoin(...)`, `.rightJoin(...)`, `.crossJoin(...)` |
-| **Aggregation** | `.groupBy(_.dept).agg(count, sum(_.salary), avg(_.age))` |
-| **Set ops** | `.union(...)`, `.intersect(...)`, `.except(...)` |
-| **Subqueries** | `.filter(_.id in subquery)`, `exists(...)`, `scalarSubquery(...)` |
-| **Windows** | `rowNumber().over(Window.partitionBy(...).orderBy(...))` |
-| **Hints** | `.broadcast`, `.coalesce(4)`, `.repartition(8)` |
+- Compile-time derivation is **~389× faster** single-threaded than Spark's reflective
+  `ScalaReflection.encoderFor`, and eliminates the **~1 s per-JVM reflective cold-start** short-lived
+  drivers pay every run (the derivation also runs under a global lock in Spark — §4/§9).
+- Separately, byte-identical per-row serializers: `UnsafeRowSerializer` ~1.16× faster (geomean of 12
+  microbenchmarks); the Arrow serializer ~8% faster with ~43% less per-row allocation (§10).
 
-See [DSL Reference](docs/compiler/DSL_REFERENCE.md) for the complete API.
+---
 
-## Performance Highlights
+## Also in this repo
 
-Measured against Spark 4.1.2 (JDK 21, Apple Silicon). See
-[REPORT.md](docs/scala3-encoder/REPORT.md) §9–§10 for methodology and caveats:
+These grew alongside the encoder work and share the IR, but are **not** the headline:
 
-- **Encoder derivation** — compile-time derivation is ~389× faster single-threaded than Spark's
-  reflective `ScalaReflection.encoderFor`, and eliminates the ~1 s per-JVM reflective cold-start that
-  short-lived drivers pay per run (§9).
-- **Per-row serializers** (byte-identical to Spark's output) — `UnsafeRowSerializer` is ~1.16× faster
-  (geomean, 12 microbenchmarks); the Arrow serializer is ~8% faster with ~43% less per-row allocation
-  (§10).
+- **A compile-time query compiler** — SQL / a `quote { }` DSL → an engine-independent IR
+  (`ProtoLogicalPlan`) → a 41-rule optimizer → serialized artifacts that Spark (or other backends) can
+  execute. Type-safe and fully checked at compile time; feature-complete and mostly frozen.
+  ```scala
+  val q = quote { Table[User]("users").filter(_.age > 18).select(u => (u.name, u.salary)) }
+  val bytes: Array[Byte] = q.toBytes        // → Spark via SparkQueryRunner.execute(bytes, spark)
+  ```
+  See [DSL_REFERENCE](docs/compiler/DSL_REFERENCE.md), [DESIGN](docs/compiler/DESIGN.md),
+  [OPTIMIZER_PLAN](docs/compiler/OPTIMIZER_PLAN.md).
 
-See [REPORT.md](docs/scala3-encoder/REPORT.md) for the precise, caveated numbers and
-[benchmarks/README.md](benchmarks/README.md) for how to run the suite.
+- **A Truffle execution backend (research prototype)** — the IR compiled to a GraalVM Truffle AST and
+  run over Arrow. A *case study*, **not** a Spark throughput competitor: its contribution is **cold
+  start** — a runtime-planned SQL query executing in a native image with zero runtime bytecode
+  generation, ~47× faster to first result than Spark at small scale. Honest characterization (incl.
+  where it loses) in **[TRUFFLE_BACKEND.md](docs/compiler/TRUFFLE_BACKEND.md)**.
 
-## Modules
+---
+
+## Repo map
+
+The encoder/reflection thesis lives in `encoder`, `encoder-spark`, `spark-reflection-patch`,
+`benchmark-spark` (+ `core` for the shared IR). The rest is the query compiler and exploration.
 
 | Module | Scala | Description |
 |--------|-------|-------------|
-| `proto` | Java | Protobuf schema definitions (`.proto` files, generated Java classes) |
-| `core` | 3 | Types, schema, IR, optimizer (41 rules), codec (JSON + Protobuf) |
-| `encoder` | 3 | Compile-time encoder derivation (ProtoEncoder, InlineRowSerializer) |
-| `encoder-spark` | 3 | ProtoEncoder → Spark `AgnosticEncoder` bridge (Spark 2.13 jars via `for3Use2_13`) |
+| `encoder` | 3 | Compile-time encoder derivation (`ProtoEncoder`, `InlineRowSerializer`) |
+| `encoder-spark` | 3 | `deriveAgnosticEncoder` / `ProtoEncoder → AgnosticEncoder` bridge (Spark 2.13 jars via `for3Use2_13`) |
+| `spark-reflection-patch` | 2.13 | The 2-line patched `ScalaReflection` (the execution-wall down-payment, REPORT §3) |
+| `benchmark-spark` | 2.13 | Spark comparison benchmarks + the parity-golden generator |
+| `core` | 3 | Shared IR (types, schema, `ProtoExpr`/plans), 41-rule optimizer, JSON + Protobuf codec |
+| `proto` | Java | Protobuf schema definitions (consumed by both Scala versions) |
 | `arrow` | 3 | Arrow columnar format integration |
 | `query` | 3 | Type-safe DSL (`quote { }`), compiled query artifacts |
-| `sql-parser` | 3 | Compile-time SQL parsing and AST transformation |
-| `executor` | 3 | Execution backend (ADBC core API) |
-| `ml-core` | 3 | ML core types and operators |
-| `ml-query` | 3 | ML query DSL |
+| `sql-parser` | 3 | Compile-time SQL parsing + AST → IR transform |
+| `executor` | 3 | Standalone Arrow executor + DataFusion backend |
+| `spark-catalyst` | 2.13 | Spark execution bridge (`SparkQueryRunner`) + parity tests |
+| `truffle-exec` / `truffle-backend` | Java / 3 | The Truffle execution-backend exploration (GraalVM) |
+| `ml-core` / `ml-query` | 3 | Tensor IR, ML-in-SQL (`Predict`/`Fit`) |
 | `benchmarks` | 3 | JMH benchmarks (Scala 3 side) |
-| `benchmark-spark` | 2.13 | Spark comparison benchmarks + parity-golden generator |
-| `spark-catalyst` | 2.13 | Spark integration — plan decoders, SparkQueryRunner, parity tests |
-| `spark-reflection-patch` | 2.13 | 2-line patched `ScalaReflection` (execution-wall demonstrator, REPORT §3) |
 
-## Project Stats
+> Two Scala versions on purpose: the baseline `encoderFor[T: TypeTag]` exists only on 2.13, the
+> replacement only on 3; both live in one build via `CrossVersion.for3Use2_13` and the no-`TypeTag`
+> `ExpressionEncoder.apply(enc: AgnosticEncoder)` seam. See
+> [INFRASTRUCTURE.md](docs/scala3-encoder/INFRASTRUCTURE.md).
 
-- **~51,000** lines of source code across 228 files
-- **~2,700** tests across 113 test files
-- **193** commits on main
-- **100** expression types in the IR, **27** plan node types
-- **41** optimizer rules (constant folding, predicate pushdown, filter combining, etc.)
-- **8** protobuf schema files (plan, expression, type, artifact, physical-plan, ML, ONNX)
+---
 
 ## Building
 
 ```bash
-# Compile all modules
-sbt compile
-
-# Run all tests (~2,700 tests)
-sbt test
-
-# Run specific module tests
-sbt "core/test"            # Core IR + optimizer (477 tests)
-sbt "query/test"           # DSL + macro tests (166 tests)
-sbt "sparkCatalyst/test"   # Spark integration (289 tests)
-
-# Run benchmarks
-sbt 'benchmarks/Jmh/run InlineSerializerBenchmarks'
-sbt 'benchmarkSpark/Jmh/run SparkEncoderBenchmarks'
+sbt compile                                   # all modules, both Scala versions
+sbt 'encoderSpark/testOnly *AgnosticDerivationSpec'   # derived encoder vs Spark's reflective goldens
+sbt 'encoderSpark/testOnly *ExecutionWallSpec'        # end-to-end round-trip through Spark's codegen
+sbt test                                      # everything (~2,700 tests)
 ```
+
+Requirements: **Scala 3.8.1** / 2.13.16 (Spark modules), **JDK 21+**, **sbt 1.12+**.
 
 ## Documentation
 
-See **[docs/README.md](docs/README.md)** for the full index. The docs are split into two tracks —
-the Scala 3 / compile-time-encoder thesis and the general query compiler.
+Full index: **[docs/README.md](docs/README.md)**.
 
-**Scala 3 / compile-time encoder (the reflection-replacement thesis):**
+**Encoder / reflection replacement (the thesis):**
+- **[REPORT.md](docs/scala3-encoder/REPORT.md)** — the write-up: the blocker (§1–§3, incl. the #25896
+  crash), the replacement (§5–§7), faithfulness + cost results (§8–§10), and migration (§11). *Start here.*
+- [REFLECTION_REPLACEMENT.md](docs/scala3-encoder/REFLECTION_REPLACEMENT.md) — bridge design + the 2-line wall patch (§2.1.1)
+- [INFRASTRUCTURE.md](docs/scala3-encoder/INFRASTRUCTURE.md) — cross-version build topology + how to run everything
+- [ENCODER_DEEP_DIVE.md](docs/scala3-encoder/ENCODER_DEEP_DIVE.md) — a beginner-friendly encoder guide
+- [BENCHMARKS.md](docs/scala3-encoder/BENCHMARKS.md) — suite, methodology, cross-arch runs
 
-- **[Replacing Spark's Reflective Encoder](docs/scala3-encoder/REPORT.md)** — the writeup (the Scala 3 thesis). The artifact.
-- **[Infrastructure](docs/scala3-encoder/INFRASTRUCTURE.md)** — cross-version (Scala 3 ↔ 2.13) build topology + how to run everything
-- [Understanding Encoders](docs/scala3-encoder/ENCODER_DEEP_DIVE.md) — Beginner-friendly encoder guide
-- [Reflection Replacement Design](docs/scala3-encoder/REFLECTION_REPLACEMENT.md) — bridge design + the 2-line wall patch
-- [Benchmarks](docs/scala3-encoder/BENCHMARKS.md) — suite, methodology, and EC2 / cross-arch runs
-
-**General query compiler:**
-
-- [DSL Reference](docs/compiler/DSL_REFERENCE.md) — Complete query DSL API reference
-- [Compile-Time DSL](docs/compiler/COMPILE_TIME_DSL.md) — How the compile-time query optimization works
-- [Design Document](docs/compiler/DESIGN.md) — Architecture and design decisions
-- [Optimizer Plan](docs/compiler/OPTIMIZER_PLAN.md) — Optimizer rules and implementation
-- [SQL Parser](docs/compiler/SQL_PARSER.md) — Compile-time SQL parsing
-- [Spark Catalyst Reference](docs/compiler/SPARK_CATALYST_REFERENCE.md) — Spark internals reference
-- [ADR-001: No Runtime Codegen](docs/decisions/ADR-001-no-runtime-codegen.md) — Why compile-time over runtime
-
-## Requirements
-
-- Scala 3.8.1+ / 2.13.16 (Spark modules)
-- JDK 21+
-- sbt 1.12+
+**Query compiler & Truffle backend (secondary):** see [docs/compiler/](docs/compiler/) —
+notably [DESIGN.md](docs/compiler/DESIGN.md) and [TRUFFLE_BACKEND.md](docs/compiler/TRUFFLE_BACKEND.md).
 
 ## License
 
