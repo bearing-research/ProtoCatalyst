@@ -285,6 +285,21 @@ lazy val encoderSpark = project
       "org.apache.arrow" % "arrow-memory-netty" % "18.3.0",
       "org.apache.arrow" % "arrow-vector" % "18.3.0"
     ),
+    // Drop-in proof. `AgnosticDerivation.scala` is the file Spark would take verbatim (REPORT §11b,
+    // README "Migrating to Spark"). This generator compiles a copy of it with ONLY its package line
+    // rewritten to Spark's own encoder package — a split package with the spark-catalyst jar. If the
+    // real file ever stops compiling as a member of `org.apache.spark.sql.catalyst.encoders` (e.g. it
+    // picks up a `protocatalyst.*` dependency), the build breaks. So the "rename the package and it is
+    // encoderFor's replacement" claim is verified on every build, not asserted.
+    Compile / sourceGenerators += Def.task {
+      val real = baseDirectory.value / "src/main/scala/protocatalyst/encoder/spark/AgnosticDerivation.scala"
+      val out = (Compile / sourceManaged).value / "org/apache/spark/sql/catalyst/encoders/AgnosticDerivation.scala"
+      val rewritten = IO
+        .read(real)
+        .replaceFirst("(?m)^package protocatalyst\\.encoder\\.spark$", "package org.apache.spark.sql.catalyst.encoders")
+      IO.write(out, rewritten)
+      Seq(out)
+    }.taskValue,
     Test / javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
