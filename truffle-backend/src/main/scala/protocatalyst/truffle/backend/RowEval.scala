@@ -16,7 +16,7 @@ import protocatalyst.types.LiteralValue
 object RowEval:
 
   /** True iff `predicate` evaluates to exactly TRUE on `row` (NULL/FALSE do not hold). */
-  def holds(predicate: ProtoExpr, row: Vector[AnyRef], names: Vector[String]): Boolean =
+  def holds(predicate: ProtoExpr, row: Array[AnyRef], names: Vector[String]): Boolean =
     eval(predicate, row, names) == java.lang.Boolean.TRUE
 
   /** The unqualified suffix of a (possibly `qualifier.col`) name. */
@@ -40,7 +40,7 @@ object RowEval:
         if exact >= 0 then exact
         else names.indexWhere(n => suffix(n).equalsIgnoreCase(name))
 
-  def eval(e: ProtoExpr, row: Vector[AnyRef], names: Vector[String]): AnyRef =
+  def eval(e: ProtoExpr, row: Array[AnyRef], names: Vector[String]): AnyRef =
     e match
       case ProtoExpr.ColumnRef(n, q, _, _) =>
         val i = resolveIndex(n, q, names)
@@ -88,7 +88,7 @@ object RowEval:
   private def cmp(
       l: ProtoExpr,
       r: ProtoExpr,
-      row: Vector[AnyRef],
+      row: Array[AnyRef],
       names: Vector[String],
       test: Int => Boolean
   ): AnyRef =
@@ -106,7 +106,7 @@ object RowEval:
   private def arith(
       l: ProtoExpr,
       r: ProtoExpr,
-      row: Vector[AnyRef],
+      row: Array[AnyRef],
       names: Vector[String],
       op: Char
   ): AnyRef =

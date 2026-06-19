@@ -765,7 +765,7 @@ final class CompiledTypedQuery(
     val numCols = outputNames.size
     val out = Array.ofDim[AnyRef](numCols, math.max(1, cols.rowCount))
     val k = target.call(new TRow(cols), out).asInstanceOf[java.lang.Integer].intValue
-    val boxed = (0 until k).map(j => (0 until numCols).map(c => out(c)(j)).toVector).toVector
+    val boxed = (0 until k).map(j => (0 until numCols).map(c => out(c)(j)).toArray).toVector
     new TypedResult(outputNames, boxed)
 
   /** Re-aggregate per-slice partials: group by the first `numKeys` columns, combine each aggregate
@@ -782,7 +782,7 @@ final class CompiledTypedQuery(
             val col = numKeys + a
             acc(col) = AggMerge.combine(kinds(a), acc(col), row(col))
             a += 1
-    new TypedResult(outputNames, groups.valuesIterator.map(_.toVector).toVector)
+    new TypedResult(outputNames, groups.valuesIterator.toVector)
 
 /** LIMIT n — the result-level operators are plain row transforms over a child query. */
 final class LimitQuery(child: TypedQuery, limit: Int) extends TypedQuery:
@@ -836,7 +836,7 @@ final class WindowQuery(
 
   def run(tables: Map[String, Batch]): TypedResult =
     val rows = child.run(tables).boxedRows
-    val result = new Array[Vector[AnyRef]](rows.size)
+    val result = new Array[Array[AnyRef]](rows.size)
     val partitions = rows.indices.groupBy(i => partitionKey(rows(i)))
 
     partitions.valuesIterator.foreach { idxs =>
@@ -853,7 +853,7 @@ final class WindowQuery(
         p += 1
 
       // Whole-partition values (computed once; same for every row in the partition).
-      val constVals: Vector[AnyRef] = windowFns.map { fn =>
+      val constVals: Array[AnyRef] = windowFns.map { fn =>
         fn.kind match
           case WindowFnKind.Sum | WindowFnKind.Count | WindowFnKind.Min | WindowFnKind.Max |
               WindowFnKind.Avg =>
@@ -863,7 +863,7 @@ final class WindowQuery(
           case WindowFnKind.NthValue =>
             if fn.offset >= 1 && fn.offset <= m then rows(ordered(fn.offset - 1))(fn.inputCol) else null
           case _ => null // ranking / offset — per-row
-      }
+      }.toArray
 
       var pos = 0
       while pos < m do
@@ -885,11 +885,11 @@ final class WindowQuery(
     new TypedResult(outputNames, result.toVector)
 
   /** LAG/LEAD: the input column of the partition row at `target` (ordered position), or the default. */
-  private def offsetValue(ordered: Vector[Int], target: Int, fn: WindowFn, rows: Vector[Vector[AnyRef]]): AnyRef =
+  private def offsetValue(ordered: Vector[Int], target: Int, fn: WindowFn, rows: Vector[Array[AnyRef]]): AnyRef =
     if target >= 0 && target < ordered.size then rows(ordered(target))(fn.inputCol) else fn.default
 
   /** FIRST_VALUE / LAST_VALUE over the ordered partition, optionally ignoring NULLs. */
-  private def firstLastValue(ordered: Vector[Int], fn: WindowFn, rows: Vector[Vector[AnyRef]], first: Boolean): AnyRef =
+  private def firstLastValue(ordered: Vector[Int], fn: WindowFn, rows: Vector[Array[AnyRef]], first: Boolean): AnyRef =
     if ordered.isEmpty then null
     else
       val seq = if first then ordered else ordered.reverse
@@ -907,7 +907,7 @@ final class WindowQuery(
       if pos < bigCount then pos / (base + 1) + 1
       else rem + (pos - bigCount) / math.max(1, base) + 1
 
-  private def partitionAggregate(fn: WindowFn, idxs: IndexedSeq[Int], rows: Vector[Vector[AnyRef]]): AnyRef =
+  private def partitionAggregate(fn: WindowFn, idxs: IndexedSeq[Int], rows: Vector[Array[AnyRef]]): AnyRef =
     fn.kind match
       case WindowFnKind.Count =>
         val c = if fn.inputCol < 0 then idxs.size else idxs.count(i => rows(i)(fn.inputCol) != null)
@@ -935,7 +935,7 @@ final class WindowQuery(
     }
     acc
 
-  private def extremeBoxed(idxs: IndexedSeq[Int], col: Int, rows: Vector[Vector[AnyRef]], min: Boolean): AnyRef =
+  private def extremeBoxed(idxs: IndexedSeq[Int], col: Int, rows: Vector[Array[AnyRef]], min: Boolean): AnyRef =
     var best: AnyRef = null
     idxs.foreach { i =>
       val v = rows(i)(col)
@@ -954,14 +954,14 @@ final class WindowQuery(
       case (p: String, q: String)                             => p.compareTo(q)
       case _                                                  => x.toString.compareTo(y.toString)
 
-  private def partitionKey(row: Vector[AnyRef]): List[AnyRef] =
+  private def partitionKey(row: Array[AnyRef]): List[AnyRef] =
     partitionCols.map { c =>
       row(c) match
         case d: java.math.BigDecimal => d.stripTrailingZeros
         case other                   => other
     }.toList
 
-  private def sameOrder(a: Vector[AnyRef], b: Vector[AnyRef]): Boolean =
+  private def sameOrder(a: Array[AnyRef], b: Array[AnyRef]): Boolean =
     orderKeys.forall(k => TypedResult.compareKey(a, b, k) == 0)
 
 /** Equi hash join (inner + outer): build a hash table on the right keys, probe with the left, emit
@@ -995,8 +995,8 @@ final class JoinQuery(
     val tLeft = System.nanoTime()
     val right = rightChild.run(tables).boxedRows
     val tRight = System.nanoTime()
-    val nullLeft = Vector.fill[AnyRef](leftChild.outputNames.size)(null)
-    val nullRight = Vector.fill[AnyRef](rightChild.outputNames.size)(null)
+    val nullLeft = Array.fill[AnyRef](leftChild.outputNames.size)(null)
+    val nullRight = Array.fill[AnyRef](rightChild.outputNames.size)(null)
     val empty = scala.collection.mutable.ArrayBuffer.empty[Int]
 
     val table =
@@ -1009,7 +1009,7 @@ final class JoinQuery(
       ri += 1
     val matchedRight = Array.fill(right.size)(false)
 
-    val rows = scala.collection.mutable.ArrayBuffer[Vector[AnyRef]]()
+    val rows = scala.collection.mutable.ArrayBuffer[Array[AnyRef]]()
     var li = 0
     while li < left.size do
       val candidates = keyOf(left(li), leftKeyCols).flatMap(table.get).getOrElse(empty)
@@ -1039,7 +1039,7 @@ final class JoinQuery(
     new TypedResult(outputNames, rows.toVector)
 
   /** The key tuple for a row, or None if any component is NULL (NULL never joins). */
-  private def keyOf(row: Vector[AnyRef], keyCols: Vector[Int]): Option[List[AnyRef]] =
+  private def keyOf(row: Array[AnyRef], keyCols: Vector[Int]): Option[List[AnyRef]] =
     val acc = scala.collection.mutable.ListBuffer[AnyRef]()
     var k = 0
     while k < keyCols.size do
@@ -1067,7 +1067,7 @@ final class RowProjectQuery(child: TypedQuery, exprs: Vector[ProtoExpr], val out
   def tableNames: Set[String] = child.tableNames
   def run(tables: Map[String, Batch]): TypedResult =
     val r = child.run(tables)
-    new TypedResult(outputNames, r.boxedRows.map(row => exprs.map(e => RowEval.eval(e, row, r.names))))
+    new TypedResult(outputNames, r.boxedRows.map(row => exprs.map(e => RowEval.eval(e, row, r.names)).toArray))
 
 /** Row-based aggregate over a child query's output rows — used when GROUP BY sits above a join (or any
   * non-single-table child). Groups boxed rows by the grouping columns and computes
@@ -1101,19 +1101,19 @@ final class RowAggregateQuery(
         groups.getOrElseUpdate(key, scala.collection.mutable.ArrayBuffer[Int]()) += i
         i += 1
       val out = groups.valuesIterator.map { idxs =>
-        groupCols.map(c => rows(idxs.head)(c)) ++ aggregateGroup(idxs, rows)
+        groupCols.map(c => rows(idxs.head)(c)).toArray ++ aggregateGroup(idxs, rows)
       }.toVector
       ParallelScan.prof(s"[ROWAGG ${groupCols.size}k] child=${ParallelScan.ms(t0, t1)}ms(${rows.size}) group+agg=${ParallelScan.ms(t1, System.nanoTime())}ms groups=${out.size}")
       new TypedResult(outputNames, out)
 
   /** The aggregate input value for row `i`: the input expression evaluated against the child's output
     * (so `SUM(extendedprice * (1 - discount))` works), or `null` for COUNT(*). */
-  private def inputAt(a: Int, i: Int, rows: Vector[Vector[AnyRef]]): AnyRef =
+  private def inputAt(a: Int, i: Int, rows: Vector[Array[AnyRef]]): AnyRef =
     aggInputs(a) match
       case Some(e) => RowEval.eval(e, rows(i), childNames)
       case None    => null
 
-  private def aggregateGroup(idxs: scala.collection.IndexedSeq[Int], rows: Vector[Vector[AnyRef]]): Vector[AnyRef] =
+  private def aggregateGroup(idxs: scala.collection.IndexedSeq[Int], rows: Vector[Array[AnyRef]]): Array[AnyRef] =
     aggKinds.indices.map { a =>
       (aggKinds(a) match
         case AggKind.COUNT =>
@@ -1128,7 +1128,7 @@ final class RowAggregateQuery(
         case AggKind.MIN => extreme(idxs, a, rows, min = true)
         case AggKind.MAX => extreme(idxs, a, rows, min = false)
       ): AnyRef
-    }.toVector
+    }.toArray
 
   private def normalizeKey(v: AnyRef): AnyRef =
     v match
@@ -1148,7 +1148,7 @@ final class RowAggregateQuery(
     }
     acc
 
-  private def extreme(idxs: scala.collection.IndexedSeq[Int], a: Int, rows: Vector[Vector[AnyRef]], min: Boolean): AnyRef =
+  private def extreme(idxs: scala.collection.IndexedSeq[Int], a: Int, rows: Vector[Array[AnyRef]], min: Boolean): AnyRef =
     var best: AnyRef = null
     idxs.foreach { i =>
       val v = inputAt(a, i, rows)
@@ -1167,15 +1167,23 @@ final class RowAggregateQuery(
 /** Typed result rows (boxed Long/Double/String/BigDecimal/null), with the result-level transforms and
   * a normalized `rows` view for comparison (numbers → Double, NULL → null) — the cross-backend harness
   * yardstick. */
-final class TypedResult(val names: Vector[String], val boxedRows: Vector[Vector[AnyRef]]):
+final class TypedResult(val names: Vector[String], val boxedRows: Vector[Array[AnyRef]]):
 
   def rowCount: Int = boxedRows.size
 
-  def rows: Vector[Vector[Any]] = boxedRows.map(_.map(TypedResult.normalize))
+  def rows: Vector[Vector[Any]] = boxedRows.map(_.map(TypedResult.normalize).toVector)
 
   def take(k: Int): TypedResult = new TypedResult(names, boxedRows.take(math.max(0, k)))
 
-  def distinct: TypedResult = new TypedResult(names, boxedRows.distinct)
+  // Rows are Array[AnyRef] (reference equality), so dedup by a value-equality key (the row wrapped as
+  // an immutable ArraySeq), preserving first-seen order.
+  def distinct: TypedResult =
+    val seen = scala.collection.mutable.HashSet[scala.collection.immutable.ArraySeq[AnyRef]]()
+    val out = scala.collection.mutable.ArrayBuffer[Array[AnyRef]]()
+    boxedRows.foreach { row =>
+      if seen.add(scala.collection.immutable.ArraySeq.unsafeWrapArray(row)) then out += row
+    }
+    new TypedResult(names, out.toVector)
 
   def sortedBy(keys: Vector[SortKey]): TypedResult =
     new TypedResult(names, boxedRows.sortWith((a, b) => TypedResult.lessThan(a, b, keys)))
@@ -1188,7 +1196,7 @@ object TypedResult:
       case x: java.lang.Number => x.doubleValue
       case other               => other.toString
 
-  private[backend] def lessThan(a: Vector[AnyRef], b: Vector[AnyRef], keys: Vector[SortKey]): Boolean =
+  private[backend] def lessThan(a: Array[AnyRef], b: Array[AnyRef], keys: Vector[SortKey]): Boolean =
     var i = 0
     while i < keys.size do
       val c = compareKey(a, b, keys(i))
@@ -1196,7 +1204,7 @@ object TypedResult:
       i += 1
     false
 
-  private[backend] def compareKey(a: Vector[AnyRef], b: Vector[AnyRef], key: SortKey): Int =
+  private[backend] def compareKey(a: Array[AnyRef], b: Array[AnyRef], key: SortKey): Int =
     (a(key.column), b(key.column)) match
       case (null, null) => 0
       case (null, _)    => if key.nullsFirst then -1 else 1
