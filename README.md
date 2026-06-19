@@ -90,10 +90,13 @@ argument is [REPORT §11](docs/scala3-encoder/REPORT.md):
    instead of `ScalaReflection.encoderFor[T]`; the reflective body stays for 2.13. Same `AgnosticEncoder`
    output, so everything downstream (`ExpressionEncoder`, serializer/deserializer codegen, Spark Connect)
    is unchanged.
-2. **De-reflect the `ScalaReflection` object** so it loads on Scala 3 — `val universe` → `lazy val`,
-   `encodeFieldNameToIdentifier` → `NameTransformer.encode`, and `findConstructor`'s scala-reflect
-   fallback. A handful of lines; fixes the #25896 crash. The small, self-contained **down-payment** PR
-   (demonstrated verbatim in module `spark-reflection-patch`).
+2. **De-reflect the `ScalaReflection` object** so it loads on Scala 3 — just **two lines**:
+   `val universe` → `lazy val` (stop the eager `<clinit>` forcing) and `encodeFieldNameToIdentifier` →
+   `NameTransformer.encode` (the one the ser/deser hot path actually calls). That pair is the proven
+   minimum that fixes the #25896 crash — the small, self-contained **down-payment** PR, demonstrated
+   verbatim in module `spark-reflection-patch` and round-tripped by `ExecutionWallSpec`. (A third,
+   *separate* item — de-reflecting `findConstructor`'s rarely-hit companion-`apply` fallback — is an
+   edge-case follow-up, not part of this patch; see MIGRATION.md.)
 3. **Change the ~16 `TypeTag` context bounds** in the public encoder-producing signatures (`Encoders`,
    `SparkSession.implicits`, `ExpressionEncoder.apply`, and the `Dataset`/`functions`/`Aggregator`
    methods that thread one), spanning `sql-api`/`catalyst`/`sql-core`.
