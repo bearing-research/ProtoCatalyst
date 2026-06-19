@@ -553,6 +553,8 @@ query tax that motivates per-row optimization are in the archived
 
 ## §11. Argument and proposal
 
+> **Operational checklist** (which file, which module, which lines): [MIGRATION.md](MIGRATION.md). This section is the *argument*; that doc is the *how*.
+
 The migration argument is narrower than "the encoder is faster." The central claim is about the
 *derivation*: it is the structural Scala-3 blocker (§1–§3) and a globally-locked bottleneck (§4), and
 it can be replaced faithfully (§8) at lower cost (§9). The change is scoped — but, importantly, the

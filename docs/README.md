@@ -19,6 +19,7 @@ Start with the report; the rest are companions.
 | Doc | What it is |
 |---|---|
 | **[scala3-encoder/REPORT.md](scala3-encoder/REPORT.md)** | The writeup: blocker → replacement → results → migration. **The artifact.** |
+| **[scala3-encoder/MIGRATION.md](scala3-encoder/MIGRATION.md)** | The operational checklist: which file, which Spark module, which lines — to actually upstream this. |
 | [scala3-encoder/REFLECTION_REPLACEMENT.md](scala3-encoder/REFLECTION_REPLACEMENT.md) | Bridge design, decisions, milestones; §2.1.1 = the 2-line execution-wall patch. |
 | [scala3-encoder/SCALA3_SUPERSET.md](scala3-encoder/SCALA3_SUPERSET.md) | Behaviors beyond Spark's encoder model (enums, ADTs, extensions). |
 | [scala3-encoder/ENCODER_PARITY.md](scala3-encoder/ENCODER_PARITY.md) | `ProtoEncoder` ↔ Spark `AgnosticEncoder` variant-by-variant parity. |

@@ -27,6 +27,11 @@ import org.apache.spark.sql.types.{DecimalType, Metadata}
   * reflective `encoderFor`); `AgnosticDerivationSpec` asserts that against the same §8 goldens.
   * One upstream-only improvement: a data-carrying ADT is rejected at **compile time**
   * (`scala.compiletime.error`), where the runtime bridge can only throw at invocation.
+  *
+  * To upstream: this is the file you take. Change only its `package` line to
+  * `org.apache.spark.sql.catalyst.encoders` and follow `docs/scala3-encoder/MIGRATION.md`. There are no
+  * `protocatalyst.*` dependencies; a build guard (`encoderSpark` `sourceGenerator`) compiles this file
+  * under that exact package on every build to keep that true.
   */
 object AgnosticDerivation:
 
