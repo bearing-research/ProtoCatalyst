@@ -141,6 +141,15 @@ a `scala.reflect.runtime.universe` use. Merely *touching* the `ScalaReflection` 
 initializes its `val universe = scala.reflect.runtime.universe`, and forcing that universe against
 the Scala 3 stdlib throws `FatalError: class Array does not have a member apply`.
 
+This is not specific to our setup. The same failure is tracked upstream as
+[scala/scala3#25896](https://github.com/scala/scala3/issues/25896) — an open, high-priority **regression**
+in which `scala.reflect.runtime.universe` fails to initialize on the Scala 3.8+ standard library
+(identical `JavaUniverseForce.force` / "class `Array` does not have a member `apply`"), explicitly
+naming Apache Spark as an affected consumer. Being a *regression* (it worked on earlier Scala 3), it is
+a moving target that worsens as the ecosystem advances to 3.8+, not a static incompatibility — which
+sharpens the motivation: replacing the reflective path is not merely *enabling* Scala 3, it is the
+practical workaround for a compiler regression that, as of writing, has no upstream fix.
+
 The scope is narrow: not only is `encoderFor` reflective, but the `ScalaReflection` *object* fails to
 initialize on Scala 3 because of one eager field. A scan of the entire expression/encoder layer
 finds references to `ScalaReflection` in only **3 files via 5 members** — `encoderFor`, `schemaFor`,
@@ -157,6 +166,13 @@ patching exactly those two removes it:
    actually *called*, none of which the ser/deser execution path does); and
 2. `encodeFieldNameToIdentifier` uses **`scala.reflect.NameTransformer.encode`** (a scala-library
    function with identical name-mangling) instead of `universe.TermName(_).encodedName`.
+
+The `lazy val` is a *deferral*, not a cure: it confines the crash to the universe-dependent members so
+the ser/deser **execution** path runs, but any call into `encoderFor[T: TypeTag]`/`schemaFor[T]` would
+still force the universe and still hit [scala/scala3#25896](https://github.com/scala/scala3/issues/25896).
+The only **complete** fix is to not need the runtime universe at all — i.e. the compile-time derivation
+(§6) that produces an `AgnosticEncoder` without ever touching `scala.reflect.runtime`. The patch
+unblocks execution today; the derivation removes the dependency.
 
 We verify this concretely. `spark-reflection-patch` is a verbatim copy of Spark 4.1.2's
 `ScalaReflection` with only those two lines changed, compiled on Scala 2.13 and placed ahead of

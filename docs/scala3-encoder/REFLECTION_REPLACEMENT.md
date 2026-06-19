@@ -114,7 +114,10 @@ running its serializer/deserializer through Spark's codegen from a Scala 3 proce
 (`TermName(name).encodedName` — a `scala.reflect.runtime` use), and merely *touching* the
 `ScalaReflection` object eagerly initializes its `val universe = scala.reflect.runtime.universe`,
 which cannot initialize against the Scala 3 stdlib (`FatalError: class Array does not have a member
-apply`).
+apply`). The same failure is tracked upstream as
+[scala/scala3#25896](https://github.com/scala/scala3/issues/25896) (open, high-priority **regression**
+on the Scala 3.8+ stdlib, naming Spark) — so this is a worsening compiler regression with no upstream
+fix yet, not just a Scala-3 derivation gap.
 
 A scan of the whole expression/encoder layer for references to the `ScalaReflection` object (each of
 which trips that eager `val universe`) finds it in **only 3 files, via 5 members**:
