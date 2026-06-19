@@ -109,8 +109,10 @@ build/sbt "catalyst/testOnly *Encoder*"   # Spark's existing encoder suite
 
 These are Spark's *own* tests; passing them is the bar. (In this repo the same property is checked by
 `AgnosticDerivationSpec` — the derived encoder is structurally identical to goldens generated from
-Spark's reflective `ScalaReflection.encoderFor` — and `ExecutionWallSpec` — those encoders round-trip
-real values through Spark's unmodified serializer/deserializer codegen.)
+Spark's reflective `ScalaReflection.encoderFor` — and `ExecutionWallSpec`, which round-trips real values
+through Spark's unmodified ser/deser codegen driving `deriveAgnosticEncoder[T]` **directly** — i.e.
+exactly how `Dataset[T]` uses an encoder: `ExpressionEncoder(enc).resolveAndBind().createSerializer()`
+/ `createDeserializer()`.)
 
 ---
 
