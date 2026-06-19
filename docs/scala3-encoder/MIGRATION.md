@@ -61,25 +61,34 @@ Connect) — they already consume `AgnosticEncoder`.
 
 ## Step 3 — de-reflect `ScalaReflection` (`sql-api`) — the down-payment PR
 
-This is the small, self-contained change that fixes the initialization crash
-([scala/scala3#25896](https://github.com/scala/scala3/issues/25896)); it can land on its own, ahead of
-everything else. The reference diff is
+A small, self-contained change that can land ahead of everything else. Reference diff:
 [`spark-reflection-patch/…/ScalaReflection.scala`](../../spark-reflection-patch/src/main/scala/org/apache/spark/sql/catalyst/ScalaReflection.scala)
-— a verbatim copy of Spark's `ScalaReflection` with the changes marked `PROTOCATALYST PATCH`:
+(changes marked `PROTOCATALYST PATCH`). Two of the three are what the Scala-3 `ScalaReflection`
+*keeps*; the third is a cross-version accommodation — they are not the same kind of change.
 
-1. **`val universe` → `lazy val universe`.** The object's `<clinit>` no longer forces
-   `scala.reflect.runtime.universe`, so merely *touching* `ScalaReflection` (which the serializer codegen
-   does, via `Invoke.encodedFunctionName`) no longer crashes on Scala 3.8+.
-2. **`encodeFieldNameToIdentifier(name)` → `scala.reflect.NameTransformer.encode(name)`** — identical
-   identifier mangling, from scala-library, with no runtime reflection.
-3. **`findConstructor`'s scala-reflect fallback.** The primary path is already Java reflection
-   (`ConstructorUtils.getMatchingAccessibleConstructor`); only the `None` branch
-   (`mirror.staticClass(...).companion …`) uses the runtime universe. Drop it, or replace with a
-   Java-reflection companion-`apply` lookup.
+**Required on the Scala-3 build.** The Scala-3 `ScalaReflection` retains two codegen utilities that the
+emitted ser/deser code calls, and on Scala 3 they must not touch `scala.reflect.runtime`:
 
-After (1)–(2) the object loads on Scala 3 even before the derivation is wired (the in-repo
-`ExecutionWallSpec` runs Spark's unmodified ser/deser codegen from Scala 3 with exactly these two
-changes).
+1. **`encodeFieldNameToIdentifier(name)` → `scala.reflect.NameTransformer.encode(name)`** — identical
+   identifier mangling, from scala-library, no runtime reflection. (`Invoke.encodedFunctionName` emits a
+   call to it for every String/object field.)
+2. **`findConstructor`'s `None` fallback** (`mirror.staticClass(...).companion …`) → a Java-reflection
+   companion lookup; the primary path is already Java reflection
+   (`ConstructorUtils.getMatchingAccessibleConstructor`).
+
+**Cross-version accommodation only** (`val universe` → `lazy val universe`):
+
+3. This matters solely where `universe` *exists* — the **2.13** object, including when Spark's 2.13 jars
+   are consumed from a Scala 3 process (the `CrossVersion.for3Use2_13` interop available *today*, before
+   Spark itself cross-builds). Making it `lazy` stops the object's `<clinit>` from forcing
+   `scala.reflect.runtime.universe`, so touching `ScalaReflection` from Scala 3 no longer crashes
+   (#25896). On a **native Scala-3 build this is moot**: `universe` — and `encoderFor`/`schemaFor`, which
+   are `TypeTag`-based — live only in the 2.13 source set, so the Scala-3 `ScalaReflection` has no
+   `universe` field to force. Behavior-preserving on 2.13.
+
+The in-repo `ExecutionWallSpec` exercises exactly this interop case — it runs Spark's *2.13*
+`ScalaReflection` from a Scala 3 process — so all three are in play: the `lazy val` defers the forcing,
+and the two utility swaps keep the ser/deser path universe-free.
 
 ## Step 4 — drop the `~16` `TypeTag` bounds (`sql-api` / `catalyst` / `sql-core`)
 
