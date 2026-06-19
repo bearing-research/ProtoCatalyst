@@ -149,8 +149,14 @@ copy) with exactly **two lines** changed:
 2. `encodeFieldNameToIdentifier` body → **`scala.reflect.NameTransformer.encode(fieldName)`**
    (scala-library, identical name-mangling) instead of `universe.TermName(_).encodedName`.
 
-`findConstructor` needed no change: its primary `ConstructorUtils` (Java-reflection) path covers the
-case classes exercised, and the scala-reflect fallback is never reached for them.
+`findConstructor` needs no change *for the wall*: its primary `ConstructorUtils` (Java-reflection) path
+covers the case classes exercised, and the scala-reflect fallback is never reached for them — which is
+why the wall is exactly two lines. As a **separate follow-up**, the module also de-reflects that fallback
+(`PROTOCATALYST PATCH (follow-up)`): the companion-`apply` lookup is reimplemented on Java reflection
+(`MethodUtils.getMatchingAccessibleMethod` + `MODULE$`), removing the last runtime-universe use for the
+private-ctor/"smart constructor" edge case. `FindConstructorFallbackSpec` drives that branch directly
+from Scala 3 and confirms it (and that a real constructor still takes precedence). It's independent of
+the down-payment, so it can land on its own.
 
 The module is compiled on Scala 2.13 and prepended to `encoder-spark`'s test classpath so it
 **shadows** Spark's `ScalaReflection`. With it, `encoder-spark`'s `ExecutionWallSpec` — running in a

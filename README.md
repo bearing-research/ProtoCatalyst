@@ -95,8 +95,9 @@ argument is [REPORT §11](docs/scala3-encoder/REPORT.md):
    `NameTransformer.encode` (the one the ser/deser hot path actually calls). That pair is the proven
    minimum that fixes the #25896 crash — the small, self-contained **down-payment** PR, demonstrated
    verbatim in module `spark-reflection-patch` and round-tripped by `ExecutionWallSpec`. (A third,
-   *separate* item — de-reflecting `findConstructor`'s rarely-hit companion-`apply` fallback — is an
-   edge-case follow-up, not part of this patch; see MIGRATION.md.)
+   *separate* item — de-reflecting `findConstructor`'s rarely-hit companion-`apply` fallback to Java
+   reflection — is an edge-case follow-up, independent of the down-payment; it's also implemented in that
+   module and proven by `FindConstructorFallbackSpec`. See MIGRATION.md.)
 3. **Change the ~16 `TypeTag` context bounds** in the public encoder-producing signatures (`Encoders`,
    `SparkSession.implicits`, `ExpressionEncoder.apply`, and the `Dataset`/`functions`/`Aggregator`
    methods that thread one), spanning `sql-api`/`catalyst`/`sql-core`.

@@ -26,15 +26,26 @@
 // `scala.reflect.runtime.universe`, which cannot initialize on the Scala 3
 // stdlib (`FatalError: class Array does not have a member apply`).
 //
-// The two changes (search "PROTOCATALYST PATCH"):
+// The changes (search "PROTOCATALYST PATCH"):
+//
+//   The 2-line down-payment — the minimum that clears the Scala-3 execution wall:
 //   1. `val universe` -> `lazy val universe`  — so the object's static
 //      initializer no longer forces runtime reflection. It is forced only if a
-//      universe-dependent member (encoderFor/schemaFor/findConstructor-fallback)
-//      is actually called, none of which the ser/deser execution path needs.
+//      universe-dependent member (encoderFor/schemaFor) is actually called,
+//      neither of which the ser/deser execution path needs.
 //   2. `encodeFieldNameToIdentifier` uses `scala.reflect.NameTransformer.encode`
 //      (a scala-library function, identical mangling) instead of
 //      `universe.TermName(_).encodedName`, removing the one runtime-reflection
 //      use on the hot execution path.
+//
+//   Separate follow-up (search "PROTOCATALYST PATCH (follow-up)"):
+//   3. `findConstructor`'s companion-`apply` fallback de-reflected to Java
+//      reflection (`MethodUtils.getMatchingAccessibleMethod` + `MODULE$`),
+//      removing the *last* runtime-universe use. Not reached by ordinary case
+//      classes (they resolve via the Java primary path), so it is independent of
+//      the down-payment; it matters only for private-ctor "smart constructor"
+//      types. With it, the object has zero `scala.reflect.runtime` uses outside
+//      the 2.13-only `encoderFor`/`schemaFor` derivation bodies.
 //
 // Compiled on Scala 2.13 and placed ahead of spark-catalyst on the classpath, it
 // shadows Spark's copy; encoder-spark's end-to-end round-trip then runs from a
@@ -50,7 +61,7 @@ import scala.reflect.ClassTag
 import scala.reflect.internal.Symbols
 import scala.util.{Failure, Success}
 
-import org.apache.commons.lang3.reflect.ConstructorUtils
+import org.apache.commons.lang3.reflect.{ConstructorUtils, MethodUtils}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.Row
@@ -201,31 +212,29 @@ object ScalaReflection extends ScalaReflection {
     Option(ConstructorUtils.getMatchingAccessibleConstructor(cls, paramTypes: _*)) match {
       case Some(c) => Some(x => c.newInstance(x: _*))
       case None =>
-        val companion = mirror.staticClass(cls.getName).companion
-        val moduleMirror = mirror.reflectModule(companion.asModule)
-        val applyMethods = companion.asTerm.typeSignature
-          .member(universe.TermName("apply"))
-          .asTerm
-          .alternatives
-        applyMethods
-          .find { method =>
-            val params = method.typeSignature.paramLists.head
-            // Check that the needed params are the same length and of matching types
-            params.size == paramTypes.size &&
-            params.zip(paramTypes).forall { case (ps, pc) =>
-              ps.typeSignature.typeSymbol == mirror.classSymbol(pc)
+        // PROTOCATALYST PATCH (follow-up): Java-reflection companion-`apply` fallback.
+        // Was scala-reflect — `mirror.staticClass(cls.getName).companion` +
+        // `universe.TermName("apply")` + `instanceMirror.reflectMethod` — which was the *last*
+        // runtime-universe use left in ScalaReflection. This branch is reached only when no
+        // accessible constructor matches but a companion object's `apply` does (e.g. a private-ctor
+        // "smart constructor"); ordinary case classes resolve via the Java primary path above and
+        // never get here, which is why this is a separate follow-up to the 2-line down-payment and
+        // not part of it. Commons-Lang's `MethodUtils.getMatchingAccessibleMethod` is the
+        // `apply`-method analogue of the `getMatchingAccessibleConstructor` already used above (same
+        // assignment-compatible matching, including boxing), so no `scala.reflect.runtime` is needed.
+        scala.util.Try {
+          val companionClass = Class.forName(cls.getName + "$", false, cls.getClassLoader)
+          val moduleInstance = companionClass.getField("MODULE$").get(null)
+          Option(MethodUtils.getMatchingAccessibleMethod(companionClass, "apply", paramTypes: _*))
+            .map { applyMethod =>
+              val expectedArgsCount = applyMethod.getParameterCount
+              (_args: Seq[AnyRef]) => {
+                // Drop the "outer" argument if it is provided
+                val args = if (_args.size == expectedArgsCount) _args else _args.tail
+                applyMethod.invoke(moduleInstance, args: _*).asInstanceOf[T]
+              }
             }
-          }
-          .map { applyMethodSymbol =>
-            val expectedArgsCount = applyMethodSymbol.typeSignature.paramLists.head.size
-            val instanceMirror = mirror.reflect(moduleMirror.instance)
-            val method = instanceMirror.reflectMethod(applyMethodSymbol.asMethod)
-            (_args: Seq[AnyRef]) => {
-              // Drop the "outer" argument if it is provided
-              val args = if (_args.size == expectedArgsCount) _args else _args.tail
-              method.apply(args: _*).asInstanceOf[T]
-            }
-          }
+        }.toOption.flatten
     }
   }
 

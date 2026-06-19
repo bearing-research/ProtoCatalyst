@@ -569,8 +569,9 @@ not "one tidy module"; it is three parts of very different size.
 >    proven minimum; it fixes the initialization crash (§3, upstream as
 >    [scala/scala3#25896](https://github.com/scala/scala3/issues/25896)) and is the small,
 >    self-contained **down-payment** PR. (`findConstructor`'s rarely-hit companion-`apply` fallback also
->    uses the runtime universe but is *not* reached by ordinary case classes, so it is left untouched
->    here — a separate edge-case follow-up, not part of the 2-line patch.)
+>    uses the runtime universe but is *not* reached by ordinary case classes — a separate edge-case
+>    follow-up, independent of the 2-line patch; it is de-reflected to Java reflection in the same
+>    reference module and proven by `FindConstructorFallbackSpec`.)
 > 2. **Provide the Scala-3 derivation** — a single `Mirror`/`inline` macro, `deriveAgnosticEncoder[T]`,
 >    emitting Spark's `AgnosticEncoder` directly (§11b). One Scala-3-only file; the reflective body
 >    stays for 2.13. Because the output is the *same* `AgnosticEncoder`, **everything downstream of the
@@ -625,7 +626,7 @@ downstream of `AgnosticEncoder` unchanged** (rather than replacing `ExpressionEn
 | `ProtoEncoder.derived[T]` (Scala 3 `Mirror`/`inline`) | the type-analysis half of `ScalaReflection.encoderFor[T]` | compile-time type → IR |
 | `AgnosticEncoderBridge.toAgnostic` | the node-building half of `encoderFor` | lower IR → Spark's `AgnosticEncoder` |
 | *(unchanged)* | `ExpressionEncoder`, `Serializer`/`DeserializerBuildHelper`, whole-stage codegen | downstream — no reflective *derivation*; the small `ScalaReflection` utilities it calls are de-reflected separately (§2, §3) |
-| `lazy val universe`; `NameTransformer.encode` (2-line down-payment) | the eager `val universe` + the `encodeFieldNameToIdentifier` utility in `ScalaReflection` | de-poison the object for Scala 3 (§3); `findConstructor`'s fallback is a separate edge-case follow-up |
+| `lazy val universe`; `NameTransformer.encode` (2-line down-payment) | the eager `val universe` + the `encodeFieldNameToIdentifier` utility in `ScalaReflection` | de-poison the object for Scala 3 (§3); `findConstructor`'s fallback is de-reflected separately (Java reflection) as an edge-case follow-up |
 
 **One layer upstream, not two.** The first two rows are split only because this project is *out of
 tree*: `ProtoEncoder`/`ProtoType` is an engine-independent IR (it also targets non-Spark backends)
@@ -658,8 +659,9 @@ Migration checklist (the end-to-end upstream validation in §13 is the last two 
       upstream, per above); keep the reflective body for 2.13.
 - [ ] De-reflect the `ScalaReflection` object — the 2-line down-payment: `val universe` → `lazy val`;
       `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode`.
-- [ ] *(separate follow-up, edge-case)* replace `findConstructor`'s companion-`apply` scala-reflect
-      fallback with Java reflection — not reached by ordinary case classes, not in the 2-line patch.
+- [x] *(separate follow-up, edge-case)* replace `findConstructor`'s companion-`apply` scala-reflect
+      fallback with Java reflection — done in the reference patch (`MethodUtils` + `MODULE$`), proven by
+      `FindConstructorFallbackSpec`; not reached by ordinary case classes, independent of the 2-line patch.
 - [ ] Swap the ~16 `TypeTag`-threading signatures (`Encoders`, `Dataset`, `SparkSession`,
       `functions`, …) to derived-given signatures — forced anyway, since `TypeTag` is gone.
 - [ ] Run Spark's existing encoder test suite (`catalyst/testOnly *Encoder*`) against the Scala 3 build.

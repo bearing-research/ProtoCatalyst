@@ -89,15 +89,21 @@ that utility survives on the Scala-3 build. Both are behavior-preserving on 2.13
 
 `findConstructor` (the deserialization-side instantiation helper used by `NewInstance`) has a primary
 path that is already pure Java reflection (`ConstructorUtils.getMatchingAccessibleConstructor`) and a
-`None` fallback that uses the runtime universe (`mirror.staticClass(...).companion` +
-`universe.TermName("apply")`) to find a companion-object `apply`. **This is deliberately left unchanged**
-in the reference patch: ordinary case classes resolve via the Java primary path, so the fallback is
-never reached (which is why the 2-line patch suffices and the test corpus proves it honestly). The
-fallback only matters for **private-constructor / companion-`apply` "smart constructor" types**. To
-support those on a native Scala-3 build it would be reimplemented with Java reflection (locate the
-companion `MODULE$`, match an `apply` via `getMethods`, invoke) — the same technique `AgnosticDerivation`
-already uses for Scala-3-enum `valueOf`. It's independent of both headline pieces (it isn't the #25896
-wall, and `AgnosticDerivation` never calls it) and is **not yet implemented**.
+`None` fallback that, in stock Spark, uses the runtime universe (`mirror.staticClass(...).companion` +
+`universe.TermName("apply")`) to find a companion-object `apply`. Ordinary case classes resolve via the
+Java primary path and never reach it (which is why the 2-line patch suffices and the test corpus proves
+it honestly); the fallback only matters for **private-constructor / companion-`apply` "smart
+constructor" types**.
+
+**This follow-up is now implemented in the reference patch** (`PROTOCATALYST PATCH (follow-up)`): the
+`None` branch is reimplemented with Java reflection — `Class.forName(cls.getName + "$").MODULE$` for the
+companion instance and `MethodUtils.getMatchingAccessibleMethod(companionClass, "apply", paramTypes)` for
+the method (the `apply`-method analogue of the `getMatchingAccessibleConstructor` already used on the
+primary path, with the same assignment-compatible/boxing matching) — removing the *last* runtime-universe
+use. `FindConstructorFallbackSpec` drives the fallback directly from a Scala 3 process and confirms it
+resolves a companion `apply` (and that a matching constructor still wins over it). It stays independent
+of both headline pieces — it isn't the #25896 wall, and `AgnosticDerivation` never calls it — so it can
+land separately from the 2-line down-payment.
 
 ## Step 4 — drop the `~16` `TypeTag` bounds (`sql-api` / `catalyst` / `sql-core`)
 
@@ -142,7 +148,7 @@ exactly how `Dataset[T]` uses an encoder: `ExpressionEncoder(enc).resolveAndBind
 | Wire `ExpressionEncoder.apply[T]()` → `deriveAgnosticEncoder[T]` (Scala 3) | `catalyst` | a few lines |
 | De-reflect `ScalaReflection` (the #25896 down-payment) | `sql-api` | **2 lines** (`lazy val` + `NameTransformer`) |
 | Drop the `~16` `TypeTag` bounds (forced by Scala 3) | `sql-api` / `catalyst` / `sql-core` | enumerable |
-| *(separate follow-up)* de-reflect `findConstructor`'s `apply` fallback — edge-case, not yet implemented | `sql-api` | small, Java-reflection |
+| *(separate follow-up)* de-reflect `findConstructor`'s `apply` fallback — edge-case, **implemented + tested** | `sql-api` | small, Java-reflection |
 
 The **derivation + de-reflection — the part unique to this proposal — is localized to `sql-api`.** The
 `TypeTag` spread is the part Scala 3 forces regardless.
