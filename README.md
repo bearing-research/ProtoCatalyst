@@ -52,15 +52,36 @@ The derived encoder is validated against Spark itself, not just against our own 
 
 ## Migrating to Spark
 
-The change is scoped, and most of it is work **Scala 3 forces regardless**, not cost this approach adds.
-Three parts, in increasing size (full detail: [REPORT §11/§11b](docs/scala3-encoder/REPORT.md)):
+**There is no ProtoCatalyst IR to adopt.** The thing a Spark maintainer takes is **one file** —
+[`encoder-spark/…/AgnosticDerivation.scala`](encoder-spark/src/main/scala/protocatalyst/encoder/spark/AgnosticDerivation.scala)
+(~210 lines) — whose entire dependency surface is **Spark's own encoder model + the Scala standard
+library**, nothing else:
 
-1. **De-reflect the `ScalaReflection` object** so it loads on Scala 3 — `val universe` → `lazy val`,
+```scala
+import scala.compiletime.*, scala.deriving.Mirror, scala.reflect.{ClassTag, classTag}
+import org.apache.spark.sql.catalyst.encoders.{AgnosticEncoder, Codec}
+import org.apache.spark.sql.catalyst.encoders.AgnosticEncoders.*
+import org.apache.spark.sql.types.{DecimalType, Metadata}
+```
+
+It is a single `Mirror`/`inline` derivation that emits Spark's `AgnosticEncoder` nodes directly —
+no `ProtoEncoder`, no `ProtoType`, no bridge. (Those belong to this repo's *engine-independent* path,
+which also targets non-Spark backends; inside Spark there is no second backend, so `AgnosticEncoder` is
+the only encoder description needed, and they do not go upstream.) **Rename its package to wherever it
+belongs in `sql-api`/`catalyst`, and `deriveAgnosticEncoder[T]` is the reflection-free replacement for
+`ScalaReflection.encoderFor`.**
+
+Integrating that file is three changes, in increasing size (full detail:
+[REPORT §11/§11b](docs/scala3-encoder/REPORT.md)):
+
+1. **Call it from `ExpressionEncoder.apply[T]()` on the Scala 3 build** — `deriveAgnosticEncoder[T]`
+   instead of `ScalaReflection.encoderFor[T]`; the reflective body stays for 2.13. Same `AgnosticEncoder`
+   output, so everything downstream (`ExpressionEncoder`, serializer/deserializer codegen, Spark Connect)
+   is unchanged.
+2. **De-reflect the `ScalaReflection` object** so it loads on Scala 3 — `val universe` → `lazy val`,
    `encodeFieldNameToIdentifier` → `NameTransformer.encode`, and `findConstructor`'s scala-reflect
-   fallback. A handful of lines; fixes the #25896 crash. This is the small, self-contained
-   **down-payment** PR (demonstrated verbatim in module `spark-reflection-patch`).
-2. **Provide the Scala-3 derivation** — the one-file `Mirror` macro above; the reflective body stays
-   for Scala 2.13. Same `AgnosticEncoder` output, so everything downstream is unchanged.
+   fallback. A handful of lines; fixes the #25896 crash. The small, self-contained **down-payment** PR
+   (demonstrated verbatim in module `spark-reflection-patch`).
 3. **Change the ~16 `TypeTag` context bounds** in the public encoder-producing signatures (`Encoders`,
    `SparkSession.implicits`, `ExpressionEncoder.apply`, and the `Dataset`/`functions`/`Aggregator`
    methods that thread one), spanning `sql-api`/`catalyst`/`sql-core`.

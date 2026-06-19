@@ -602,7 +602,16 @@ per-user cross-version workarounds disappear one user at a time.
 
 ## §11b. Concrete mapping and migration checklist
 
-The proposal touches a small, enumerable surface. The mapping below is deliberately narrow — it
+**The artifact upstream takes is a single self-contained file** — `AgnosticDerivation.scala`
+(`encoder-spark`), ~210 lines, whose entire dependency surface is Spark's own `AgnosticEncoder` model
+plus the Scala standard library (`scala.compiletime`/`deriving.Mirror`/`reflect.ClassTag`). It contains
+**no ProtoCatalyst types** — no `ProtoEncoder`, no `ProtoType`, no bridge. Rename its package and it is
+the reflection-free `encoderFor`. There is no IR to adopt.
+
+The mapping below shows how the repo's *production* path (a two-layer IR) **collapses** to that single
+file. The two layers exist in-repo only because `ProtoEncoder`/`ProtoType` is engine-independent and
+also targets non-Spark backends; inside Spark there is no second backend, so the bridge's whole job —
+re-splitting what `ProtoType` normalized away — disappears. The mapping is deliberately narrow: it
 replaces the *derivation* and de-reflects the `ScalaReflection` object, and **reuses everything
 downstream of `AgnosticEncoder` unchanged** (rather than replacing `ExpressionEncoder`):
 
