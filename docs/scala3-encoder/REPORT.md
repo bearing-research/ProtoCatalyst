@@ -555,31 +555,49 @@ query tax that motivates per-row optimization are in the archived
 
 The migration argument is narrower than "the encoder is faster." The central claim is about the
 *derivation*: it is the structural Scala-3 blocker (§1–§3) and a globally-locked bottleneck (§4), and
-it can be replaced faithfully (§8), at lower cost (§9), and without touching
-anything else in Spark.
+it can be replaced faithfully (§8) at lower cost (§9). The change is scoped — but, importantly, the
+larger part of it is **work Scala 3 forces regardless**, not cost this proposal adds (see below). It is
+not "one tidy module"; it is three parts of very different size.
 
-> **Proposal: a `spark-sql-encoder-3` module**, conditionally compiled for Scala 3 builds. It
-> provides `deriveAgnosticEncoder[T]` as the Scala-3 implementation of `ExpressionEncoder`'s
-> `apply[T]()` factory; the existing reflective derivation stays for Scala 2.13 builds. Same return
-> type (`ExpressionEncoder[T]`), same downstream, no change to the public `Dataset` surface. Users
-> opt in by depending on the Scala 3 jars.
+> **Proposal — three parts, in increasing size:**
+>
+> 1. **De-reflect the `ScalaReflection` object** so it loads on Scala 3: `val universe` → `lazy val`,
+>    `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode`, and replace
+>    `findConstructor`'s scala-reflect fallback. A handful of lines; it fixes the initialization crash
+>    (§3, upstream as [scala/scala3#25896](https://github.com/scala/scala3/issues/25896)) and is the
+>    small, self-contained **down-payment** PR.
+> 2. **Provide the Scala-3 derivation** — a single `Mirror`/`inline` macro, `deriveAgnosticEncoder[T]`,
+>    emitting Spark's `AgnosticEncoder` directly (§11b). One Scala-3-only file; the reflective body
+>    stays for 2.13. Because the output is the *same* `AgnosticEncoder`, **everything downstream of the
+>    encoder — `ExpressionEncoder`, the serializer/deserializer codegen — is untouched.**
+> 3. **Change the ~16 `TypeTag` context bounds** in the public encoder-producing signatures
+>    (`Encoders`, `SparkSession.implicits`, `ExpressionEncoder.apply`, and the
+>    `Dataset`/`functions`/`Aggregator` methods that thread one) from `[T: TypeTag]` to the derived
+>    form. These span `sql-api` / `catalyst` / `sql-core`, handled with per-version sources.
 
-Implementation sketch:
+**Part 3 is not cost this proposal introduces — Scala 3 forces it.** `TypeTag` is a scala-reflect
+construct that does not exist on Scala 3, so *any* Scala-3 Spark must drop it from those signatures as
+part of the general cross-build effort (SPARK-44272 et al.). What this proposal uniquely supplies is the
+thing the rewritten signatures derive *into*; without it you remove `TypeTag` and have **nothing** to
+replace the derivation — which is exactly why encoders are *the* structural blocker (§1–§3), not one
+among many. So the honest framing is "we unblock the 16-signature change," not "we add it."
 
-- `ExpressionEncoder.apply[T]()` is conditionally implemented per Scala version:
-  `ScalaReflection.encoderFor` on 2.13, the `Mirror`-based `deriveAgnosticEncoder` on Scala 3 — same
-  `AgnosticEncoder` output.
-- The eager `val universe` and the two expression-layer utilities (`encodeFieldNameToIdentifier` →
-  `NameTransformer.encode`; `findConstructor`'s scala-reflect fallback) are de-reflected so the
-  `ScalaReflection` object loads on Scala 3.
-- Spark Connect's wire protocol is unaffected — it already uses `AgnosticEncoder` as the interchange
-  shape, which the macro produces from `T` exactly as `encoderFor` does.
-- Frameless's `TypedEncoder` continues to work on 2.13 and could port to Scala 3 by delegating to the
-  macro.
+There is a design lever for how contained Part 3 is, and it is Spark's call:
+(a) per-version source directories (`scala-2.13` / `scala-3`) in each affected module — the standard
+cross-build mechanism Spark already uses; or (b) move the bound from `[T: TypeTag]` to `[T: Encoder]`
+uniformly, keeping the call sites single-source and isolating all version-specific code to the
+*materialization* of the `Encoder` (reflection-derive on 2.13, `Mirror`-derive on 3). (b) is cleaner
+but a larger API-shape decision; either is bounded and enumerable.
 
-The migration becomes incremental rather than coordinated: ship the Scala 3 encoder module, users
-compile typed `Dataset` code against the Scala 3 jars, and the per-user cross-version workarounds
-disappear one user at a time.
+The end-user `Dataset` *usage* surface is unchanged — `spark.createDataset(seq)`, `ds.map(f)`, `as[T]`
+all keep compiling; what changes is the implicit derivation mechanism behind the context bound, not the
+call. Spark Connect's wire protocol is unaffected — it already uses `AgnosticEncoder` as its interchange
+shape, which the macro produces from `T` exactly as `encoderFor` does. Frameless's `TypedEncoder`
+continues to work on 2.13 and could port to Scala 3 by delegating to the macro.
+
+The migration is therefore incremental rather than coordinated: land the de-reflection (1) on its own;
+ship the derivation (2) into the Scala-3 cross-build's already-changing signatures (3); and the
+per-user cross-version workarounds disappear one user at a time.
 
 ## §11b. Concrete mapping and migration checklist
 
