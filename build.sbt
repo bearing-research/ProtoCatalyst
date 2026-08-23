@@ -423,6 +423,11 @@ lazy val sparkReflectionPatch = project
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-catalyst" % "4.1.2",
       "org.apache.spark" %% "spark-sql-api" % "4.1.2",
+      // The SparkSession copy references classic-only types (SessionState, SharedState,
+      // BaseRelation, RDD) in its abstract API surface, so the full sql jar is needed to compile
+      // it. Only this module's own compilation needs it; nothing is added to any test classpath
+      // that didn't already have Spark.
+      "org.apache.spark" %% "spark-sql" % "4.1.2",
       "org.scala-lang" % "scala-reflect" % "2.13.16"
     )
   )
