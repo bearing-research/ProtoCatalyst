@@ -1,24 +1,26 @@
 # CLAUDE.md
 
-Project-level guidance for Claude Code working in this repo. Read this first; deeper detail lives in
-`docs/` (linked below).
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Read this first; deeper detail lives in `docs/` (index: `docs/README.md`).
 
 ## What this project is
 
-ProtoCatalyst is a compile-time Spark SQL / Catalyst optimizer that has grown into an
-engine-independent query compiler (LLVM-for-queries analogy). The **headline initiative** is the
-*reflection replacement*: replace Spark's runtime reflection-based encoder derivation
-(`ScalaReflection.encoderFor[T: TypeTag]`) with Scala 3 compile-time derivation (`ProtoEncoder`), to
-unblock Spark's migration to Scala 3.
+ProtoCatalyst is a compile-time Spark SQL / Catalyst optimizer that grew into an engine-independent
+query compiler (LLVM-for-queries analogy). The **headline initiative** is the *reflection
+replacement*: replace Spark's runtime reflection-based encoder derivation
+(`ScalaReflection.encoderFor[T: TypeTag]`) with Scala 3 compile-time derivation, to unblock Spark's
+migration to Scala 3 (upstream blocker: scala/scala3#25896 — `scala.reflect.runtime` crashes on
+init under Scala 3.8).
 
 - **Primary goal:** push Spark toward Scala 3. Stock Spark is the correctness oracle + benchmark
   baseline only — we do not ship a plugin.
-- **Strategy:** tech-report-first to gain traction, then upstream. The 2-line `ScalaReflection` patch
-  is the scoped "down payment" ask.
+- **Strategy:** tech-report-first to gain traction, then upstream. The 2-line `ScalaReflection`
+  patch is the scoped "down payment" ask; `AgnosticDerivation.scala` is the drop-in file.
 
-Key docs (full index: `docs/README.md`; docs are split into `docs/scala3-encoder/` and
-`docs/compiler/` tracks):
+Key docs (docs are split into `docs/scala3-encoder/`, `docs/compiler/`, `docs/decisions/`):
 - `docs/scala3-encoder/REPORT.md` — the writeup (blocker → replacement → results → migration). The artifact.
+- `docs/scala3-encoder/MIGRATION.md` — the operational upstreaming checklist: which file, which Spark module, which lines.
 - `docs/scala3-encoder/REFLECTION_REPLACEMENT.md` — bridge design, decisions, milestones; §2.1.1 = the wall patch.
 - `docs/scala3-encoder/INFRASTRUCTURE.md` — cross-version build mechanics + **how to run every benchmark/test**.
 - `docs/scala3-encoder/SCALA3_SUPERSET.md` — behaviors beyond Spark's encoder model.
@@ -30,76 +32,128 @@ Key docs (full index: `docs/README.md`; docs are split into `docs/scala3-encoder
 - **JDK 21 is required** and is wired via `.sbtopts` (`-java-home /opt/homebrew/opt/openjdk@21`).
   The shell's default `java` is JDK 1.8 and will NOT run scalac/Spark 4.1. If you run scalac or a
   Scala 3 JVM directly (outside sbt), first `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`.
-- Spark target: **4.1.2**.
+- Spark target: **4.1.2**. Test framework: **munit**. Scala 3 modules compile with `-Werror`
+  (2.13 modules deliberately do not — Spark deprecations).
+- The Truffle modules override `javaHome` to `/Library/Java/JavaVirtualMachines/graalvm-21.jdk`.
 
 ### Cross-version layout (why two Scala versions)
 
 The baseline (`encoderFor[T: TypeTag]`) only exists on 2.13; the replacement only on 3. Both live in
 one build:
 
-- **Scala 3 (3.8.1):** `core`, `proto`, `encoder`, `arrow`, `query`, `benchmarks`, `encoderSpark`
-  (`encoderSpark` consumes Spark via `CrossVersion.for3Use2_13`).
+- **Scala 3 (3.8.1):** `core`, `encoder`, `arrow`, `query`, `sql-parser`, `executor`, `ml-*`,
+  `benchmarks`, `encoderSpark` (which consumes Spark's 2.13 jars via `CrossVersion.for3Use2_13`).
 - **Scala 2.13.16:** `benchmarkSpark` (Spark baseline + parity-golden generator), `sparkCatalyst`,
   `sparkReflectionPatch` (the 2-line patched `ScalaReflection`).
+- **Java:** `proto` (protobuf schema, consumed by both Scala versions), `truffle-exec`.
 
-The seam that makes this work: `ExpressionEncoder.apply[T](enc: AgnosticEncoder[T])` — the no-`TypeTag`
-overload, callable from Scala 3. `AgnosticEncoderBridge.toAgnostic` produces the `AgnosticEncoder`.
+The seam that makes this work: `ExpressionEncoder.apply[T](enc: AgnosticEncoder[T])` — the
+no-`TypeTag` overload, callable from Scala 3.
+
+### Two derivation paths — know which one you're touching
+
+1. **`AgnosticDerivation.deriveAgnosticEncoder[T]`** (`encoder-spark`, ~210 lines) — a single
+   `Mirror`/`inline` macro that emits Spark's `AgnosticEncoder` **directly**. *This is the upstream
+   artifact*: the one file a Spark maintainer takes, package line rewritten. Its only dependencies
+   are Spark's encoder model + the Scala stdlib.
+2. **`ProtoEncoder.derived[T]` → `AgnosticEncoderBridge.toAgnostic`** — the repo's two-layer path
+   (engine-independent IR, then a runtime lowering). Exists because `ProtoEncoder` also targets
+   non-Spark backends. **Does not go upstream.**
+
+Both are asserted against the same goldens generated by Spark's own reflective `encoderFor`.
 
 ## Modules & status
 
 Two bodies of work. The **Scala-3 reflection-replacement thesis** is the active focus; the broader
-**query compiler** (Phases 1–11) is feature-complete and mostly **frozen since ~Feb 2026** — verify
-against the code before assuming a frozen module is current. Full detail: `ROADMAP.md`; encoder docs:
-`docs/scala3-encoder/`.
+**query compiler** is feature-complete and mostly **frozen since ~Feb 2026** — verify against the
+code before assuming a frozen module is current. Full detail: `ROADMAP.md`.
 
 - **Active (encoder / Scala 3):** `encoder` (`ProtoEncoder` derivation, `InlineRowSerializer`),
-  `encoder-spark` (the `AgnosticEncoderBridge`), `spark-reflection-patch` (the wall patch),
-  `benchmarks` + `benchmark-spark`. `core` (shared IR) still moves with this work.
+  `encoder-spark` (`AgnosticDerivation` + the bridge + `UnsafeRowSerializer` + Arrow path),
+  `spark-reflection-patch` (the wall patch), `benchmarks` + `benchmark-spark`. `core` (shared IR)
+  still moves with this work.
 - **Frozen / feature-complete:**
   - `core` (3) — IR (ProtoExpr 100 / ProtoLogicalPlan 27 / ProtoPhysicalPlan 30), 41-rule SQL optimizer, JSON+protobuf codec.
   - `sql-parser`, `query` (`quote {}` DSL), `arrow` (+ Parquet) — Scala 3, complete.
-  - `spark-catalyst` (2.13) — Spark execution bridge + parity tests.
+  - `spark-catalyst` (2.13) — Spark execution bridge (`SparkQueryRunner`) + parity tests.
   - `executor` (3) — standalone Arrow engine + DataFusion backend (SQL transpiler + ADBC Flight SQL).
   - `ml-core` / `ml-query` (3) — tensor IR, autograd, ONNX, 8 ML rules, ML-in-SQL `Predict`/`Fit`.
-  - `proto` (Java) — protobuf schema, consumed by both Scala versions.
+- **Exploratory, outside the root aggregate:** `truffle-exec` (Java) + `truffle-backend` (3) — the
+  GraalVM Truffle execution backend. `sbt compile` / `sbt test` do **not** touch them; build them by
+  name, and only on GraalVM. Framing: cold-start/AOT case study (~47× to first result vs Spark at
+  small scale), *never* a Spark throughput competitor. Write-up: `docs/compiler/TRUFFLE_BACKEND.md`.
 - **Removed:** the dead `spark/` module (superseded by `encoder-spark` + `spark-catalyst`); the
-  `substrait` prototype (types/exprs only, never reached plan conversion — SQL transpiler is the
-  chosen interchange path; see ADR-002/ADR-003).
+  `substrait` prototype (never reached plan conversion — SQL transpiler is the chosen interchange
+  path; see ADR-002/ADR-003).
 - **Not started:** Velox backend.
+
+Non-module directories: `scripts/` (benchmark + TPC-H + EC2 driver scripts), `results/` (timestamped
+benchmark artifacts), `data/` (generated TPC-H `.tbl`/Parquet, gitignored), `native/` (native-image
+build for the TPC-H demo).
 
 ## Common commands
 
 ```bash
-sbt compile                                              # all modules, both Scala versions
-sbt encoderSpark/test                                   # bridge parity + execution-wall e2e (Scala 3)
-sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'  # structural parity vs goldens
+sbt compile                                             # all aggregated modules, both Scala versions
+sbt test                                                # full suite (~2,700 tests)
+sbt encoderSpark/test                                   # derivation parity + execution-wall e2e (Scala 3)
+
+sbt 'encoderSpark/testOnly *AgnosticDerivationSpec'     # the drop-in vs Spark's reflective goldens
+sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'  # the two-layer bridge vs the same goldens
 sbt 'encoderSpark/testOnly *ExecutionWallSpec'          # end-to-end round-trips (uses the patch)
+sbt 'encoderSpark/testOnly *FindConstructorFallbackSpec' # the de-reflected companion-apply fallback
+
+sbt 'encoderSpark/testOnly *ExecutionWallSpec -- *nested*'   # single munit test (name filter after --)
+
+sbt scalafmtAll                                         # format (scalafmt 3.10.5, maxColumn 100)
+sbt scalafixAll                                         # OrganizeImports (needs -Wunused:imports + SemanticDB)
 
 # Derivation benchmarks (headline). deriveMixed = 8 distinct types/op (defeats "it's cached")
 sbt 'benchmarkSpark/Jmh/run -f 1 -wi 3 -i 5 -t 8 SparkEncoderDerivationBenchmarks'  # reflective
 sbt 'benchmarks/Jmh/run     -f 1 -wi 3 -i 5 -t 8 EncoderDerivationBenchmarks'        # compile-time
 
 sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.ColdStartProbe'      # cold-start cost
+./scripts/bench.sh 0.01 --quick                         # full TPC-H + encoder artifact run (smoke)
 ```
 
-Regenerate parity goldens after adding a corpus type (edit both 2.13 fixtures and the 3 spec):
+Regenerate parity goldens after adding a corpus type (edit both the 2.13 fixtures and the 3 spec):
 ```bash
 sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.AgnosticParityFixtures'
+sbt 'encoderSpark/testOnly *AgnosticDerivationSpec'
 sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
 ```
+
+## Build invariants that break non-obviously
+
+- **`AgnosticDerivation.scala` must stay dependency-free.** `encoderSpark` has a `sourceGenerator`
+  that recompiles a copy of it with *only* the package line rewritten to
+  `org.apache.spark.sql.catalyst.encoders` (a split package with the real spark-catalyst jar). Add a
+  `protocatalyst.*` import to that file and the build fails — that is the guard proving the "rename
+  the package and it's `encoderFor`'s replacement" claim, so fix the import, don't weaken the guard.
+- **`encoderSpark`'s test classpath prepends `sparkReflectionPatch`'s products** to shadow Spark's
+  own `ScalaReflection`. That is what lets `ExecutionWallSpec` run Spark's real ser/deser from a
+  Scala 3 process. Changing the patch changes what those tests prove.
+- `spark-reflection-patch` is a **verbatim copy of Spark 4.1.2's `ScalaReflection`** with two lines
+  changed (lazy `universe`; `NameTransformer.encode`), plus the separate `findConstructor`
+  companion-apply de-reflection. Keep the diff minimal and upstream-shaped — it *is* the PR.
 
 ## Hard constraints (do not violate)
 
 - **Never run a benchmark while another sbt process is touching the same module.** Concurrent
-  recompilation corrupts/aborts the run. Don't edit a module's sources while its benchmark is running.
-- **Commit messages** must end with:
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+  recompilation corrupts/aborts the run. Don't edit a module's sources while its benchmark runs.
+- **Commit messages** must end with a co-author trailer naming the model that actually wrote the
+  commit — not whatever the git history happens to show:
+  `Co-Authored-By: Claude <model name> <noreply@anthropic.com>`
+  e.g. `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`. Commits through
+  2026-08 say `Claude Opus 4.8 (1M context)`; don't copy that forward if you are a different model.
 - **Push only when explicitly told.** Branch first if on `main` and the user wants a PR.
 
-## Status (2026-06)
+## Status (2026-08)
 
-Reflection-replacement engine + bridge work, structural/byte parity, the execution-wall patch, and the
-benchmark suite (derivation cost, cold-start, multi-tenant) are done and reported in `docs/scala3-encoder/REPORT.md`.
+Reflection-replacement engine, the single-macro drop-in, structural/byte parity, the execution-wall
+patch, and the benchmark suite (derivation cost, cold-start, multi-tenant) are done and reported in
+`docs/scala3-encoder/REPORT.md`. Recent work moved the migration story from "adopt the bridge" to
+"take one file" (`AgnosticDerivation.scala`) and added `MIGRATION.md` + the build-time drop-in guard.
 Open directions: tech-report polish + related work, the dev@spark pitch, the clean 2-line-patch PR;
-later — cross-arch EC2 sweep (parked on AWS creds), second backend for generality. There is one stale
-JIRA ticket (only the user has updated it).
+later — cross-arch EC2 sweep (parked on AWS creds), second backend for generality. There is one
+stale JIRA ticket (only the user has updated it).
