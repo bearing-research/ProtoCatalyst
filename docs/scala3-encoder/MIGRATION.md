@@ -105,6 +105,34 @@ resolves a companion `apply` (and that a matching constructor still wins over it
 of both headline pieces — it isn't the #25896 wall, and `AgnosticDerivation` never calls it — so it can
 land separately from the 2-line down-payment.
 
+### Separate follow-up — `SparkSession.lookupCompanion` (`sql-api`), the session wall
+
+Independent of everything encoder-related, and **hit before any of it**: `SparkSession.builder()`
+resolves the Classic/Connect implementation through `scala.reflect.runtime.currentMirror`
+([REPORT §3b](REPORT.md#3b-a-second-wall-upstream-of-the-first-sparksessionbuilder)), so a Scala 3
+process cannot create a session at all. Worse, `DEFAULT_COMPANION` catches the failure with `Try` —
+`FatalError` is `NonFatal` — and rethrows it as *"Cannot find a SparkSession implementation on the
+Classpath"*, which sends the reporter after a phantom classpath bug.
+
+Reference diff:
+[`spark-reflection-patch/…/SparkSession.scala`](../../spark-reflection-patch/src/main/scala/org/apache/spark/sql/SparkSession.scala)
+(`PROTOCATALYST PATCH (SparkSession wall)`). The body becomes a static-field read, since a Scala
+`object` instance *is* `MODULE$`:
+
+```scala
+SparkClassUtils.classForName(name)          // keep: a genuinely absent impl must still fail here
+SparkClassUtils.classForName(name + "$")
+  .getField("MODULE$").get(null).asInstanceOf[SparkSessionCompanion]
+```
+
+Behaviour-preserving on 2.13 (same instance, same failure mode when the implementation is absent),
+and it is what makes a Scala 3 driver possible: `SparkSessionWallSpec` builds a session through the
+**stock** entry point from Scala 3 and runs a typed `Dataset` query on it. Like the `ScalaReflection`
+items this is transitional — a native Scala-3 `sql-api` would not write the mirror version in the
+first place — but on the road there, any Scala-3-on-2.13-jars experiment needs it, so it is worth
+landing on its own. Small, self-contained, and it removes a genuinely misleading error message for
+everyone.
+
 ## Step 4 — drop the `~16` `TypeTag` bounds (`sql-api` / `catalyst` / `sql-core`)
 
 `TypeTag` is a scala-reflect construct that does not exist on Scala 3, so the public encoder-producing
@@ -149,6 +177,7 @@ exactly how `Dataset[T]` uses an encoder: `ExpressionEncoder(enc).resolveAndBind
 | De-reflect `ScalaReflection` (the #25896 down-payment) | `sql-api` | **2 lines** (`lazy val` + `NameTransformer`) |
 | Drop the `~16` `TypeTag` bounds (forced by Scala 3) | `sql-api` / `catalyst` / `sql-core` | enumerable |
 | *(separate follow-up)* de-reflect `findConstructor`'s `apply` fallback — edge-case, **implemented + tested** | `sql-api` | small, Java-reflection |
+| *(separate follow-up)* de-reflect `SparkSession.lookupCompanion` — blocks session creation on Scala 3, **implemented + tested** | `sql-api` | 4 lines, Java-reflection |
 
 The **derivation + de-reflection — the part unique to this proposal — is localized to `sql-api`.** The
 `TypeTag` spread is the part Scala 3 forces regardless.

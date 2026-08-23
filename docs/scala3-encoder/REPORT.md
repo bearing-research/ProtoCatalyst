@@ -194,6 +194,52 @@ isn't written. So the migration does not "patch the wall"; the wall is an artifa
 execution, and the Scala-3 end-state simply *deletes* the reflective surface (see §12, *End-state vs.
 transitional*). The two lines measure how shallow the downstream coupling is, not a fix Spark must carry.
 
+## §3b. A second wall, upstream of the first: `SparkSession.builder()`
+
+The `ScalaReflection` wall (§3) is the one the *encoder* path hits. There is an earlier one, and it
+is hit before any encoder exists: **a Scala 3 process cannot obtain a `SparkSession` at all.**
+
+`org.apache.spark.sql.SparkSession` (sql-api 4.1.2) resolves its implementation — Classic or Connect
+— through the Scala 2 runtime universe:
+
+```scala
+private[this] def lookupCompanion(name: String): SparkSessionCompanion = {
+  val cls = SparkClassUtils.classForName(name)
+  val mirror = scala.reflect.runtime.currentMirror   // <- #25896 dies here
+  val module = mirror.classSymbol(cls).companion.asModule
+  mirror.reflectModule(module).instance.asInstanceOf[SparkSessionCompanion]
+}
+```
+
+From Scala 3 this throws the same `FatalError: class Array does not have a member apply` for both
+candidates. Two properties make it worse than §3:
+
+1. **The error is misdirected.** `DEFAULT_COMPANION` wraps the lookup in `Try(...).orElse(...)`, and
+   `scala.reflect.internal.FatalError` extends `Exception`, so `NonFatal` is true and the cause is
+   swallowed. What the user sees is
+   `IllegalStateException: Cannot find a SparkSession implementation on the Classpath.` — pointing at
+   the classpath when the classpath is correct and the implementation class loads fine.
+2. **It is not encoder-specific.** No `Dataset[T]`, no typed operation, no encoder is involved. Any
+   Scala 3 program that calls `SparkSession.builder()` fails here first.
+
+The fix is the same shape as `findConstructor`'s companion lookup (§11b / MIGRATION Step 3): a Scala
+`object` instance is a static `MODULE$` field, so a plain JVM field read is equivalent to the mirror
+dance:
+
+```scala
+SparkClassUtils.classForName(name)                              // implementation must still exist
+SparkClassUtils.classForName(name + "$")
+  .getField("MODULE$").get(null).asInstanceOf[SparkSessionCompanion]
+```
+
+Demonstrated verbatim in `spark-reflection-patch` and proven by `SparkSessionWallSpec`: with the
+patched file on the classpath, **stock `SparkSession.builder()` returns a working session from a
+Scala 3 process**, which then runs a typed `Dataset` query — parquet scan, typed lambda `filter`,
+typed `map`, `collect` — driven end-to-end by compile-time-derived encoders. The same caveat as §3
+applies: this is a *transitional* patch for running Scala 3 against stock 2.13 jars. It is reported
+here because it changes the shape of the migration story — clearing the encoder wall alone is not
+sufficient to run a Scala 3 driver; this call site has to go too, and it is four lines.
+
 ## §4. A global lock serializes encoder derivation
 
 Even on Scala 2.13, `encoderFor` is expensive in a way that is easy to miss. Its dispatch is a long
@@ -546,6 +592,94 @@ Their adoptability for Spark differs, and conflating them overstates the case:
 Full data, methodology (Georges et al., OOPSLA 2007), cross-arch validation, and the end-to-end
 query tax that motivates per-row optimization are in the archived
 [`REPORT_encoder_perf.md`](archive/REPORT_encoder_perf.md).
+
+## §10b. What the replacement is worth in a real query
+
+§9 measures derivation in isolation and §10 measures per-row serializers. Neither answers the
+question a Spark user actually asks: *what does this change do to my job?* This section measures
+that directly, and the answer is deliberately unflattering in places.
+
+**Setup.** Two short-lived drivers, same data (TPC-H parquet, SF=1), same queries, differing in
+exactly one thing — where `Encoder[T]` comes from. Baseline: Scala 2.13, stock Spark,
+`ScalaReflection.encoderFor`. Replacement: Scala 3, stock Spark, `deriveAgnosticEncoder`. Each is a
+fresh JVM (`scripts/query-bench.sh`, 5 reps interleaved, one discarded settling run), because the
+costs at issue are paid once per JVM and are invisible to a warmed-up in-process harness. Two
+workloads: `q6` (TPC-H Q6 predicate as a typed lambda over `lineitem` — one type, scan-heavy) and
+`wide` (all 8 TPC-H tables as typed `Dataset`s — eight types).
+
+**Result (median of 5, ms):**
+
+| phase | baseline (reflect) | replacement (compile) | |
+|---|---:|---:|---|
+| encoder: 1st type, cold JVM | 1002–1055 | 607–610 | **~1.6–1.7×** |
+| encoder: per additional type | 3.7 | 2.4 | ~1.6× |
+| encoder: 1st after session\* | 345–352 | 374–379 | ~equal |
+| steady-state, per iteration | 931 / 1602 | 883 / 1605 | at parity |
+| **total to first result** | **5921 / 7539** | **5574 / 7279** | **−347 / −260** |
+
+\* Spark's one-time init on first encoder use in a live session. Both sides pay it; it is not a
+derivation cost, and reporting it as one would be reading JVM warmup as a result.
+
+**What this does and does not show.**
+
+- **Steady-state is at parity, as designed.** The derived `AgnosticEncoder` drives Spark's own
+  serializer/deserializer codegen, so the row path is byte-identical (§8, `UnsafeRowParitySpec`) and
+  throughput must not move. It doesn't. The few percent either way is the typed lambda bodies being
+  compiled by two different Scala compilers — a confound inherent to comparing a 2.13 baseline with a
+  Scala 3 replacement, not an encoder effect. **This benchmark is a no-regression check, not a
+  speedup claim.**
+- **The win is one-off cost, and it is modest in absolute terms.** ~390–460 ms of encoder cost per
+  JVM (the attributable figure across the two workloads), ~4–12% of total-to-first-result for a
+  short-lived driver. The harness prints the attributable
+  share explicitly (`attributable to encoder derivation: N ms of the M ms total improvement`) so the
+  headline cannot quietly absorb noise from phases both sides share. In the run above the shared path
+  was itself 196 ms slower on the replacement side — noise larger than the effect — which is exactly
+  why the attributable line exists.
+- **§9's ~389× does not become 389× anywhere near a query.** In a real job the per-type cost is
+  dominated by `ExpressionEncoder` construction (building serializer/deserializer expression trees),
+  which is Spark's own code and identical on both sides. Derivation is the small part. The ratio that
+  survives into a job is ~1.6×, on a few ms per type.
+
+**The gain is a constant, not a rate.** This is the most important thing to get right about these
+numbers, and the easiest to get wrong. The saving is a fixed cost per JVM (universe init + first-type
+derivation) plus a small per-*type* term (~1.3 ms per additional type). Neither has a rows or bytes
+term in it. So the absolute saving stays flat as data grows and its share of runtime decays to
+nothing:
+
+| job duration | ~400 ms as a share |
+|---|---:|
+| 6 s (the short driver measured above) | ~7% |
+| 30 s | 1.5% |
+| 5 min | 0.15% |
+| 1 h | 0.013% |
+| 10 h | 0.0013% |
+
+A ten-hour query finishes about **half a second** earlier — unmeasurable against that job's own
+variance, and structurally so: at that scale the time is per-row work in executors, where the derived
+encoder produces byte-identical codegen (§8). There is no per-row term for this change to affect.
+What the saving *does* scale with is **process count and type count**, not data size: 500 CI test
+JVMs each starting a session is ~4 minutes of wall clock returned; a job touching 50 case classes
+saves ~65 ms of derivation.
+
+Concretely, do not scale the steady-state column. Reading the q6 ratio (1.055) as real and applying
+it to a 10 h job would "predict" ~33 minutes saved. The sign is not even consistent across the two
+workloads (q6 1.055, wide 0.998), which is what a compiler confound looks like rather than an effect.
+
+**Who this actually matters for.** A long-running driver amortizes all of it to zero. The population
+that feels it is short-lived and many-JVM: CI suites spinning a session per test, notebook/REPL
+restarts, per-request or per-batch drivers, and the multi-tenant case in §9d where derivation
+contends on a global lock. For a single long-running ETL job, the honest answer is: **you will not
+notice, and that is the point** — the correctness and Scala-3 story is the reason to take this, not
+throughput.
+
+**How to pitch it, therefore.** Never lead with job runtime. The claim that survives contact with a
+committer running it on their own ETL job is: *Scala 3 support with no throughput regression, and
+here is the byte-parity evidence* — plus a startup benefit for short-lived and many-JVM workloads.
+Pitched as a performance win, the first person to measure a long job finds nothing, and the parity
+work loses the credibility it earned.
+
+Reproduce: `./scripts/query-bench.sh 1 5 10` (see [BENCHMARKS.md](BENCHMARKS.md) §2). Raw CSV,
+per-phase summary and a disclosure header land in `results/<timestamp>-query-sf<SF>/`.
 
 ---
 

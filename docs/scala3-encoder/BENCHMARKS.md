@@ -27,6 +27,7 @@ numbers existed so we can't drift toward convenient results later.
 | `ScalingBenchmarks` | Row-count scaling |
 | `ArrowBenchmarks` | Arrow batch writing |
 | `CodecBenchmarks` | `TransformingEncoder` codecs (Java, Kryo, Fory) |
+| `tpch.QueryColdStartProto` | *(not JMH)* whole short-lived driver running real typed queries — REPORT §10b |
 
 ### `benchmark-spark/` (Scala 2.13) — the Spark baseline
 
@@ -36,6 +37,8 @@ numbers existed so we can't drift toward convenient results later.
 | `SparkEncoderBenchmarks` | `ExpressionEncoder` per-row performance |
 | `SparkScalingBenchmarks` | Spark serialization scaling |
 | `SparkArrowBenchmarks` | Spark Arrow integration |
+| `tpch.QueryColdStartBaseline` | *(not JMH)* the reflective half of the real-query benchmark — REPORT §10b |
+| `tpch.TpchQueryBench` | End-to-end TPC-H DataFrame vs Dataset[T] under config ablations (Spark-only) |
 
 Why two Scala versions live in one build (`encoderFor[T: TypeTag]` is 2.13-only; the compile-time
 path is Scala-3-only) is explained in [`INFRASTRUCTURE.md`](INFRASTRUCTURE.md).
@@ -100,6 +103,50 @@ sbt "benchmarks/Jmh/run -prof gc AllocationBenchmarks"
 | `-prof` | none | Profiler (gc, stack, async) |
 
 ---
+
+### Real-query benchmark (what a user's job actually gains)
+
+The JMH suites above measure derivation and per-row cost in isolation. This one measures a whole
+short-lived Spark driver, end to end, and is the number to quote when someone asks "what does this do
+to my query?" — including when the answer is "nothing", which for steady-state throughput it is, by
+design.
+
+```bash
+./scripts/query-bench.sh 0.01 3 5      # smoke (~5 min, NOT citable — the report says so)
+./scripts/query-bench.sh 1 5 10        # the citable run (SF=1, 5 reps, 10 steady iterations)
+```
+
+Two halves, differing in exactly one thing — where `Encoder[T]` comes from:
+
+| half | Scala | encoder source | module |
+|---|---|---|---|
+| `baseline` | 2.13 | `ScalaReflection.encoderFor` (runtime reflection) | `benchmark-spark` |
+| `proto` | 3 | `deriveAgnosticEncoder[T]` (compile time) | `benchmarks` + the patch |
+
+Workloads: `q6` (TPC-H Q6 predicate as a typed lambda over `lineitem`; one type, scan-heavy) and
+`wide` (all 8 TPC-H tables as typed `Dataset`s; eight types — where per-type derivation cost shows).
+
+Design choices that matter for reading the output:
+
+- **Fresh JVM per measurement.** The costs at issue (reflective universe init, per-type derivation)
+  are paid once per JVM; a warmed-up in-process harness cannot see them. `java` is invoked directly —
+  sbt resolves the classpaths and then exits, so it is not in the measured process.
+- **The cold encoder is measured first, before `SparkSession.builder()`.** Otherwise the reflective
+  universe init is silently charged to session creation — `builder()` forces it too (REPORT §3b) —
+  and the derivation looks free on the baseline side.
+- **One discarded settling run**, recorded as `rep 0` in `raw.csv` so the noise stays visible rather
+  than being quietly dropped. Sides are interleaved within a rep so drift hits both equally.
+- **The summary prints the attributable share**: how much of the total delta the encoder phases can
+  actually explain, versus variance in phases both sides execute identically. When the residual is
+  large (it sometimes exceeds the effect), that is the honest headline, not the total.
+- **The Scala 3 half needs `spark-reflection-patch` on the classpath** (patched `ScalaReflection` +
+  `SparkSession`); the script prepends it. Without it a Scala 3 driver cannot start a session at all.
+
+Output lands in `results/<timestamp>-query-sf<SF>/`: `raw.csv` (one row per side × workload × phase ×
+rep), `summary.txt` (the comparison table), `disclosure.txt` (hardware/JVM/git + the confounds to
+state when citing — notably that the two halves necessarily run on different Scala versions).
+
+Results and interpretation: [REPORT §10b](REPORT.md).
 
 ## 3. Methodology (the rules every published number follows)
 

@@ -102,6 +102,7 @@ sbt 'encoderSpark/testOnly *AgnosticDerivationSpec'     # the drop-in vs Spark's
 sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'  # the two-layer bridge vs the same goldens
 sbt 'encoderSpark/testOnly *ExecutionWallSpec'          # end-to-end round-trips (uses the patch)
 sbt 'encoderSpark/testOnly *FindConstructorFallbackSpec' # the de-reflected companion-apply fallback
+sbt 'encoderSpark/testOnly *SparkSessionWallSpec'       # stock SparkSession.builder() works on Scala 3
 
 sbt 'encoderSpark/testOnly *ExecutionWallSpec -- *nested*'   # single munit test (name filter after --)
 
@@ -114,6 +115,11 @@ sbt 'benchmarks/Jmh/run     -f 1 -wi 3 -i 5 -t 8 EncoderDerivationBenchmarks'   
 
 sbt 'benchmarkSpark/runMain org.apache.spark.sql.protocatalyst.ColdStartProbe'      # cold-start cost
 ./scripts/bench.sh 0.01 --quick                         # full TPC-H + encoder artifact run (smoke)
+
+# Real-query benchmark: whole short-lived drivers, reflective (2.13) vs compile-time (3), same
+# queries and data. Runs bare JVMs; sbt only resolves classpaths. REPORT §10b.
+./scripts/query-bench.sh 0.01 3 5                       # smoke (not citable)
+./scripts/query-bench.sh 1 5 10                         # citable: SF=1, 5 reps, 10 steady iters
 ```
 
 Regenerate parity goldens after adding a corpus type (edit both the 2.13 fixtures and the 3 spec):
@@ -133,9 +139,11 @@ sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
 - **`encoderSpark`'s test classpath prepends `sparkReflectionPatch`'s products** to shadow Spark's
   own `ScalaReflection`. That is what lets `ExecutionWallSpec` run Spark's real ser/deser from a
   Scala 3 process. Changing the patch changes what those tests prove.
-- `spark-reflection-patch` is a **verbatim copy of Spark 4.1.2's `ScalaReflection`** with two lines
-  changed (lazy `universe`; `NameTransformer.encode`), plus the separate `findConstructor`
-  companion-apply de-reflection. Keep the diff minimal and upstream-shaped — it *is* the PR.
+- `spark-reflection-patch` holds **verbatim copies of Spark 4.1.2 sources** with minimal changes:
+  `ScalaReflection` (lazy `universe`; `NameTransformer.encode`; plus the separate `findConstructor`
+  companion-apply de-reflection) and `SparkSession` (sql-api — `lookupCompanion` de-reflected, without
+  which a Scala 3 process cannot create a session at all; see REPORT §3b). Keep every diff minimal and
+  upstream-shaped — they *are* the PRs.
 
 ## Hard constraints (do not violate)
 
