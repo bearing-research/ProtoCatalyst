@@ -21,6 +21,7 @@ Start with the report; the rest are companions.
 | **[scala3-encoder/REPORT.md](scala3-encoder/REPORT.md)** | The writeup: blocker → replacement → results → migration. **The artifact.** |
 | **[scala3-encoder/MIGRATION.md](scala3-encoder/MIGRATION.md)** | The operational checklist: which file, which Spark module, which lines — to actually upstream this. |
 | [scala3-encoder/REFLECTION_REPLACEMENT.md](scala3-encoder/REFLECTION_REPLACEMENT.md) | Bridge design, decisions, milestones; §2.1.1 = the 2-line execution-wall patch. |
+| [scala3-encoder/UPSTREAM_SESSION_BUILDER.md](scala3-encoder/UPSTREAM_SESSION_BUILDER.md) | Upstreaming brief for the `SparkSession.builder()` wall: what landed on Spark master 2026-08-23 (SPARK-57548 / SPARK-58169), why we target master rather than backport, and the one issue still worth filing. |
 | [scala3-encoder/SCALA3_SUPERSET.md](scala3-encoder/SCALA3_SUPERSET.md) | Behaviors beyond Spark's encoder model (enums, ADTs, extensions). |
 | [scala3-encoder/ENCODER_PARITY.md](scala3-encoder/ENCODER_PARITY.md) | `ProtoEncoder` ↔ Spark `AgnosticEncoder` variant-by-variant parity. |
 | [scala3-encoder/ENCODER_DEEP_DIVE.md](scala3-encoder/ENCODER_DEEP_DIVE.md) | Beginner-friendly guide to what encoders are and how we derive them. |

@@ -59,10 +59,19 @@ def apply[T](using Mirror.Of[T]): ExpressionEncoder[T] =
 Same return type, same downstream (`Serializer`/`DeserializerBuildHelper`, whole-stage codegen, Spark
 Connect) — they already consume `AgnosticEncoder`.
 
-## Step 3 — de-reflect `ScalaReflection` (`sql-api`) — the down-payment PR
+## Step 3 — de-reflect `ScalaReflection` (`sql-api`) — **already upstream**
 
-A small, self-contained change that can land ahead of everything else. **The down-payment is two
-lines.** Reference diff:
+> **Status (2026-08-23): done on master, not by us.** These two lines landed as
+> **[SPARK-57548](https://github.com/apache/spark/pull/57303)** (`7df3ac405cf7`), and the companion
+> `SparkSession` wall as **[SPARK-58169](https://github.com/apache/spark/pull/57302)**. Both were
+> arrived at independently — same file, same two lines. **Targeting master, this step is complete
+> and is no longer part of the ask.** It remains documented because (a) Spark **4.1.x** still carries
+> the reflective code, which is what this repo builds against and patches locally, and (b) it is the
+> diagnosis the rest of the migration rests on. See
+> [UPSTREAM_SESSION_BUILDER.md](UPSTREAM_SESSION_BUILDER.md).
+
+Kept for the record — this was scoped as the down-payment PR before it landed upstream. **The change
+is two lines.** Reference diff:
 [`spark-reflection-patch/…/ScalaReflection.scala`](../../spark-reflection-patch/src/main/scala/org/apache/spark/sql/catalyst/ScalaReflection.scala)
 (changes marked `PROTOCATALYST PATCH (1/2)` / `(2/2)`):
 
@@ -105,7 +114,12 @@ resolves a companion `apply` (and that a matching constructor still wins over it
 of both headline pieces — it isn't the #25896 wall, and `AgnosticDerivation` never calls it — so it can
 land separately from the 2-line down-payment.
 
-### Separate follow-up — `SparkSession.lookupCompanion` (`sql-api`), the session wall
+### Separate follow-up — `SparkSession.lookupCompanion` (`sql-api`), the session wall — **already upstream**
+
+> **Status: fixed on master by [SPARK-58169](https://github.com/apache/spark/pull/57302)**, using the
+> same `MODULE$` read described below (via a new `SparkClassUtils.getCompanionObject` helper). Still
+> present in 4.1.x. What remains open upstream is only the misleading error message this problem
+> produced — see [UPSTREAM_SESSION_BUILDER.md](UPSTREAM_SESSION_BUILDER.md) §4.
 
 Independent of everything encoder-related, and **hit before any of it**: `SparkSession.builder()`
 resolves the Classic/Connect implementation through `scala.reflect.runtime.currentMirror`
@@ -174,10 +188,14 @@ exactly how `Dataset[T]` uses an encoder: `ExpressionEncoder(enc).resolveAndBind
 |---|---|---|
 | Add `AgnosticDerivation.scala` (rename package only) | `sql-api` | one file (~210 lines) |
 | Wire `ExpressionEncoder.apply[T]()` → `deriveAgnosticEncoder[T]` (Scala 3) | `catalyst` | a few lines |
-| De-reflect `ScalaReflection` (the #25896 down-payment) | `sql-api` | **2 lines** (`lazy val` + `NameTransformer`) |
+| ~~De-reflect `ScalaReflection` (#25896)~~ — **upstream: [SPARK-57548]** | `sql-api` | 2 lines, already landed on master |
 | Drop the `~16` `TypeTag` bounds (forced by Scala 3) | `sql-api` / `catalyst` / `sql-core` | enumerable |
 | *(separate follow-up)* de-reflect `findConstructor`'s `apply` fallback — edge-case, **implemented + tested** | `sql-api` | small, Java-reflection |
-| *(separate follow-up)* de-reflect `SparkSession.lookupCompanion` — blocks session creation on Scala 3, **implemented + tested** | `sql-api` | 4 lines, Java-reflection |
+| ~~*(follow-up)* de-reflect `SparkSession.lookupCompanion`~~ — **upstream: [SPARK-58169]** | `sql-api` | already landed on master |
 
-The **derivation + de-reflection — the part unique to this proposal — is localized to `sql-api`.** The
-`TypeTag` spread is the part Scala 3 forces regardless.
+With the de-reflection now upstream, **what is unique to this proposal is the derivation itself** —
+one file in `sql-api` plus its call site in `catalyst`. The `TypeTag` spread is the part Scala 3
+forces regardless, and the walls that used to sit in front of both are gone on master.
+
+[SPARK-57548]: https://github.com/apache/spark/pull/57303
+[SPARK-58169]: https://github.com/apache/spark/pull/57302

@@ -139,6 +139,13 @@ is: **`encoderFor`/`schemaFor` (the real work) + two trivial expression-layer ut
 
 #### 2.1.1 The wall is removable — demonstrated (`spark-reflection-patch`)
 
+> **Upstream status (2026-08-23):** these two lines have since landed on Spark **master** as
+> [SPARK-57548](https://github.com/apache/spark/pull/57303), and the companion `SparkSession.builder()`
+> wall as [SPARK-58169](https://github.com/apache/spark/pull/57302) — both reached independently.
+> Released **4.1.x still carries both**, so this module is what lets the repo drive 4.1.2 from Scala 3;
+> it is a local build accommodation now, not a proposal.
+> See [UPSTREAM_SESSION_BUILDER.md](UPSTREAM_SESSION_BUILDER.md).
+
 The claim above is now backed by a working demonstrator rather than reasoning alone. The module
 `spark-reflection-patch` is a **verbatim copy of Spark 4.1.2's `ScalaReflection`** (the `sql-api`
 copy) with exactly **two lines** changed:

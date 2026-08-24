@@ -15,8 +15,11 @@ init under Scala 3.8).
 
 - **Primary goal:** push Spark toward Scala 3. Stock Spark is the correctness oracle + benchmark
   baseline only — we do not ship a plugin.
-- **Strategy:** tech-report-first to gain traction, then upstream. The 2-line `ScalaReflection`
-  patch is the scoped "down payment" ask; `AgnosticDerivation.scala` is the drop-in file.
+- **Strategy:** tech-report-first to gain traction, then upstream, **targeting Spark master (5.0.0),
+  not 4.1.x**. The 2-line `ScalaReflection` down-payment landed upstream independently on 2026-08-23
+  (SPARK-57548), as did the `SparkSession.builder()` fix (SPARK-58169) — so the ask is now the
+  derivation itself: `AgnosticDerivation.scala` is the drop-in file. See
+  `docs/scala3-encoder/UPSTREAM_SESSION_BUILDER.md`.
 
 Key docs (docs are split into `docs/scala3-encoder/`, `docs/compiler/`, `docs/decisions/`):
 - `docs/scala3-encoder/REPORT.md` — the writeup (blocker → replacement → results → migration). The artifact.
@@ -159,9 +162,18 @@ sbt 'encoderSpark/testOnly *AgnosticEncoderBridgeSpec'
 ## Status (2026-08)
 
 Reflection-replacement engine, the single-macro drop-in, structural/byte parity, the execution-wall
-patch, and the benchmark suite (derivation cost, cold-start, multi-tenant) are done and reported in
-`docs/scala3-encoder/REPORT.md`. Recent work moved the migration story from "adopt the bridge" to
-"take one file" (`AgnosticDerivation.scala`) and added `MIGRATION.md` + the build-time drop-in guard.
-Open directions: tech-report polish + related work, the dev@spark pitch, the clean 2-line-patch PR;
-later — cross-arch EC2 sweep (parked on AWS creds), second backend for generality. There is one
-stale JIRA ticket (only the user has updated it).
+patch, and the benchmark suite (derivation cost, cold-start, multi-tenant, and now real-query /
+REPORT §10b) are done and reported in `docs/scala3-encoder/REPORT.md`.
+
+**2026-08-23 changed the upstream picture.** Both walls this project documented were fixed on Spark
+master the same day by an outside contributor (SPARK-57548 = the 2-line down-payment, verbatim;
+SPARK-58169 = the session-builder de-reflection), alongside SPARK-58166/58168 and an open scala-3
+build profile (SPARK-58200). So the down-payment PR is no longer an available ask; **compile-time
+encoder derivation remains untouched upstream** and is the contribution. Decision: target master, do
+not pursue 4.1.x backports.
+
+Open directions: rescoped dev@spark pitch leading with the derivation; validate against a master
+snapshot with the local patch removed (untested — do not assume master is clear); file the one
+remaining `DEFAULT_COMPANION` diagnostics issue; tech-report polish + related work; later —
+cross-arch EC2 sweep (parked on AWS creds), second backend. There is one stale JIRA ticket (only the
+user has updated it). `sparkCatalyst` does not currently compile (pre-existing, `cteRelations` arity).

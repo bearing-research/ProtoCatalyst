@@ -21,9 +21,11 @@ is reused unchanged. The properties of the replacement, with section references:
 - **Type coverage (§7).** It encodes simple Scala 3 `enum`s, which Spark's reflection does not, and
   detects and rejects data-carrying `enum`s / sealed-trait ADTs — a case Spark's `AgnosticEncoder`
   model cannot represent — rather than mis-encoding them.
-- **End-to-end execution (§3).** Stock Spark's serializer codegen cannot initialize `ScalaReflection`
-  on Scala 3. A two-line change to `ScalaReflection` removes that, after which compile-time-derived
-  encoders round-trip values through Spark's unmodified codegen ser/deser from a Scala 3 process.
+- **End-to-end execution (§3).** Spark 4.1.x's serializer codegen cannot initialize `ScalaReflection`
+  on Scala 3. A two-line change removes that, after which compile-time-derived encoders round-trip
+  values through Spark's unmodified codegen ser/deser from a Scala 3 process. Those two lines are now
+  upstream on master ([SPARK-57548]), as is the companion session-builder fix ([SPARK-58169], §3b), so
+  on master this obstacle is already gone and the remaining proposal is the derivation itself.
 
 The claims are backed by code in this repository and checked against stock Spark, used as the
 correctness oracle and benchmark baseline. Companion documents:
@@ -119,6 +121,16 @@ So the derivation is the *only structural* Scala-3 refactor; everything else is 
 worst-case hazard (def macros) does not exist in Spark at all.
 
 ## §3. Running Spark's serializer from Scala 3: the `ScalaReflection` initialization failure
+
+> **Upstream status (2026-08-23).** Both walls described in §3 and §3b have since been fixed on Spark
+> **master** (5.0.0-SNAPSHOT), independently of this project and by the same reasoning:
+> **[SPARK-57548]** made `universe` lazy and swapped `encodeFieldNameToIdentifier` to
+> `NameTransformer.encode` — the same two lines described below — and **[SPARK-58169]** de-reflected
+> `SparkSession`'s companion lookup (§3b). Spark **4.1.x**, which this project builds against, still
+> carries both. So the analysis in this section stands as the diagnosis, the `spark-reflection-patch`
+> module remains necessary *here* (it is what lets a Scala 3 process drive released 4.1.2), and the
+> de-reflection is **no longer part of this proposal's ask** — §11 is scoped accordingly. Details and
+> the one issue still open upstream: [UPSTREAM_SESSION_BUILDER.md](UPSTREAM_SESSION_BUILDER.md).
 
 One might try to call Spark's `ExpressionEncoder` from a Scala 3 process directly, bypassing the
 derivation. This does not work: stock Spark's codegen path touches `ScalaReflection`, and the
@@ -231,6 +243,10 @@ SparkClassUtils.classForName(name)                              // implementatio
 SparkClassUtils.classForName(name + "$")
   .getField("MODULE$").get(null).asInstanceOf[SparkSessionCompanion]
 ```
+
+This is fixed on master by **[SPARK-58169]** (2026-08-23), which replaced the mirror dance with
+exactly this `MODULE$` read; 4.1.x still carries the reflective version. The demonstration below
+predates that fix and is what this repo's 4.1.2 build uses.
 
 Demonstrated verbatim in `spark-reflection-patch` and proven by `SparkSessionWallSpec`: with the
 patched file on the classpath, **stock `SparkSession.builder()` returns a working session from a
@@ -697,15 +713,16 @@ not "one tidy module"; it is three parts of very different size.
 
 > **Proposal — three parts, in increasing size:**
 >
-> 1. **De-reflect the `ScalaReflection` object** so it loads on Scala 3 — **two lines**: `val universe`
->    → `lazy val` (stop the eager `<clinit>` forcing) and `encodeFieldNameToIdentifier` →
->    `scala.reflect.NameTransformer.encode` (the one the ser/deser hot path calls). That pair is the
->    proven minimum; it fixes the initialization crash (§3, upstream as
->    [scala/scala3#25896](https://github.com/scala/scala3/issues/25896)) and is the small,
->    self-contained **down-payment** PR. (`findConstructor`'s rarely-hit companion-`apply` fallback also
->    uses the runtime universe but is *not* reached by ordinary case classes — a separate edge-case
->    follow-up, independent of the 2-line patch; it is de-reflected to Java reflection in the same
->    reference module and proven by `FindConstructorFallbackSpec`.)
+> 1. ~~**De-reflect the `ScalaReflection` object** so it loads on Scala 3.~~ **Already upstream.**
+>    The two lines this proposal scoped as its down-payment — `val universe` → `lazy val`, and
+>    `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode` — landed on master as
+>    **[SPARK-57548]** on 2026-08-23, together with **[SPARK-58169]** for the session-builder wall
+>    (§3b). Both were reached independently, which corroborates the diagnosis but removes the ask:
+>    targeting master, **this part is done**, and the proposal is the two parts below.
+>    (`findConstructor`'s rarely-hit companion-`apply` fallback still uses the runtime universe
+>    upstream; it is *not* reached by ordinary case classes, and is de-reflected in this repo's
+>    reference module and proven by `FindConstructorFallbackSpec` — an edge-case follow-up someone
+>    may still want to file.)
 > 2. **Provide the Scala-3 derivation** — a single `Mirror`/`inline` macro, `deriveAgnosticEncoder[T]`,
 >    emitting Spark's `AgnosticEncoder` directly (§11b). One Scala-3-only file; the reflective body
 >    stays for 2.13. Because the output is the *same* `AgnosticEncoder`, **everything downstream of the
@@ -791,8 +808,10 @@ Migration checklist (the end-to-end upstream validation in §13 is the last two 
 - [ ] Implement `ExpressionEncoder.apply[T]()` on the Scala 3 build via `deriveAgnosticEncoder[T]` — a
       single `Mirror` macro emitting `AgnosticEncoder` directly (no separate `ProtoType`/bridge layer
       upstream, per above); keep the reflective body for 2.13.
-- [ ] De-reflect the `ScalaReflection` object — the 2-line down-payment: `val universe` → `lazy val`;
-      `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode`.
+- [x] *(upstream — not ours)* De-reflect the `ScalaReflection` object: `val universe` → `lazy val`;
+      `encodeFieldNameToIdentifier` → `scala.reflect.NameTransformer.encode`. Landed as
+      **[SPARK-57548]** (master, 2026-08-23); likewise `SparkSession.lookupCompanion` as
+      **[SPARK-58169]**. Present in 4.1.x, hence still patched locally.
 - [x] *(separate follow-up, edge-case)* replace `findConstructor`'s companion-`apply` scala-reflect
       fallback with Java reflection — done in the reference patch (`MethodUtils` + `MODULE$`), proven by
       `FindConstructorFallbackSpec`; not reached by ordinary case classes, independent of the 2-line patch.
@@ -898,3 +917,6 @@ in [`AOT_ROADMAP.md`](AOT_ROADMAP.md).
   obstacle. (Scoping note: `spark-sql-api`'s encoder closure couples through `DataType` to the SQL
   parser and json4s, so compiling the whole module on Scala 3 is a larger task than the encoder
   derivation itself.)
+
+[SPARK-57548]: https://github.com/apache/spark/pull/57303
+[SPARK-58169]: https://github.com/apache/spark/pull/57302

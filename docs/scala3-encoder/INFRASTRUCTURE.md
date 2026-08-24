@@ -34,7 +34,7 @@ touch Spark's reflection.
 | `benchmarks` | 3.8.1 | JMH: our side (`EncoderDerivationBenchmarks`, …) | — |
 | `benchmark-spark` | **2.13.16** | JMH: Spark baseline (`SparkEncoderDerivationBenchmarks`) **and** the parity-golden generator (`AgnosticParityFixtures`) | spark-sql/-catalyst 4.1.2 (native 2.13) |
 | `spark-catalyst` | **2.13.16** | Spark-side integration / e2e parity harness | native 2.13 |
-| `spark-reflection-patch` | **2.13.16** | The 2-line patched `ScalaReflection` (execution-wall demonstrator, `REFLECTION_REPLACEMENT.md` §2.1.1) | native 2.13 |
+| `spark-reflection-patch` | **2.13.16** | Patched `ScalaReflection` (2 lines) + `sql-api` `SparkSession` (de-reflected `lookupCompanion`) — the execution-wall demonstrators for released 4.1.2; both fixed upstream on master (`REFLECTION_REPLACEMENT.md` §2.1.1, `UPSTREAM_SESSION_BUILDER.md`) | native 2.13 |
 
 ## 3. How the cross-version wiring works
 
@@ -74,9 +74,16 @@ migration cost worth disclosing (toolchain lag), not hidden — see `BENCHMARKS.
 
 ### 3.3 The classpath-shadow demonstrator
 
-`spark-reflection-patch` compiles a verbatim copy of Spark 4.1.2's `ScalaReflection` with two lines
-changed, as 2.13 bytecode. It is prepended to `encoder-spark`'s **test** classpath so the JVM loads
-*our* `ScalaReflection` instead of Spark's (a class is resolved by the first match on the classpath):
+`spark-reflection-patch` compiles verbatim copies of two Spark 4.1.2 sources, as 2.13 bytecode:
+`ScalaReflection` (two lines changed) and `sql-api`'s `SparkSession` (`lookupCompanion` de-reflected,
+without which a Scala 3 process cannot create a session at all). It is prepended to `encoder-spark`'s
+**test** classpath so the JVM loads *ours* instead of Spark's (a class is resolved by the first match
+on the classpath):
+
+> Both changes landed upstream on Spark **master** on 2026-08-23 (SPARK-57548, SPARK-58169), reached
+> independently. Released **4.1.x still carries the reflective code**, which is what this build
+> targets — so this module is a build accommodation for 4.1.2, not a proposal. See
+> [UPSTREAM_SESSION_BUILDER.md](UPSTREAM_SESSION_BUILDER.md).
 
 ```scala
 // build.sbt, encoderSpark settings
